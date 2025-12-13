@@ -20,6 +20,10 @@ export default function RootLayout() {
                     headerShown: false,
                     animation: "none",
                 }}/>
+                <Stack.Screen name="register" options={{
+                    headerShown: false,
+                    animation: "none",
+                }}/>
             </Stack>
         </AuthProvider>
     );
