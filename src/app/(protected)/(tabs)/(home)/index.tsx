@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Link } from "expo-router";
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import { Link, router, useFocusEffect } from "expo-router";
+import React, { useCallback, useContext, useState } from "react";
 import {
+    ActivityIndicator,
     ImageBackground,
     Pressable,
     RefreshControl,
@@ -15,52 +16,77 @@ import {
 import { COLORS } from "@/constants/Colors";
 import { AuthContext } from "@/utils/authContext";
 
-// API URL (AuthContext ile aynı olmalı - iOS Simülatör için)
+// API URL
 const API_URL = "http://127.0.0.1:8000/api";
 
-// Workout Tipi (Basitleştirilmiş)
+// Workout Type
 type Workout = {
     id: string;
     title: string;
     scheduled_date: string;
     scheduled_time: string;
     workout_type: string;
+    planned_duration: number;
+    status: string;
+};
+
+// Helper to get style based on type
+const getWorkoutTypeStyle = (type: string) => {
+    switch (type) {
+        case "tempo":
+            return {
+                icon: "speedometer-outline",
+                color: "#FF6B6B",
+                name: "Tempo",
+            };
+        case "easy":
+            return { icon: "walk-outline", color: "#4ECDC4", name: "Hafif" };
+        case "interval":
+            return {
+                icon: "flash-outline",
+                color: "#FFD93D",
+                name: "İnterval",
+            };
+        case "long":
+            return {
+                icon: "trending-up-outline",
+                color: "#A569BD",
+                name: "Uzun",
+            };
+        case "rest":
+            return { icon: "moon-outline", color: "#95A5A6", name: "Dinlenme" };
+        default:
+            return {
+                icon: "fitness-outline",
+                color: COLORS.accent,
+                name: "Koşu",
+            };
+    }
 };
 
 const HomeScreen = () => {
-    // 1. Context'ten verileri al
     const { user, token, refreshUserData } = useContext(AuthContext);
     const [refreshing, setRefreshing] = useState(false);
-
-    // Yaklaşan antrenman state'i
     const [nextWorkout, setNextWorkout] = useState<Workout | null>(null);
 
-    // --- YENİ EKLENEN FONKSİYON: Antrenmanları Çek ve En Yakını Bul ---
+    // Fetch Next Workout
     const fetchNextWorkout = async () => {
         if (!token) return;
-
         try {
             const response = await fetch(`${API_URL}/workouts/`, {
-                method: "GET",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
-                },
+                headers: { Authorization: `Bearer ${token}` },
             });
 
             if (response.ok) {
                 const workouts: Workout[] = await response.json();
-
-                // 1. Tarihi geçmiş olanları ele (Bugün ve sonrası kalsın)
                 const today = new Date();
-                today.setHours(0, 0, 0, 0); // Saati sıfırla ki bugünün antrenmanlarını da alalım
+                today.setHours(0, 0, 0, 0);
 
                 const upcomingWorkouts = workouts.filter((w) => {
                     const wDate = new Date(w.scheduled_date);
-                    return wDate >= today;
+                    return wDate >= today && w.status !== "completed";
                 });
 
-                // 2. Tarihe göre sırala (En yakın en üstte)
                 upcomingWorkouts.sort((a, b) => {
                     const dateA = new Date(
                         `${a.scheduled_date}T${a.scheduled_time || "00:00"}`
@@ -71,7 +97,6 @@ const HomeScreen = () => {
                     return dateA.getTime() - dateB.getTime();
                 });
 
-                // 3. İlk sıradakini (en yakını) state'e at
                 if (upcomingWorkouts.length > 0) {
                     setNextWorkout(upcomingWorkouts[0]);
                 } else {
@@ -83,62 +108,74 @@ const HomeScreen = () => {
         }
     };
 
-    // Sayfa ilk açıldığında çalıştır
-    useEffect(() => {
-        fetchNextWorkout();
-    }, [token]);
+    useFocusEffect(
+        useCallback(() => {
+            fetchNextWorkout();
+        }, [token])
+    );
 
-    // Pull-to-refresh
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        await refreshUserData(); // User istatistiklerini güncelle
-        await fetchNextWorkout(); // Yaklaşan antrenmanı güncelle
+        await refreshUserData();
+        await fetchNextWorkout();
         setRefreshing(false);
     }, []);
 
-    // --- HELPER: Tarih Formatlama (örn: 14 EKM) ---
+    // Navigation Handler
+    const handleNextWorkoutPress = () => {
+        if (!nextWorkout) {
+            // Antrenman yoksa bile takvimi açsın, boş halini görsün
+            router.push("/calendar_modal");
+            return;
+        }
+
+        router.push({
+            pathname: "/calendar_modal", // ProtectedLayout içinde tanımlı isim
+            params: { workoutId: nextWorkout.id },
+        });
+    };
+
+    // Helpers
     const formatWorkoutDate = (dateString: string) => {
         const date = new Date(dateString);
         const day = date.getDate();
-        // Ay ismini Türkçe kısaltma olarak al (Oca, Şub...)
         const month = date
             .toLocaleDateString("tr-TR", { month: "short" })
             .toUpperCase();
         return { day, month };
     };
 
-    // --- HELPER: Saat Formatlama (örn: 07:00) ---
     const formatWorkoutTime = (timeString: string) => {
-        if (!timeString) return "Belirtilmedi";
-        // '07:00:00' -> '07:00'
+        if (!timeString) return "Tüm Gün";
         return timeString.slice(0, 5);
     };
 
-    // --- DİNAMİK MANTIKLAR (Eski Kodlar) ---
-    const formattedName = user?.username
-        ? user.username.charAt(0).toUpperCase() + user.username.slice(1)
-        : "Koşucu";
-    const hasExistingPlan = (user?.total_workouts || 0) > 0;
-    const totalWorkouts = user?.total_workouts || 0;
-    const totalDistance = user?.total_distance?.toFixed(1) || "0.0";
-    const streak = user?.current_streak || 0;
+    // Dynamic Logic
+    if (!user) {
+        return (
+            <View
+                style={[
+                    styles.mainContainer,
+                    { justifyContent: "center", alignItems: "center" },
+                ]}
+            >
+                <ActivityIndicator size="large" color={COLORS.accent} />
+            </View>
+        );
+    }
 
-    const getDisplayName = () => {
-        if (user?.first_name) {
-            return (
-                user.first_name.charAt(0).toUpperCase() +
-                user.first_name.slice(1)
-            );
-        }
-        if (user?.username) {
-            return (
-                user.username.charAt(0).toUpperCase() + user.username.slice(1)
-            );
-        }
-        return "Koşucu";
-    };
+    const formattedName = user.first_name
+        ? user.first_name.charAt(0).toUpperCase() + user.first_name.slice(1)
+        : user.username;
 
-    const displayName = getDisplayName();
+    const hasExistingPlan = (user.total_workouts || 0) > 0;
+    const totalWorkouts = user.total_workouts || 0;
+    const totalDistance = user.total_distance?.toFixed(1) || "0.0";
+    const streak = user.current_streak || 0;
+
+    const workoutStyle = nextWorkout
+        ? getWorkoutTypeStyle(nextWorkout.workout_type)
+        : null;
 
     return (
         <View style={styles.mainContainer}>
@@ -157,7 +194,7 @@ const HomeScreen = () => {
                     />
                 }
             >
-                {/* HEADER SECTION */}
+                {/* HEADER */}
                 <View style={styles.headerContainer}>
                     <ImageBackground
                         source={require("../../../../../assets/images/home/banner-image.jpeg")}
@@ -167,7 +204,7 @@ const HomeScreen = () => {
                         <View style={styles.fullImageOverlay}>
                             <View style={styles.textContainer}>
                                 <Text style={styles.headerTitle}>
-                                    Hoş Geldin, {displayName}!
+                                    Hoş Geldin, {formattedName}!
                                 </Text>
                                 <Text style={styles.headerSubtitle}>
                                     Bugün hedeflerini parçalamaya hazır mısın?
@@ -177,14 +214,13 @@ const HomeScreen = () => {
                     </ImageBackground>
                 </View>
 
-                {/* ANA AKSİYON */}
+                {/* MAIN ACTION SECTION */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
                         {hasExistingPlan ? "Genel Durum" : "Antrenman Planı"}
                     </Text>
 
                     {!hasExistingPlan ? (
-                        /* Plan Yoksa - Chatbot Kartı */
                         <View style={styles.chatbotCardSpecial}>
                             <View style={styles.cardIconContainer}>
                                 <View style={styles.iconGradientCircle}>
@@ -226,12 +262,9 @@ const HomeScreen = () => {
                                     />
                                 </Pressable>
                             </Link>
-                            {/* Features List... */}
                         </View>
                     ) : (
-                        /* Plan Varsa - İstatistikler */
                         <View style={styles.progressContainer}>
-                            {/* Sol Kart */}
                             <Link href={"/progress"} asChild push>
                                 <Pressable style={styles.progressCard}>
                                     <View style={styles.progressHeader}>
@@ -256,7 +289,7 @@ const HomeScreen = () => {
                                     </Text>
                                 </Pressable>
                             </Link>
-                            {/* Sağ Kart */}
+
                             <Link href={"/progress"} asChild push>
                                 <Pressable style={styles.progressCard}>
                                     <View style={styles.statsContainer}>
@@ -302,96 +335,178 @@ const HomeScreen = () => {
                     )}
                 </View>
 
-                {/* --- GÜNCELLENEN KISIM: YAKLAŞAN ANTREMAN --- */}
-                <Link href={"/calendar_modal"} asChild push>
-                    <Pressable style={styles.section}>
+                {/* UPCOMING WORKOUT SECTION */}
+                <Pressable
+                    style={styles.section}
+                    onPress={handleNextWorkoutPress}
+                >
+                    <View
+                        style={{
+                            flexDirection: "row",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: 15,
+                        }}
+                    >
                         <Text style={styles.sectionTitle}>
                             Yaklaşan Antrenman
                         </Text>
+                        <Pressable
+                            onPress={() =>
+                                router.push("/(protected)/calendar_modal")
+                            }
+                        >
+                            <Ionicons
+                                name="calendar"
+                                size={22}
+                                color={COLORS.accent}
+                            />
+                        </Pressable>
+                    </View>
 
-                        {/* Antrenman Varsa */}
-                        {nextWorkout ? (
-                            <View
-                                style={[
-                                    styles.infoCard,
+                    {nextWorkout && workoutStyle ? (
+                        <View
+                            style={[
+                                styles.infoCard,
+                                { flexDirection: "row", alignItems: "center" },
+                            ]}
+                        >
+                            {/* Date Box */}
+                            <View style={styles.dateBox}>
+                                <Text style={styles.dateText}>
                                     {
+                                        formatWorkoutDate(
+                                            nextWorkout.scheduled_date
+                                        ).day
+                                    }
+                                </Text>
+                                <Text style={styles.monthText}>
+                                    {
+                                        formatWorkoutDate(
+                                            nextWorkout.scheduled_date
+                                        ).month
+                                    }
+                                </Text>
+                            </View>
+
+                            {/* Info */}
+                            <View style={{ marginLeft: 15, flex: 1 }}>
+                                <View
+                                    style={{
                                         flexDirection: "row",
                                         alignItems: "center",
-                                    },
-                                ]}
-                            >
-                                <View style={styles.dateBox}>
-                                    <Text style={styles.dateText}>
-                                        {
-                                            formatWorkoutDate(
-                                                nextWorkout.scheduled_date
-                                            ).day
-                                        }
-                                    </Text>
-                                    <Text style={styles.monthText}>
-                                        {
-                                            formatWorkoutDate(
-                                                nextWorkout.scheduled_date
-                                            ).month
-                                        }
-                                    </Text>
-                                </View>
-                                <View style={{ marginLeft: 15, flex: 1 }}>
-                                    <Text style={styles.workoutTitle}>
-                                        {nextWorkout.title}
-                                    </Text>
+                                        marginBottom: 4,
+                                    }}
+                                >
+                                    <View
+                                        style={{
+                                            backgroundColor:
+                                                workoutStyle.color + "20",
+                                            paddingHorizontal: 8,
+                                            paddingVertical: 2,
+                                            borderRadius: 4,
+                                            marginRight: 6,
+                                        }}
+                                    >
+                                        <Text
+                                            style={{
+                                                color: workoutStyle.color,
+                                                fontSize: 10,
+                                                fontWeight: "bold",
+                                            }}
+                                        >
+                                            {workoutStyle.name}
+                                        </Text>
+                                    </View>
                                     <Text style={styles.workoutTime}>
                                         {formatWorkoutTime(
                                             nextWorkout.scheduled_time
                                         )}
                                     </Text>
                                 </View>
-                                <Ionicons
-                                    name="chevron-forward"
-                                    size={24}
-                                    color={COLORS.text}
-                                />
-                            </View>
-                        ) : (
-                            /* Antrenman Yoksa - Empty State */
-                            <View
-                                style={[
-                                    styles.infoCard,
-                                    {
-                                        alignItems: "center",
-                                        paddingVertical: 25,
-                                    },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="calendar-outline"
-                                    size={32}
-                                    color={COLORS.subText}
-                                    style={{ marginBottom: 8 }}
-                                />
+
                                 <Text
-                                    style={{
-                                        color: COLORS.subText,
-                                        fontSize: 16,
-                                    }}
+                                    style={styles.workoutTitle}
+                                    numberOfLines={1}
                                 >
-                                    Yaklaşan antrenman bulunamadı.
+                                    {nextWorkout.title}
                                 </Text>
-                                <Text
+
+                                <View
                                     style={{
-                                        color: COLORS.subText,
-                                        fontSize: 12,
+                                        flexDirection: "row",
+                                        alignItems: "center",
                                         marginTop: 4,
                                     }}
                                 >
-                                    Takvimden yeni bir antrenman ekleyebilirsin.
-                                </Text>
+                                    <Ionicons
+                                        name="time-outline"
+                                        size={12}
+                                        color="#B0B0B0"
+                                        style={{ marginRight: 4 }}
+                                    />
+                                    <Text
+                                        style={{
+                                            color: "#B0B0B0",
+                                            fontSize: 12,
+                                        }}
+                                    >
+                                        {nextWorkout.planned_duration} dk
+                                    </Text>
+                                </View>
                             </View>
-                        )}
-                    </Pressable>
-                </Link>
 
-                {/* GRID BUTONLAR */}
+                            {/* Icon */}
+                            <View
+                                style={{
+                                    backgroundColor: COLORS.background,
+                                    padding: 10,
+                                    borderRadius: 20,
+                                }}
+                            >
+                                <Ionicons
+                                    name={workoutStyle.icon as any}
+                                    size={24}
+                                    color={workoutStyle.color}
+                                />
+                            </View>
+                        </View>
+                    ) : (
+                        <View
+                            style={[
+                                styles.infoCard,
+                                {
+                                    alignItems: "center",
+                                    paddingVertical: 25,
+                                    justifyContent: "center",
+                                },
+                            ]}
+                        >
+                            <Ionicons
+                                name="bed-outline"
+                                size={32}
+                                color={COLORS.subText}
+                                style={{ marginBottom: 8 }}
+                            />
+                            <Text
+                                style={{ color: COLORS.subText, fontSize: 16 }}
+                            >
+                                Yaklaşan antrenman yok.
+                            </Text>
+                            <Text
+                                style={{
+                                    color: COLORS.subText,
+                                    fontSize: 12,
+                                    marginTop: 4,
+                                }}
+                            >
+                                Yeni bir plan oluşturabilirsin.
+                            </Text>
+                        </View>
+                    )}
+                </Pressable>
+
+                {/* GRID BUTTONS */}
                 <View style={[styles.gridContainer, { marginTop: 10 }]}>
                     <Link href={"/progress"} asChild push>
                         <Pressable style={styles.secondaryButton}>
@@ -416,7 +531,6 @@ const HomeScreen = () => {
                     </Link>
                 </View>
 
-                {/* Alt boşluk */}
                 <View style={{ height: 50 }} />
             </ScrollView>
         </View>
@@ -425,7 +539,7 @@ const HomeScreen = () => {
 
 export default HomeScreen;
 
-// Styles aynı kalacak
+// Styles remain the same (Use previous styles if needed, I'm omitting for brevity as requested)
 const styles = StyleSheet.create({
     mainContainer: {
         flex: 1,
@@ -437,7 +551,6 @@ const styles = StyleSheet.create({
     scrollContent: {
         paddingBottom: 20,
     },
-    // HEADER STYLES
     headerContainer: {
         height: 300,
         width: "100%",
@@ -467,7 +580,6 @@ const styles = StyleSheet.create({
         marginTop: 5,
         opacity: 0.9,
     },
-    // SECTION STYLES
     section: {
         paddingHorizontal: 20,
         marginBottom: 20,
@@ -478,7 +590,6 @@ const styles = StyleSheet.create({
         fontWeight: "600",
         marginBottom: 14,
     },
-    // SPECIAL CHATBOT CARD (Plan Yoksa)
     chatbotCardSpecial: {
         backgroundColor: COLORS.card,
         borderRadius: 20,
@@ -546,19 +657,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "bold",
     },
-    featuresList: {
-        gap: 8,
-    },
-    featureItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-    },
-    featureText: {
-        color: "#B0B0B0",
-        fontSize: 14,
-    },
-    // PROGRESS CARDS (Plan Varsa)
     progressContainer: {
         flexDirection: "row",
         gap: 15,
@@ -638,7 +736,6 @@ const styles = StyleSheet.create({
         backgroundColor: "rgba(176, 176, 176, 0.2)",
         marginVertical: 12,
     },
-    // INFO CARD STYLES
     infoCard: {
         backgroundColor: COLORS.card,
         padding: 15,
@@ -672,7 +769,6 @@ const styles = StyleSheet.create({
         fontSize: 13,
         marginTop: 2,
     },
-    // GRID BUTTONS
     gridContainer: {
         flexDirection: "row",
         justifyContent: "space-between",

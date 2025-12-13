@@ -65,13 +65,6 @@ const ProgressScreen = () => {
             if (chartRes.ok) {
                 const chartJson = await chartRes.json();
 
-                // --- BU LOGU EKLE ---
-                console.log(
-                    "GRAFİK VERİSİ:",
-                    JSON.stringify(chartJson, null, 2)
-                );
-                // --------------------
-
                 if (chartJson.datasets[0].data.length > 0) {
                     setChartData(chartJson.datasets[0].data);
                     setChartLabels(chartJson.labels);

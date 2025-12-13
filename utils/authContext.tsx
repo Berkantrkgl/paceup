@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useRouter, useSegments } from "expo-router";
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
 import { Alert } from "react-native";
 
@@ -10,17 +10,13 @@ export type UserData = {
     email: string;
     first_name: string;
     last_name: string;
-    date_joined?: string; // Backend genelde bunu gönderir
-
-    // Fiziksel & Tercihler
+    date_joined?: string;
     weight?: number;
     height?: number;
     gender?: string;
     experience_level?: string;
     preferred_distance?: string;
     weekly_goal?: number;
-
-    // İstatistikler
     total_workouts: number;
     total_distance: number;
     total_time: number;
@@ -45,8 +41,7 @@ type AuthState = {
 };
 
 const authStorageKey = "auth-token";
-
-// iOS Simülatör için 127.0.0.1, Fiziksel cihaz için bilgisayarın IP'sini (örn: 192.168.1.35) yaz.
+// IP Adresini Kontrol Et: Emülatör: 127.0.0.1, Fiziksel Cihaz: Bilgisayar IP'si (örn: 192.168.1.35)
 const BASE_URL = "http://127.0.0.1:8000/api";
 
 export const AuthContext = createContext<AuthState>({
@@ -65,7 +60,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [token, setToken] = useState<string | null>(null);
     const [user, setUser] = useState<UserData | null>(null);
+
     const router = useRouter();
+    const segments = useSegments();
 
     // --- YARDIMCI: Token ile Kullanıcı Verisini Çek ---
     const fetchUserProfile = async (currentToken: string) => {
@@ -81,20 +78,23 @@ export function AuthProvider({ children }: PropsWithChildren) {
             if (response.ok) {
                 const userData: UserData = await response.json();
                 setUser(userData);
+            } else {
+                // Token geçersizse çıkış yap
+                logOut();
             }
         } catch (error) {
             console.log("User fetch error:", error);
         }
     };
 
-    // --- YARDIMCI: Oturumu Başlat (Token Kaydet & State Güncelle) ---
+    // --- YARDIMCI: Oturumu Başlat ---
     const handleSessionStart = async (accessToken: string) => {
         try {
             await AsyncStorage.setItem(authStorageKey, accessToken);
             setToken(accessToken);
             setIsLoggedIn(true);
-            await fetchUserProfile(accessToken); // Kullanıcı detaylarını çek
-            router.replace("/"); // Ana sayfaya yönlendir
+            // Önce kullanıcıyı çek, sonra yönlendir (Daha pürüzsüz geçiş için)
+            await fetchUserProfile(accessToken);
         } catch (error) {
             console.log("Session start error:", error);
         }
@@ -106,8 +106,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
             const response = await fetch(`${BASE_URL}/token/`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                // SimpleJWT varsayılan olarak 'username' key'i bekler (içine email yazsak bile)
-                body: JSON.stringify({ email: email, password: password }),
+                body: JSON.stringify({
+                    email: email,
+                    password: password,
+                }),
             });
 
             const data = await response.json();
@@ -126,7 +128,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
     };
 
-    // --- 2. REGISTER (AUTO LOGIN DAHİL) ---
+    // --- 2. REGISTER ---
     const register = async (
         firstName: string,
         lastName: string,
@@ -142,19 +144,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
                     last_name: lastName,
                     email: email,
                     password: password,
-                    // Username backend'de otomatik üretilecek
                 }),
             });
 
             const data = await response.json();
 
             if (response.ok) {
-                // Backend artık Create işleminde 'access' ve 'refresh' token dönüyor.
                 if (data.access) {
-                    console.log("Kayıt başarılı, otomatik giriş yapılıyor...");
                     await handleSessionStart(data.access);
                 } else {
-                    // Token dönmezse Login'e yönlendir (Fallback)
                     Alert.alert(
                         "Başarılı",
                         "Hesabınız oluşturuldu. Giriş yapabilirsiniz."
@@ -181,10 +179,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setIsLoggedIn(false);
         setToken(null);
         setUser(null);
-        router.replace("/login");
     };
 
-    // --- STORAGE CHECK ---
+    // --- NAVİGASYON KORUMASI (PROTECTED ROUTE) ---
+    useEffect(() => {
+        // Uygulama hazır değilse (token kontrolü bitmediyse) yönlendirme yapma
+        if (!isReady) return;
+
+        const inProtectedGroup = segments[0] === "(protected)";
+
+        if (isLoggedIn && !inProtectedGroup) {
+            // Giriş yapmış ama Login ekranındaysa -> Home'a at
+            router.replace("/");
+        } else if (!isLoggedIn && inProtectedGroup) {
+            // Giriş yapmamış ama Home'daysa -> Login'e at
+            router.replace("/login");
+        }
+    }, [isLoggedIn, segments, isReady]);
+
+    // --- STORAGE CHECK (UYGULAMA AÇILIŞI) ---
     const getAuthFromStorage = async () => {
         try {
             const savedToken = await AsyncStorage.getItem(authStorageKey);
@@ -195,8 +208,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
             }
         } catch (error) {
             console.log(error);
+        } finally {
+            setIsReady(true);
         }
-        setIsReady(true);
     };
 
     const refreshUserData = async () => {
