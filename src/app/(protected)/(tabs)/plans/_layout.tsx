@@ -24,20 +24,7 @@ const _layout = () => {
       <Stack.Screen name='index' options={{
         title: 'Planlarım'
       }}/>
-      <Stack.Screen name='chatbot_modal' options={{
-            title: 'Plan Düzenle',
-            headerStyle: {
-              backgroundColor: COLORS.background,
-            },
-            headerTintColor: COLORS.text,
-            headerTitleStyle: {
-              color: COLORS.text,
-              fontSize: 20,
-              fontWeight: '600'
-            },
-            presentation: 'modal',
-            headerShadowVisible: false,
-        }}/>
+
     </Stack>
   )
 }

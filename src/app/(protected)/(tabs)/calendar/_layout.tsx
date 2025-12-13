@@ -1,3 +1,4 @@
+import { COLORS } from '@/constants/Colors'
 import { Stack } from 'expo-router'
 import React from 'react'
 
@@ -5,10 +6,26 @@ const _layout = () => {
   return (
     <Stack 
         screenOptions={{
-            headerBackButtonDisplayMode: 'minimal',
-            title: 'Calendar'
+          headerStyle: {
+            backgroundColor: COLORS.background,
+          },
+          headerTintColor: COLORS.text,
+          headerTitleStyle: {
+            color: COLORS.text,
+            fontSize: 20,
+            fontWeight: '600'
+          },
+          headerShadowVisible: false,
         }}
     >
+
+      <Stack.Screen name='index' options={{
+        title: 'Takvim'
+      }}/>
+      <Stack.Screen name='detail_modal' options={{
+        title: 'Etkinlik Detayi',
+        presentation: 'modal'
+      }}/>
     </Stack>
   )
 }
