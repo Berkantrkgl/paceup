@@ -7,7 +7,7 @@ export default function RootLayout() {
     return (
         <AuthProvider>
             <StatusBar 
-                style="inverted" // 'light', 'dark', 'auto' veya 'inverted'
+                style="auto" // 'light', 'dark', 'auto' veya 'inverted'
                 translucent={false} // İçeriğin status bar altına girmesini engeller (Android)
             />
             

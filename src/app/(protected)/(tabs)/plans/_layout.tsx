@@ -2,6 +2,8 @@ import { COLORS } from '@/constants/Colors'
 import { Stack } from 'expo-router'
 import React from 'react'
 
+
+
 const _layout = () => {
   return (
     <Stack 
@@ -18,9 +20,24 @@ const _layout = () => {
           headerShadowVisible: false,
         }}
     >
+
       <Stack.Screen name='index' options={{
-        title: 'Profile'
+        title: 'Planlarım'
       }}/>
+      <Stack.Screen name='chatbot_modal' options={{
+            title: 'Plan Düzenle',
+            headerStyle: {
+              backgroundColor: COLORS.background,
+            },
+            headerTintColor: COLORS.text,
+            headerTitleStyle: {
+              color: COLORS.text,
+              fontSize: 20,
+              fontWeight: '600'
+            },
+            presentation: 'modal',
+            headerShadowVisible: false,
+        }}/>
     </Stack>
   )
 }
