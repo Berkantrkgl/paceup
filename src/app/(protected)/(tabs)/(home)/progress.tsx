@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient"; // Gradient eklendi
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
+    ActivityIndicator,
     Dimensions,
     RefreshControl,
     ScrollView,
@@ -11,16 +13,17 @@ import {
 import { LineChart } from "react-native-chart-kit";
 
 import { COLORS } from "@/constants/Colors";
+import { API_URL } from "@/constants/Config"; // Config'den çekiyoruz
 import { AuthContext } from "@/utils/authContext";
 
-// EMULATOR İÇİN: 127.0.0.1, FİZİKSEL CİHAZ İÇİN: BİLGİSAYAR IP'Sİ
-const API_URL = "http://127.0.0.1:8000/api";
+const { width } = Dimensions.get("window");
 
 const ProgressScreen = () => {
     const { user, token, refreshUserData } = useContext(AuthContext);
     const [refreshing, setRefreshing] = useState(false);
+    const [loading, setLoading] = useState(true);
 
-    // Initial Data (Boş grafik hatasını önlemek için default değerler)
+    // Initial Data
     const [chartData, setChartData] = useState<number[]>([0]);
     const [chartLabels, setChartLabels] = useState<string[]>(["-"]);
     const [paceHistory, setPaceHistory] = useState<number[]>([0]);
@@ -41,56 +44,53 @@ const ProgressScreen = () => {
         if (!token) return;
 
         try {
-            // 1. ÖZET VERİLER (HERO KARTLARI)
-            const summaryRes = await fetch(`${API_URL}/stats/summary/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
-
-            if (!summaryRes.ok) {
-                // HATA VARSA HTML'İ KONSOLA BAS (DEBUG İÇİN)
-                const errorText = await summaryRes.text();
-                console.error("Summary API Error:", errorText.slice(0, 500));
-                return;
-            }
-            const summaryJson = await summaryRes.json();
-            setSummaryStats(summaryJson);
-
-            // 2. GRAFİK VERİLERİ
-            const chartRes = await fetch(
-                `${API_URL}/stats/charts/?period=week`,
-                {
+            // Paralel fetch yapalım, daha hızlı olsun
+            const [summaryRes, chartRes, progRes, achRes] = await Promise.all([
+                fetch(`${API_URL}/stats/summary/`, {
                     headers: { Authorization: `Bearer ${token}` },
-                }
-            );
+                }),
+                fetch(`${API_URL}/stats/charts/?period=week`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+                fetch(`${API_URL}/stats/program/`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+                fetch(`${API_URL}/achievements/`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+            ]);
+
+            // 1. SUMMARY
+            if (summaryRes.ok) {
+                const data = await summaryRes.json();
+                setSummaryStats(data);
+            }
+
+            // 2. CHARTS
             if (chartRes.ok) {
-                const chartJson = await chartRes.json();
-
-                if (chartJson.datasets[0].data.length > 0) {
-                    setChartData(chartJson.datasets[0].data);
-                    setChartLabels(chartJson.labels);
-                    setPaceHistory(chartJson.pace_data);
+                const data = await chartRes.json();
+                if (data.datasets && data.datasets[0].data.length > 0) {
+                    setChartData(data.datasets[0].data);
+                    setChartLabels(data.labels);
+                    setPaceHistory(data.pace_data || [0]);
                 }
             }
 
-            // 3. PROGRAM DETAYI
-            const progRes = await fetch(`${API_URL}/stats/program/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            // 3. PROGRAM
             if (progRes.ok) {
-                const progJson = await progRes.json();
-                setActiveProgram(progJson);
+                const data = await progRes.json();
+                setActiveProgram(data);
             }
 
-            // 4. BAŞARIMLAR
-            const achRes = await fetch(`${API_URL}/achievements/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            // 4. ACHIEVEMENTS
             if (achRes.ok) {
-                const achJson = await achRes.json();
-                setRecentAchievements(achJson.slice(0, 3));
+                const data = await achRes.json();
+                setRecentAchievements(data.slice(0, 3));
             }
         } catch (error) {
-            console.log("General Fetch Error:", error);
+            console.log("Stats Fetch Error:", error);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -105,19 +105,31 @@ const ProgressScreen = () => {
         setRefreshing(false);
     }, []);
 
-    // --- CHART CONFIG ---
+    // --- CHART CONFIG (DARK THEME) ---
     const chartConfig = {
-        backgroundColor: COLORS.card,
-        backgroundGradientFrom: COLORS.card,
-        backgroundGradientTo: COLORS.card,
-        decimalPlaces: 1,
-        color: (opacity = 1) => `rgba(255, 107, 107, ${opacity})`,
-        labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+        backgroundColor: "transparent",
+        backgroundGradientFrom: "transparent",
+        backgroundGradientTo: "transparent",
+        decimalPlaces: 1, // Virgülden sonra tek hane
+        color: (opacity = 1) => COLORS.accent, // Çizgi rengi
+        labelColor: (opacity = 1) => COLORS.textDim, // Yazı rengi
         style: { borderRadius: 16 },
-        propsForDots: { r: "4", strokeWidth: "2", stroke: COLORS.accent },
+        propsForDots: {
+            r: "5",
+            strokeWidth: "2",
+            stroke: COLORS.card, // Nokta içi
+            fill: COLORS.accent,
+        },
+        propsForBackgroundLines: {
+            strokeDasharray: "", // Düz çizgi
+            stroke: COLORS.cardBorder, // Izgara rengi silik
+            strokeOpacity: 0.5,
+        },
+        fillShadowGradient: COLORS.accent,
+        fillShadowGradientOpacity: 0.3,
     };
 
-    // Zaman Formatlama (dk -> saat dk)
+    // Zaman Formatlama
     const formatTime = (minutes: number) => {
         const hours = Math.floor(minutes / 60);
         const mins = minutes % 60;
@@ -125,8 +137,20 @@ const ProgressScreen = () => {
         return `${mins}dk`;
     };
 
-    // Program İlerleme Yüzdesi
     const progPercent = activeProgram?.progress_percent || 0;
+
+    if (loading && !refreshing) {
+        return (
+            <View
+                style={[
+                    styles.container,
+                    { justifyContent: "center", alignItems: "center" },
+                ]}
+            >
+                <ActivityIndicator size="large" color={COLORS.accent} />
+            </View>
+        );
+    }
 
     return (
         <View style={styles.container}>
@@ -139,295 +163,305 @@ const ProgressScreen = () => {
                         refreshing={refreshing}
                         onRefresh={onRefresh}
                         tintColor={COLORS.accent}
+                        colors={[COLORS.accent]}
+                        progressViewOffset={40}
                     />
                 }
             >
-                {/* Hero Stats */}
-                <View style={styles.heroSection}>
-                    <Text style={styles.heroTitle}>İlerleme Özeti</Text>
-                    <Text style={styles.heroSubtitle}>
-                        {activeProgram?.has_active_program
-                            ? activeProgram.title
-                            : "Genel İstatistikler"}
+                {/* HEADER */}
+                <View style={styles.header}>
+                    <Text style={styles.headerTitle}>İlerleme & Analiz</Text>
+                    <Text style={styles.headerSubtitle}>
+                        Performansını takip et
                     </Text>
+                </View>
 
-                    <View style={styles.heroStatsContainer}>
-                        <View style={styles.heroStatCard}>
-                            <View style={styles.heroStatIconContainer}>
+                {/* 1. HERO STATS (GRID) */}
+                <View style={styles.statsGrid}>
+                    {/* Toplam Mesafe (Büyük Kart) */}
+                    <View style={[styles.statCard, styles.statCardLarge]}>
+                        <View style={styles.statHeaderRow}>
+                            <View
+                                style={[
+                                    styles.iconBox,
+                                    { backgroundColor: COLORS.accent + "20" },
+                                ]}
+                            >
                                 <Ionicons
-                                    name="flame"
-                                    size={32}
-                                    color="#FF6B6B"
+                                    name="map"
+                                    size={20}
+                                    color={COLORS.accent}
                                 />
                             </View>
-                            <Text style={styles.heroStatValue}>
-                                {summaryStats.days_active}
-                            </Text>
-                            <Text style={styles.heroStatLabel}>Gün Aktif</Text>
+                            <Text style={styles.statLabel}>Toplam Mesafe</Text>
                         </View>
+                        <Text style={styles.statValueLarge}>
+                            {summaryStats.total_distance}{" "}
+                            <Text style={styles.unitText}>km</Text>
+                        </Text>
+                    </View>
 
-                        <View style={styles.heroStatCard}>
-                            <View style={styles.heroStatIconContainer}>
-                                <Ionicons
-                                    name="navigate"
-                                    size={32}
-                                    color="#4ECDC4"
-                                />
+                    {/* Sağ Sütun */}
+                    <View style={styles.statsColumn}>
+                        <View style={styles.statCardSmall}>
+                            <Ionicons
+                                name="flame"
+                                size={20}
+                                color={COLORS.secondary}
+                                style={{ marginRight: 8 }}
+                            />
+                            <View>
+                                <Text style={styles.statValueSmall}>
+                                    {summaryStats.days_active}
+                                </Text>
+                                <Text style={styles.statLabelSmall}>
+                                    Gün Aktif
+                                </Text>
                             </View>
-                            <Text style={styles.heroStatValue}>
-                                {summaryStats.total_distance}
-                            </Text>
-                            <Text style={styles.heroStatLabel}>Toplam KM</Text>
                         </View>
-
-                        <View style={styles.heroStatCard}>
-                            <View style={styles.heroStatIconContainer}>
-                                <Ionicons
-                                    name="trophy"
-                                    size={32}
-                                    color="#FFD93D"
-                                />
+                        <View style={styles.statCardSmall}>
+                            <Ionicons
+                                name="fitness"
+                                size={20}
+                                color={COLORS.warning}
+                                style={{ marginRight: 8 }}
+                            />
+                            <View>
+                                <Text style={styles.statValueSmall}>
+                                    {summaryStats.total_workouts}
+                                </Text>
+                                <Text style={styles.statLabelSmall}>
+                                    Antrenman
+                                </Text>
                             </View>
-                            <Text style={styles.heroStatValue}>
-                                {summaryStats.total_workouts}
-                            </Text>
-                            <Text style={styles.heroStatLabel}>Antrenman</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* Program Progress (Varsa Göster) */}
+                {/* 2. PROGRAM PROGRESS (GRADIENT CARD) */}
                 {activeProgram?.has_active_program && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>
-                            Program İlerlemesi
-                        </Text>
-                        <View style={styles.card}>
-                            <View style={styles.progressHeader}>
-                                <View style={styles.progressInfo}>
-                                    <Text style={styles.progressWeek}>
-                                        Hafta {activeProgram.current_week}/
-                                        {activeProgram.total_weeks}
-                                    </Text>
-                                    <Text style={styles.progressPercentage}>
-                                        {progPercent}% Tamamlandı
-                                    </Text>
-                                </View>
-                                <View style={styles.progressCircle}>
-                                    <Text style={styles.progressCircleText}>
-                                        {progPercent}%
-                                    </Text>
-                                </View>
-                            </View>
+                    <View style={styles.sectionContainer}>
+                        <Text style={styles.sectionTitle}>Aktif Program</Text>
 
-                            <View style={styles.progressBarContainer}>
-                                <View
-                                    style={[
-                                        styles.progressBar,
-                                        { width: `${progPercent}%` },
-                                    ]}
-                                />
-                            </View>
+                        {/* --- GÜNCELLEME: HESAPLAMA MANTIĞI --- */}
+                        {(() => {
+                            // Backend farklı isimlendirmeler kullanabilir diye önlem alıyoruz
+                            const total =
+                                activeProgram.total_workouts_count ||
+                                activeProgram.total_workouts ||
+                                0;
+                            const completed =
+                                activeProgram.completed_workouts ||
+                                activeProgram.completed_workouts_count ||
+                                0;
 
-                            <View style={styles.workoutStats}>
-                                <View style={styles.workoutStat}>
-                                    <Ionicons
-                                        name="checkmark-circle"
-                                        size={20}
-                                        color="#4CAF50"
-                                    />
-                                    <Text style={styles.workoutStatText}>
-                                        {activeProgram.completed_workouts}{" "}
-                                        Tamamlandı
-                                    </Text>
-                                </View>
-                                <View style={styles.workoutStat}>
-                                    <Ionicons
-                                        name="time-outline"
-                                        size={20}
-                                        color="#FFA726"
-                                    />
-                                    <Text style={styles.workoutStatText}>
-                                        {activeProgram.remaining_workouts} Kaldı
-                                    </Text>
-                                </View>
-                            </View>
-                        </View>
+                            // Eğer backend 'remaining' yollamazsa biz hesaplarız
+                            const remaining =
+                                activeProgram.remaining_workouts !== undefined
+                                    ? activeProgram.remaining_workouts
+                                    : Math.max(0, total - completed);
+
+                            return (
+                                <LinearGradient
+                                    colors={[COLORS.card, COLORS.cardVariant]}
+                                    style={styles.programCard}
+                                >
+                                    <View style={styles.programHeader}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.programTitle}>
+                                                {activeProgram.title}
+                                            </Text>
+                                            <Text style={styles.programWeek}>
+                                                Hafta{" "}
+                                                {activeProgram.current_week} /{" "}
+                                                {activeProgram.total_weeks}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.percentBadge}>
+                                            <Text style={styles.percentText}>
+                                                %{progPercent}
+                                            </Text>
+                                        </View>
+                                    </View>
+
+                                    {/* Custom Progress Bar */}
+                                    <View style={styles.progressBarBg}>
+                                        <LinearGradient
+                                            colors={[
+                                                COLORS.accent,
+                                                COLORS.secondary,
+                                            ]}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 0 }}
+                                            style={[
+                                                styles.progressBarFill,
+                                                { width: `${progPercent}%` },
+                                            ]}
+                                        />
+                                    </View>
+
+                                    <View style={styles.programFooter}>
+                                        <Text style={styles.footerText}>
+                                            <Ionicons
+                                                name="checkmark-circle-outline"
+                                                size={14}
+                                            />{" "}
+                                            {completed} Tamamlandı
+                                        </Text>
+
+                                        {/* BURASI DÜZELDİ: Hesaplanan 'remaining' değişkenini kullanıyoruz */}
+                                        <Text style={styles.footerText}>
+                                            <Ionicons
+                                                name="hourglass-outline"
+                                                size={14}
+                                            />{" "}
+                                            {remaining} Kaldı
+                                        </Text>
+                                    </View>
+                                </LinearGradient>
+                            );
+                        })()}
                     </View>
                 )}
 
-                {/* Distance Chart */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Haftalık Mesafe</Text>
-                    <View style={styles.card}>
-                        <View style={styles.chartContainer}>
-                            <LineChart
-                                data={{
-                                    labels: chartLabels,
-                                    datasets: [{ data: chartData }],
-                                }}
-                                width={Dimensions.get("window").width - 80}
-                                height={200}
-                                chartConfig={chartConfig}
-                                bezier
-                                style={styles.chart}
-                            />
-                        </View>
+                {/* 3. CHARTS */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>
+                        Haftalık Mesafe (km)
+                    </Text>
+                    <View style={styles.chartCard}>
+                        <LineChart
+                            data={{
+                                labels: chartLabels,
+                                datasets: [{ data: chartData }],
+                            }}
+                            width={width - 40} // Ekran genişliği - padding
+                            height={220}
+                            chartConfig={chartConfig}
+                            bezier
+                            withDots={true}
+                            withInnerLines={true}
+                            withOuterLines={false}
+                            withVerticalLines={false}
+                            style={{ marginVertical: 8, borderRadius: 16 }}
+                        />
                     </View>
                 </View>
 
-                {/* Pace Chart */}
-                <View style={styles.section}>
+                {/* 4. PACE CHART (Secondary Color) */}
+                <View style={styles.sectionContainer}>
                     <Text style={styles.sectionTitle}>
                         Tempo Analizi (dk/km)
                     </Text>
-                    <View style={styles.card}>
-                        <View style={styles.chartContainer}>
-                            <LineChart
-                                data={{
-                                    labels: chartLabels,
-                                    datasets: [
-                                        {
-                                            data: paceHistory,
-                                            color: (opacity = 1) =>
-                                                `rgba(76, 175, 80, ${opacity})`,
-                                        },
-                                    ],
-                                }}
-                                width={Dimensions.get("window").width - 80}
-                                height={200}
-                                chartConfig={{
-                                    ...chartConfig,
-                                    color: (opacity = 1) =>
-                                        `rgba(76, 175, 80, ${opacity})`,
-                                    propsForDots: {
-                                        r: "4",
-                                        strokeWidth: "2",
-                                        stroke: "#4CAF50",
-                                    },
-                                }}
-                                bezier
-                                style={styles.chart}
-                            />
-                        </View>
+                    <View style={styles.chartCard}>
+                        <LineChart
+                            data={{
+                                labels: chartLabels,
+                                datasets: [{ data: paceHistory }],
+                            }}
+                            width={width - 40}
+                            height={220}
+                            chartConfig={{
+                                ...chartConfig,
+                                color: (opacity = 1) => COLORS.success, // Yeşil tonu
+                                fillShadowGradient: COLORS.success,
+                            }}
+                            bezier
+                            withVerticalLines={false}
+                            style={{ marginVertical: 8, borderRadius: 16 }}
+                        />
                     </View>
                 </View>
 
-                {/* Other Stats */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Diğer İstatistikler</Text>
-                    <View style={styles.statsGrid}>
-                        <View style={styles.statCard}>
-                            <Ionicons
-                                name="time"
-                                size={28}
-                                color={COLORS.accent}
-                            />
-                            <Text style={styles.statCardValue}>
-                                {formatTime(summaryStats.total_duration_mins)}
-                            </Text>
-                            <Text style={styles.statCardLabel}>
-                                Toplam Süre
-                            </Text>
-                        </View>
-
-                        <View style={styles.statCard}>
-                            <Ionicons name="flash" size={28} color="#FF6B6B" />
-                            <Text style={styles.statCardValue}>
-                                {summaryStats.current_streak}
-                            </Text>
-                            <Text style={styles.statCardLabel}>
-                                Günlük Seri
-                            </Text>
-                        </View>
-
-                        <View style={styles.statCard}>
-                            <Ionicons name="flame" size={28} color="#FFA726" />
-                            <Text style={styles.statCardValue}>
-                                {summaryStats.calories_burned}
-                            </Text>
-                            <Text style={styles.statCardLabel}>Kalori</Text>
-                        </View>
-
-                        <View style={styles.statCard}>
-                            <Ionicons name="star" size={28} color="#FFD93D" />
-                            <Text style={styles.statCardValue}>
-                                {user?.longest_streak || 0}
-                            </Text>
-                            <Text style={styles.statCardLabel}>
-                                En Uzun Seri
-                            </Text>
-                        </View>
+                {/* 5. SECONDARY STATS ROW */}
+                <View style={styles.statsRowTriple}>
+                    <View style={styles.statCardTriple}>
+                        <Ionicons
+                            name="time-outline"
+                            size={24}
+                            color={COLORS.info}
+                        />
+                        <Text style={styles.statValueTriple}>
+                            {formatTime(summaryStats.total_duration_mins)}
+                        </Text>
+                        <Text style={styles.statLabelTriple}>Toplam Süre</Text>
+                    </View>
+                    <View style={styles.statCardTriple}>
+                        <Ionicons
+                            name="flame-outline"
+                            size={24}
+                            color={COLORS.secondary}
+                        />
+                        <Text style={styles.statValueTriple}>
+                            {summaryStats.calories_burned}
+                        </Text>
+                        <Text style={styles.statLabelTriple}>Kalori</Text>
+                    </View>
+                    <View style={styles.statCardTriple}>
+                        <Ionicons
+                            name="trophy-outline"
+                            size={24}
+                            color={COLORS.warning}
+                        />
+                        <Text style={styles.statValueTriple}>
+                            {user?.longest_streak || 0}
+                        </Text>
+                        <Text style={styles.statLabelTriple}>Max Seri</Text>
                     </View>
                 </View>
 
-                {/* Achievements */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Son Başarılar</Text>
-                    <View style={styles.achievementsContainer}>
-                        {recentAchievements.length > 0 ? (
-                            recentAchievements.map((ach) => (
-                                <View
-                                    key={ach.id}
-                                    style={styles.achievementCard}
-                                >
-                                    <View style={styles.achievementIcon}>
-                                        <Ionicons
-                                            name={
-                                                (ach.icon_name as any) ||
-                                                "trophy"
-                                            }
-                                            size={32}
-                                            color={ach.icon_color || "#FFD93D"}
-                                        />
-                                    </View>
-                                    <View style={styles.achievementContent}>
-                                        <Text style={styles.achievementTitle}>
-                                            {ach.title}
-                                        </Text>
-                                        <Text
-                                            style={
-                                                styles.achievementDescription
-                                            }
-                                        >
-                                            {ach.description}
-                                        </Text>
-                                    </View>
-                                </View>
-                            ))
-                        ) : (
-                            <View style={styles.achievementCard}>
+                {/* 6. ACHIEVEMENTS */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Son Rozetler</Text>
+                    {recentAchievements.length > 0 ? (
+                        recentAchievements.map((ach, index) => (
+                            <View key={index} style={styles.achievementCard}>
                                 <View
                                     style={[
-                                        styles.achievementIcon,
-                                        { backgroundColor: "#333" },
+                                        styles.achIconBox,
+                                        {
+                                            backgroundColor:
+                                                (ach.icon_color ||
+                                                    COLORS.warning) + "20",
+                                        },
                                     ]}
                                 >
                                     <Ionicons
-                                        name="lock-closed"
-                                        size={32}
-                                        color="#666"
+                                        name={ach.icon_name || "trophy"}
+                                        size={24}
+                                        color={ach.icon_color || COLORS.warning}
                                     />
                                 </View>
-                                <View style={styles.achievementContent}>
-                                    <Text
-                                        style={[
-                                            styles.achievementTitle,
-                                            { color: "#888" },
-                                        ]}
-                                    >
-                                        Henüz Başarım Yok
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.achTitle}>
+                                        {ach.title}
                                     </Text>
-                                    <Text style={styles.achievementDescription}>
-                                        Antrenman yaparak rozet kazan!
+                                    <Text style={styles.achDesc}>
+                                        {ach.description}
                                     </Text>
                                 </View>
+                                <Ionicons
+                                    name="chevron-forward"
+                                    size={20}
+                                    color={COLORS.cardBorder}
+                                />
                             </View>
-                        )}
-                    </View>
+                        ))
+                    ) : (
+                        <View style={styles.emptyStateCard}>
+                            <Ionicons
+                                name="lock-closed-outline"
+                                size={32}
+                                color={COLORS.inactive}
+                            />
+                            <Text style={styles.emptyStateText}>
+                                Henüz kazanılmış rozet yok.
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
-                <View style={{ height: 30 }} />
+                <View style={{ height: 50 }} />
             </ScrollView>
         </View>
     );
@@ -435,184 +469,174 @@ const ProgressScreen = () => {
 
 export default ProgressScreen;
 
-// Styles aynen kalabilir
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.background },
     scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 20 },
-    heroSection: {
-        backgroundColor: COLORS.card,
-        paddingHorizontal: 20,
-        paddingVertical: 30,
-        borderRadius: 30,
-        marginBottom: 20,
-    },
-    heroTitle: {
+    scrollContent: { padding: 20, paddingTop: 60 }, // Header için boşluk
+
+    // HEADER
+    header: { marginBottom: 24 },
+    headerTitle: {
         color: COLORS.text,
-        fontSize: 28,
-        fontWeight: "bold",
-        marginBottom: 5,
+        fontSize: 32,
+        fontWeight: "800",
+        letterSpacing: 0.5,
     },
-    heroSubtitle: { color: "#B0B0B0", fontSize: 14, marginBottom: 25 },
-    heroStatsContainer: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        gap: 15,
-    },
-    heroStatCard: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-        borderRadius: 15,
-        padding: 15,
-        alignItems: "center",
-    },
-    heroStatIconContainer: { marginBottom: 10 },
-    heroStatValue: {
-        color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        marginBottom: 5,
-    },
-    heroStatLabel: { color: "#B0B0B0", fontSize: 12 },
-    section: { paddingHorizontal: 20, marginBottom: 25 },
+    headerSubtitle: { color: COLORS.textDim, fontSize: 16, marginTop: 4 },
+
+    // SECTION COMMON
+    sectionContainer: { marginBottom: 24 },
     sectionTitle: {
         color: COLORS.text,
-        fontSize: 22,
-        fontWeight: "600",
-        marginBottom: 15,
-    },
-    card: {
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
-    },
-    progressHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 15,
-    },
-    progressInfo: { flex: 1 },
-    progressWeek: {
-        color: COLORS.text,
         fontSize: 18,
-        fontWeight: "bold",
-        marginBottom: 5,
+        fontWeight: "700",
+        marginBottom: 12,
+        marginLeft: 4,
     },
-    progressPercentage: { color: "#B0B0B0", fontSize: 14 },
-    progressCircle: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: COLORS.background,
-        borderWidth: 4,
-        borderColor: COLORS.accent,
+
+    // STATS GRID (Hero)
+    statsGrid: { flexDirection: "row", gap: 12, marginBottom: 24 },
+    statsColumn: { flex: 1, gap: 12, justifyContent: "space-between" },
+
+    statCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 20,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    statCardLarge: { flex: 1.2, height: 150, justifyContent: "space-between" },
+    statCardSmall: {
+        flex: 1,
+        backgroundColor: COLORS.card,
+        borderRadius: 16,
+        padding: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+
+    statHeaderRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    iconBox: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
     },
-    progressCircleText: {
-        color: COLORS.accent,
-        fontSize: 16,
-        fontWeight: "bold",
+    statLabel: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "600",
+        textTransform: "uppercase",
     },
-    progressBarContainer: {
+    statValueLarge: { color: COLORS.text, fontSize: 36, fontWeight: "900" },
+    unitText: { color: COLORS.accent, fontSize: 18, fontWeight: "600" },
+
+    statValueSmall: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
+    statLabelSmall: { color: COLORS.textDim, fontSize: 12 },
+
+    // PROGRAM CARD
+    programCard: {
+        borderRadius: 20,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    programHeader: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        marginBottom: 15,
+    },
+    programTitle: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
+    programWeek: { color: COLORS.textDim, fontSize: 13, marginTop: 2 },
+    percentBadge: {
+        backgroundColor: COLORS.background,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    percentText: { color: COLORS.accent, fontWeight: "bold", fontSize: 12 },
+
+    progressBarBg: {
         height: 8,
         backgroundColor: COLORS.background,
         borderRadius: 4,
         overflow: "hidden",
         marginBottom: 15,
     },
-    progressBar: {
-        height: "100%",
-        backgroundColor: COLORS.accent,
-        borderRadius: 4,
-    },
-    workoutStats: {
+    progressBarFill: { height: "100%", borderRadius: 4 },
+
+    programFooter: {
         flexDirection: "row",
-        justifyContent: "space-around",
-        paddingTop: 15,
-        borderTopWidth: 1,
-        borderTopColor: "rgba(255, 255, 255, 0.1)",
+        justifyContent: "space-between",
+        marginTop: 5,
     },
-    workoutStat: { flexDirection: "row", alignItems: "center", gap: 8 },
-    workoutStatText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-    chartContainer: { alignItems: "center" },
-    chartTitle: {
-        color: "#B0B0B0",
-        fontSize: 14,
-        marginBottom: 15,
-        textAlign: "center",
+    footerText: { color: COLORS.textDim, fontSize: 12, fontWeight: "600" },
+
+    // CHARTS
+    chartCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 20,
+        padding: 10, // Chart padding
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        overflow: "hidden", // Taşmaları engelle
     },
-    chart: { borderRadius: 16 },
-    paceStats: {
-        flexDirection: "row",
-        justifyContent: "space-around",
-        marginBottom: 25,
-    },
-    paceStatItem: { flex: 1, alignItems: "center" },
-    paceStatLabel: {
-        color: "#B0B0B0",
-        fontSize: 12,
-        marginTop: 8,
-        marginBottom: 8,
-    },
-    paceStatValue: { color: COLORS.text, fontSize: 28, fontWeight: "bold" },
-    paceStatUnit: { color: "#B0B0B0", fontSize: 12, marginTop: 4 },
-    statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 15 },
-    statCard: {
+
+    // TRIPLE STATS ROW
+    statsRowTriple: { flexDirection: "row", gap: 10, marginBottom: 24 },
+    statCardTriple: {
         flex: 1,
-        minWidth: "45%",
         backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 20,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
-    },
-    statCardValue: {
-        color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        marginTop: 10,
-        marginBottom: 5,
-    },
-    statCardLabel: { color: "#B0B0B0", fontSize: 12, textAlign: "center" },
-    achievementsContainer: { gap: 12 },
-    achievementCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
+        borderRadius: 16,
         padding: 15,
-        flexDirection: "row",
         alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    achievementIcon: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        backgroundColor: COLORS.background,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 15,
-    },
-    achievementContent: { flex: 1 },
-    achievementTitle: {
+    statValueTriple: {
         color: COLORS.text,
         fontSize: 16,
         fontWeight: "bold",
-        marginBottom: 4,
+        marginTop: 8,
     },
-    achievementDescription: { color: "#B0B0B0", fontSize: 13 },
+    statLabelTriple: { color: COLORS.textDim, fontSize: 11, marginTop: 2 },
+
+    // ACHIEVEMENTS
+    achievementCard: {
+        backgroundColor: COLORS.card,
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 16,
+        borderRadius: 16,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        gap: 15,
+    },
+    achIconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    achTitle: { color: COLORS.text, fontSize: 15, fontWeight: "bold" },
+    achDesc: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
+
+    emptyStateCard: {
+        padding: 20,
+        backgroundColor: COLORS.card,
+        borderRadius: 16,
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        borderStyle: "dashed",
+    },
+    emptyStateText: { color: COLORS.textDim, marginTop: 8 },
 });

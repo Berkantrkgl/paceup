@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Link, router, useFocusEffect } from "expo-router";
-import React, { useCallback, useContext, useState } from "react";
+// useMemo'yu import etmeyi unutma
+import { LinearGradient } from "expo-linear-gradient";
+import React, { useCallback, useContext, useMemo, useState } from "react";
 import {
     ActivityIndicator,
+    Dimensions,
     ImageBackground,
     Pressable,
     RefreshControl,
@@ -14,52 +17,71 @@ import {
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
+import { API_URL } from "@/constants/Config";
+// Yeni oluşturduğumuz içerik dosyasını import et
+import { HEADER_IMAGES, MOTIVATION_QUOTES } from "@/constants/Content";
 import { AuthContext } from "@/utils/authContext";
 
-// API URL
-const API_URL = "http://127.0.0.1:8000/api";
+const { width } = Dimensions.get("window");
 
-// Workout Type
+// --- TYPES ---
+type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
+
 type Workout = {
     id: string;
     title: string;
+    workout_type: WorkoutTypeEnum;
     scheduled_date: string;
-    scheduled_time: string;
-    workout_type: string;
     planned_duration: number;
-    status: string;
+    planned_distance: number;
+    status: "scheduled" | "completed" | "missed" | "skipped";
+    is_completed: boolean;
 };
 
-// Helper to get style based on type
-const getWorkoutTypeStyle = (type: string) => {
+// --- HELPERS ---
+const getWorkoutTypeStyle = (type: WorkoutTypeEnum) => {
     switch (type) {
         case "tempo":
             return {
-                icon: "speedometer-outline",
-                color: "#FF6B6B",
-                name: "Tempo",
+                icon: "speedometer",
+                color: COLORS.danger,
+                name: "Tempo Koşusu",
+                bgGradient: [COLORS.danger + "40", COLORS.card],
             };
         case "easy":
-            return { icon: "walk-outline", color: "#4ECDC4", name: "Hafif" };
+            return {
+                icon: "leaf",
+                color: COLORS.success,
+                name: "Hafif Koşu",
+                bgGradient: [COLORS.success + "40", COLORS.card],
+            };
         case "interval":
             return {
-                icon: "flash-outline",
-                color: "#FFD93D",
+                icon: "flash",
+                color: COLORS.warning,
                 name: "İnterval",
+                bgGradient: [COLORS.warning + "40", COLORS.card],
             };
         case "long":
             return {
-                icon: "trending-up-outline",
-                color: "#A569BD",
-                name: "Uzun",
+                icon: "infinite",
+                color: COLORS.info,
+                name: "Uzun Koşu",
+                bgGradient: [COLORS.info + "40", COLORS.card],
             };
         case "rest":
-            return { icon: "moon-outline", color: "#95A5A6", name: "Dinlenme" };
+            return {
+                icon: "moon",
+                color: COLORS.textDim,
+                name: "Dinlenme",
+                bgGradient: [COLORS.cardVariant, COLORS.card],
+            };
         default:
             return {
-                icon: "fitness-outline",
-                color: COLORS.accent,
+                icon: "fitness",
+                color: COLORS.secondary,
                 name: "Koşu",
+                bgGradient: [COLORS.secondary + "40", COLORS.card],
             };
     }
 };
@@ -69,7 +91,22 @@ const HomeScreen = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [nextWorkout, setNextWorkout] = useState<Workout | null>(null);
 
-    // Fetch Next Workout
+    // --- RANDOM CONTENT LOGIC ---
+    // useMemo kullanarak sadece component ilk yüklendiğinde rastgele seçim yapmasını sağlıyoruz.
+    // Her render'da değişmemesi için bu önemli.
+    const randomQuote = useMemo(() => {
+        const randomIndex = Math.floor(
+            Math.random() * MOTIVATION_QUOTES.length
+        );
+        return MOTIVATION_QUOTES[randomIndex];
+    }, []);
+
+    const randomImage = useMemo(() => {
+        const randomIndex = Math.floor(Math.random() * HEADER_IMAGES.length);
+        return HEADER_IMAGES[randomIndex];
+    }, []);
+
+    // --- DATA FETCHING ---
     const fetchNextWorkout = async () => {
         if (!token) return;
         try {
@@ -84,24 +121,21 @@ const HomeScreen = () => {
 
                 const upcomingWorkouts = workouts.filter((w) => {
                     const wDate = new Date(w.scheduled_date);
-                    return wDate >= today && w.status !== "completed";
+                    return (
+                        wDate >= today &&
+                        !w.is_completed &&
+                        w.status !== "completed"
+                    );
                 });
 
-                upcomingWorkouts.sort((a, b) => {
-                    const dateA = new Date(
-                        `${a.scheduled_date}T${a.scheduled_time || "00:00"}`
-                    );
-                    const dateB = new Date(
-                        `${b.scheduled_date}T${b.scheduled_time || "00:00"}`
-                    );
-                    return dateA.getTime() - dateB.getTime();
-                });
-
-                if (upcomingWorkouts.length > 0) {
-                    setNextWorkout(upcomingWorkouts[0]);
-                } else {
-                    setNextWorkout(null);
-                }
+                upcomingWorkouts.sort(
+                    (a, b) =>
+                        new Date(a.scheduled_date).getTime() -
+                        new Date(b.scheduled_date).getTime()
+                );
+                setNextWorkout(
+                    upcomingWorkouts.length > 0 ? upcomingWorkouts[0] : null
+                );
             }
         } catch (error) {
             console.log("Workout fetch error:", error);
@@ -111,75 +145,61 @@ const HomeScreen = () => {
     useFocusEffect(
         useCallback(() => {
             fetchNextWorkout();
+            refreshUserData();
         }, [token])
     );
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        await refreshUserData();
-        await fetchNextWorkout();
+        await Promise.all([refreshUserData(), fetchNextWorkout()]);
         setRefreshing(false);
     }, []);
 
-    // Navigation Handler
-    const handleNextWorkoutPress = () => {
-        if (!nextWorkout) {
-            // Antrenman yoksa bile takvimi açsın, boş halini görsün
-            router.push("/calendar_modal");
-            return;
-        }
-
-        router.push({
-            pathname: "/calendar_modal", // ProtectedLayout içinde tanımlı isim
-            params: { workoutId: nextWorkout.id },
-        });
-    };
-
-    // Helpers
     const formatWorkoutDate = (dateString: string) => {
         const date = new Date(dateString);
-        const day = date.getDate();
-        const month = date
-            .toLocaleDateString("tr-TR", { month: "short" })
-            .toUpperCase();
-        return { day, month };
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const isToday = date.getTime() === today.getTime();
+
+        return {
+            day: date.getDate(),
+            month: date
+                .toLocaleDateString("tr-TR", { month: "short" })
+                .toUpperCase(),
+            isToday: isToday,
+        };
     };
 
-    const formatWorkoutTime = (timeString: string) => {
-        if (!timeString) return "Tüm Gün";
-        return timeString.slice(0, 5);
-    };
-
-    // Dynamic Logic
     if (!user) {
         return (
-            <View
-                style={[
-                    styles.mainContainer,
-                    { justifyContent: "center", alignItems: "center" },
-                ]}
-            >
+            <View style={[styles.mainContainer, styles.centered]}>
                 <ActivityIndicator size="large" color={COLORS.accent} />
             </View>
         );
     }
 
-    const formattedName = user.first_name
-        ? user.first_name.charAt(0).toUpperCase() + user.first_name.slice(1)
-        : user.username;
-
-    const hasExistingPlan = (user.total_workouts || 0) > 0;
+    // --- UI VARS ---
+    const formattedName = user.first_name ? user.first_name : user.username;
     const totalWorkouts = user.total_workouts || 0;
     const totalDistance = user.total_distance?.toFixed(1) || "0.0";
     const streak = user.current_streak || 0;
 
+    const hasExistingPlan = totalWorkouts > 0 || nextWorkout !== null;
+
     const workoutStyle = nextWorkout
         ? getWorkoutTypeStyle(nextWorkout.workout_type)
+        : null;
+    const dateInfo = nextWorkout
+        ? formatWorkoutDate(nextWorkout.scheduled_date)
         : null;
 
     return (
         <View style={styles.mainContainer}>
-            <StatusBar barStyle="light-content" />
+            <StatusBar
+                barStyle="light-content"
+                translucent
+                backgroundColor="transparent"
+            />
 
             <ScrollView
                 style={styles.scrollView}
@@ -191,347 +211,402 @@ const HomeScreen = () => {
                         onRefresh={onRefresh}
                         tintColor={COLORS.accent}
                         colors={[COLORS.accent]}
+                        progressViewOffset={StatusBar.currentHeight}
                     />
                 }
             >
-                {/* HEADER */}
-                <View style={styles.headerContainer}>
+                {/* --- HERO HEADER (FULL WIDTH & DYNAMIC) --- */}
+                <View style={styles.heroContainer}>
                     <ImageBackground
-                        source={require("../../../../../assets/images/home/banner-image.jpeg")}
-                        style={styles.headerImage}
-                        imageStyle={{ borderRadius: 30 }}
+                        source={randomImage} // <-- ARTIK RASTGELE RESİM
+                        style={styles.heroImage}
                     >
-                        <View style={styles.fullImageOverlay}>
-                            <View style={styles.textContainer}>
-                                <Text style={styles.headerTitle}>
-                                    Hoş Geldin, {formattedName}!
+                        <LinearGradient
+                            colors={["transparent", COLORS.background]}
+                            style={styles.heroGradient}
+                        >
+                            <View style={styles.heroTextContainer}>
+                                <Text style={styles.heroGreeting}>
+                                    Selam, {formattedName}
                                 </Text>
-                                <Text style={styles.headerSubtitle}>
-                                    Bugün hedeflerini parçalamaya hazır mısın?
+                                {/* --- RASTGELE MOTİVASYON SÖZÜ --- */}
+                                <Text style={styles.heroMotivation}>
+                                    {randomQuote}
                                 </Text>
                             </View>
-                        </View>
+                        </LinearGradient>
                     </ImageBackground>
                 </View>
 
-                {/* MAIN ACTION SECTION */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
-                        {hasExistingPlan ? "Genel Durum" : "Antrenman Planı"}
-                    </Text>
-
+                <View style={styles.contentOverlappingContainer}>
+                    {/* --- PLAN YOKSA --- */}
                     {!hasExistingPlan ? (
-                        <View style={styles.chatbotCardSpecial}>
-                            <View style={styles.cardIconContainer}>
-                                <View style={styles.iconGradientCircle}>
-                                    <Ionicons
-                                        name="flash"
-                                        size={36}
-                                        color="white"
-                                    />
-                                </View>
-                            </View>
-                            <Text style={styles.cardTitleSpecial}>
-                                Yapay Zeka Koçun Seni Bekliyor!
-                            </Text>
-                            <Text style={styles.cardDescriptionSpecial}>
-                                Henüz bir antrenman kaydın yok. Sana özel koşu
-                                programını oluşturmak için sadece birkaç soru!
-                            </Text>
-                            <Link href={"/chatbot"} asChild>
-                                <Pressable style={styles.primaryButtonSpecial}>
-                                    <View style={styles.buttonContent}>
-                                        <Ionicons
-                                            name="chatbubbles"
-                                            size={22}
-                                            color="white"
-                                            style={{ marginRight: 8 }}
-                                        />
-                                        <Text
-                                            style={
-                                                styles.primaryButtonTextSpecial
-                                            }
-                                        >
-                                            İlk Planımı Oluştur
-                                        </Text>
-                                    </View>
-                                    <Ionicons
-                                        name="arrow-forward"
-                                        size={22}
-                                        color="white"
-                                    />
-                                </Pressable>
-                            </Link>
-                        </View>
-                    ) : (
-                        <View style={styles.progressContainer}>
-                            <Link href={"/progress"} asChild push>
-                                <Pressable style={styles.progressCard}>
-                                    <View style={styles.progressHeader}>
-                                        <Ionicons
-                                            name="fitness"
-                                            size={24}
-                                            color={COLORS.accent}
-                                        />
-                                        <Text style={styles.progressLabel}>
-                                            Antrenmanlar
-                                        </Text>
-                                    </View>
-                                    <View style={styles.circularProgress}>
-                                        <View style={styles.progressCircle}>
-                                            <Text style={styles.percentageText}>
-                                                {totalWorkouts}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Text style={styles.progressDetail}>
-                                        Toplam Tamamlanan
-                                    </Text>
-                                </Pressable>
-                            </Link>
-
-                            <Link href={"/progress"} asChild push>
-                                <Pressable style={styles.progressCard}>
-                                    <View style={styles.statsContainer}>
-                                        <View style={styles.statItem}>
-                                            <Ionicons
-                                                name="map"
-                                                size={28}
-                                                color={COLORS.accent}
-                                            />
-                                            <View
-                                                style={styles.statTextContainer}
-                                            >
-                                                <Text style={styles.statValue}>
-                                                    {totalDistance} km
-                                                </Text>
-                                                <Text style={styles.statLabel}>
-                                                    Toplam Mesafe
-                                                </Text>
-                                            </View>
-                                        </View>
-                                        <View style={styles.divider} />
-                                        <View style={styles.statItem}>
-                                            <Ionicons
-                                                name="flame"
-                                                size={28}
-                                                color="#FFA500"
-                                            />
-                                            <View
-                                                style={styles.statTextContainer}
-                                            >
-                                                <Text style={styles.statValue}>
-                                                    {streak} gün
-                                                </Text>
-                                                <Text style={styles.statLabel}>
-                                                    Aktif Seri
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    </View>
-                                </Pressable>
-                            </Link>
-                        </View>
-                    )}
-                </View>
-
-                {/* UPCOMING WORKOUT SECTION */}
-                <Pressable
-                    style={styles.section}
-                    onPress={handleNextWorkoutPress}
-                >
-                    <View
-                        style={{
-                            flexDirection: "row",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 15,
-                        }}
-                    >
-                        <Text style={styles.sectionTitle}>
-                            Yaklaşan Antrenman
-                        </Text>
-                        <Pressable
-                            onPress={() =>
-                                router.push("/(protected)/calendar_modal")
-                            }
-                        >
-                            <Ionicons
-                                name="calendar"
-                                size={22}
-                                color={COLORS.accent}
-                            />
-                        </Pressable>
-                    </View>
-
-                    {nextWorkout && workoutStyle ? (
-                        <View
-                            style={[
-                                styles.infoCard,
-                                { flexDirection: "row", alignItems: "center" },
-                            ]}
-                        >
-                            {/* Date Box */}
-                            <View style={styles.dateBox}>
-                                <Text style={styles.dateText}>
-                                    {
-                                        formatWorkoutDate(
-                                            nextWorkout.scheduled_date
-                                        ).day
-                                    }
-                                </Text>
-                                <Text style={styles.monthText}>
-                                    {
-                                        formatWorkoutDate(
-                                            nextWorkout.scheduled_date
-                                        ).month
-                                    }
-                                </Text>
-                            </View>
-
-                            {/* Info */}
-                            <View style={{ marginLeft: 15, flex: 1 }}>
-                                <View
-                                    style={{
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        marginBottom: 4,
-                                    }}
-                                >
-                                    <View
-                                        style={{
-                                            backgroundColor:
-                                                workoutStyle.color + "20",
-                                            paddingHorizontal: 8,
-                                            paddingVertical: 2,
-                                            borderRadius: 4,
-                                            marginRight: 6,
-                                        }}
-                                    >
-                                        <Text
-                                            style={{
-                                                color: workoutStyle.color,
-                                                fontSize: 10,
-                                                fontWeight: "bold",
-                                            }}
-                                        >
-                                            {workoutStyle.name}
-                                        </Text>
-                                    </View>
-                                    <Text style={styles.workoutTime}>
-                                        {formatWorkoutTime(
-                                            nextWorkout.scheduled_time
-                                        )}
-                                    </Text>
-                                </View>
-
-                                <Text
-                                    style={styles.workoutTitle}
-                                    numberOfLines={1}
-                                >
-                                    {nextWorkout.title}
-                                </Text>
-
-                                <View
-                                    style={{
-                                        flexDirection: "row",
-                                        alignItems: "center",
-                                        marginTop: 4,
-                                    }}
-                                >
-                                    <Ionicons
-                                        name="time-outline"
-                                        size={12}
-                                        color="#B0B0B0"
-                                        style={{ marginRight: 4 }}
-                                    />
-                                    <Text
-                                        style={{
-                                            color: "#B0B0B0",
-                                            fontSize: 12,
-                                        }}
-                                    >
-                                        {nextWorkout.planned_duration} dk
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* Icon */}
-                            <View
-                                style={{
-                                    backgroundColor: COLORS.background,
-                                    padding: 10,
-                                    borderRadius: 20,
-                                }}
-                            >
+                        <View style={styles.noPlanContainer}>
+                            <View style={styles.noPlanIconCircle}>
                                 <Ionicons
-                                    name={workoutStyle.icon as any}
-                                    size={24}
-                                    color={workoutStyle.color}
+                                    name="footsteps"
+                                    size={48}
+                                    color={COLORS.accent}
                                 />
                             </View>
+                            <Text style={styles.noPlanTitle}>İlk Adımı At</Text>
+                            <Text style={styles.noPlanDesc}>
+                                Henüz aktif bir koşu planın görünmüyor. Yapay
+                                zeka koçunla tanış ve hedefine uygun sana özel
+                                programı hemen oluştur.
+                            </Text>
+
+                            <Link href={"/chatbot"} asChild>
+                                <Pressable style={styles.createPlanButtonLarge}>
+                                    <LinearGradient
+                                        colors={[
+                                            COLORS.accent,
+                                            COLORS.secondary,
+                                        ]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={styles.createPlanGradient}
+                                    >
+                                        <Text
+                                            style={styles.createPlanButtonText}
+                                        >
+                                            AI ile Plan Oluştur
+                                        </Text>
+                                        <Ionicons
+                                            name="arrow-forward-circle"
+                                            size={28}
+                                            color={COLORS.white}
+                                        />
+                                    </LinearGradient>
+                                </Pressable>
+                            </Link>
+                            <View style={styles.emptyStatsRow}>
+                                <Text style={styles.emptyStatsText}>
+                                    0 km Mesafe • 0 Antrenman
+                                </Text>
+                            </View>
                         </View>
                     ) : (
-                        <View
-                            style={[
-                                styles.infoCard,
-                                {
-                                    alignItems: "center",
-                                    paddingVertical: 25,
-                                    justifyContent: "center",
-                                },
-                            ]}
-                        >
-                            <Ionicons
-                                name="bed-outline"
-                                size={32}
-                                color={COLORS.subText}
-                                style={{ marginBottom: 8 }}
-                            />
-                            <Text
-                                style={{ color: COLORS.subText, fontSize: 16 }}
-                            >
-                                Yaklaşan antrenman yok.
-                            </Text>
-                            <Text
-                                style={{
-                                    color: COLORS.subText,
-                                    fontSize: 12,
-                                    marginTop: 4,
-                                }}
-                            >
-                                Yeni bir plan oluşturabilirsin.
-                            </Text>
-                        </View>
+                        /* --- PLAN VARSA --- */
+                        <>
+                            {/* FLOATING STATS ROW */}
+                            <View style={styles.floatingStatsContainer}>
+                                {/* Distance (SOL) */}
+                                <Link href={"/progress"} asChild push>
+                                    <Pressable
+                                        style={[
+                                            styles.statCard,
+                                            styles.statCardMain,
+                                        ]}
+                                    >
+                                        <View style={styles.statIconRow}>
+                                            <Ionicons
+                                                name="map"
+                                                size={20}
+                                                color={COLORS.accent}
+                                                style={styles.statIcon}
+                                            />
+                                            <Text style={styles.statLabelMain}>
+                                                Toplam Mesafe
+                                            </Text>
+                                        </View>
+                                        <Text style={styles.statValueMain}>
+                                            {totalDistance}{" "}
+                                            <Text style={styles.statUnitMain}>
+                                                km
+                                            </Text>
+                                        </Text>
+                                    </Pressable>
+                                </Link>
+
+                                {/* SAĞ SÜTUN (FIXED) */}
+                                <View style={styles.statsColumnRight}>
+                                    <Link href={"/progress"} asChild push>
+                                        <Pressable style={styles.statCardSmall}>
+                                            <View
+                                                style={[
+                                                    styles.iconBoxSmall,
+                                                    {
+                                                        backgroundColor:
+                                                            COLORS.secondary +
+                                                            "20",
+                                                    },
+                                                ]}
+                                            >
+                                                <Ionicons
+                                                    name="fitness"
+                                                    size={18}
+                                                    color={COLORS.secondary}
+                                                />
+                                            </View>
+                                            <View>
+                                                <Text
+                                                    style={
+                                                        styles.statValueSmall
+                                                    }
+                                                >
+                                                    {totalWorkouts}
+                                                </Text>
+                                                <Text
+                                                    style={
+                                                        styles.statLabelSmall
+                                                    }
+                                                >
+                                                    Antrenman
+                                                </Text>
+                                            </View>
+                                        </Pressable>
+                                    </Link>
+
+                                    <Link href={"/progress"} asChild push>
+                                        <Pressable style={styles.statCardSmall}>
+                                            <View
+                                                style={[
+                                                    styles.iconBoxSmall,
+                                                    {
+                                                        backgroundColor:
+                                                            COLORS.warning +
+                                                            "20",
+                                                    },
+                                                ]}
+                                            >
+                                                <Ionicons
+                                                    name="flame"
+                                                    size={18}
+                                                    color={COLORS.warning}
+                                                />
+                                            </View>
+                                            <View>
+                                                <Text
+                                                    style={
+                                                        styles.statValueSmall
+                                                    }
+                                                >
+                                                    {streak} Gün
+                                                </Text>
+                                                <Text
+                                                    style={
+                                                        styles.statLabelSmall
+                                                    }
+                                                >
+                                                    Seri
+                                                </Text>
+                                            </View>
+                                        </Pressable>
+                                    </Link>
+                                </View>
+                            </View>
+
+                            {/* NEXT WORKOUT TICKET */}
+                            <View style={styles.sectionContainer}>
+                                <Text style={styles.sectionTitle}>
+                                    Sıradaki Hedefin
+                                </Text>
+                                <Pressable
+                                    onPress={() =>
+                                        router.push(
+                                            nextWorkout
+                                                ? {
+                                                      pathname:
+                                                          "/calendar_modal",
+                                                      params: {
+                                                          workoutId:
+                                                              nextWorkout.id,
+                                                      },
+                                                  }
+                                                : "/calendar_modal"
+                                        )
+                                    }
+                                >
+                                    {nextWorkout && workoutStyle && dateInfo ? (
+                                        <LinearGradient
+                                            colors={
+                                                workoutStyle.bgGradient as any
+                                            }
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 1 }}
+                                            style={styles.workoutTicket}
+                                        >
+                                            <View style={styles.ticketLeft}>
+                                                <View
+                                                    style={[
+                                                        styles.ticketDateBox,
+                                                        dateInfo.isToday &&
+                                                            styles.ticketDateBoxToday,
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        style={[
+                                                            styles.ticketDay,
+                                                            dateInfo.isToday && {
+                                                                color: COLORS.background,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        {dateInfo.day}
+                                                    </Text>
+                                                    <Text
+                                                        style={[
+                                                            styles.ticketMonth,
+                                                            dateInfo.isToday && {
+                                                                color: COLORS.background,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        {dateInfo.isToday
+                                                            ? "BUGÜN"
+                                                            : dateInfo.month}
+                                                    </Text>
+                                                </View>
+                                                <View
+                                                    style={styles.ticketIconBox}
+                                                >
+                                                    <Ionicons
+                                                        name={
+                                                            workoutStyle.icon as any
+                                                        }
+                                                        size={24}
+                                                        color={
+                                                            workoutStyle.color
+                                                        }
+                                                    />
+                                                </View>
+                                            </View>
+
+                                            <View style={styles.ticketContent}>
+                                                <Text
+                                                    style={[
+                                                        styles.ticketType,
+                                                        {
+                                                            color: workoutStyle.color,
+                                                        },
+                                                    ]}
+                                                >
+                                                    {workoutStyle.name}
+                                                </Text>
+                                                <Text
+                                                    style={styles.ticketTitle}
+                                                    numberOfLines={2}
+                                                >
+                                                    {nextWorkout.title}
+                                                </Text>
+                                                <View
+                                                    style={styles.ticketMetaRow}
+                                                >
+                                                    <View
+                                                        style={
+                                                            styles.ticketMetaItem
+                                                        }
+                                                    >
+                                                        <Ionicons
+                                                            name="time-outline"
+                                                            size={14}
+                                                            color={
+                                                                COLORS.textDim
+                                                            }
+                                                        />
+                                                        <Text
+                                                            style={
+                                                                styles.ticketMetaText
+                                                            }
+                                                        >
+                                                            {
+                                                                nextWorkout.planned_duration
+                                                            }{" "}
+                                                            dk
+                                                        </Text>
+                                                    </View>
+                                                    {nextWorkout.planned_distance >
+                                                        0 && (
+                                                        <View
+                                                            style={
+                                                                styles.ticketMetaItem
+                                                            }
+                                                        >
+                                                            <Ionicons
+                                                                name="location-outline"
+                                                                size={14}
+                                                                color={
+                                                                    COLORS.textDim
+                                                                }
+                                                            />
+                                                            <Text
+                                                                style={
+                                                                    styles.ticketMetaText
+                                                                }
+                                                            >
+                                                                {
+                                                                    nextWorkout.planned_distance
+                                                                }{" "}
+                                                                km
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            </View>
+                                            <Ionicons
+                                                name="chevron-forward"
+                                                size={24}
+                                                color={COLORS.cardBorder}
+                                                style={{ alignSelf: "center" }}
+                                            />
+                                        </LinearGradient>
+                                    ) : (
+                                        <View style={styles.emptyWorkoutTicket}>
+                                            <Ionicons
+                                                name="calendar-clear-outline"
+                                                size={32}
+                                                color={COLORS.textDim}
+                                            />
+                                            <Text
+                                                style={styles.emptyTicketText}
+                                            >
+                                                Yaklaşan koşu planı yok.
+                                            </Text>
+                                            <Text
+                                                style={
+                                                    styles.emptyTicketSubText
+                                                }
+                                            >
+                                                Takvimden yeni bir antrenman
+                                                ekleyebilirsin.
+                                            </Text>
+                                        </View>
+                                    )}
+                                </Pressable>
+                            </View>
+
+                            {/* QUICK LINKS */}
+                            <View style={styles.quickLinksRow}>
+                                <Link href={"/plans"} asChild push>
+                                    <Pressable style={styles.quickLinkButton}>
+                                        <Ionicons
+                                            name="list-outline"
+                                            size={22}
+                                            color={COLORS.textDim}
+                                        />
+                                        <Text style={styles.quickLinkText}>
+                                            Tüm Planlar
+                                        </Text>
+                                    </Pressable>
+                                </Link>
+                                <Link href={"/progress"} asChild push>
+                                    <Pressable style={styles.quickLinkButton}>
+                                        <Ionicons
+                                            name="stats-chart-outline"
+                                            size={22}
+                                            color={COLORS.textDim}
+                                        />
+                                        <Text style={styles.quickLinkText}>
+                                            Detaylı Analiz
+                                        </Text>
+                                    </Pressable>
+                                </Link>
+                            </View>
+                        </>
                     )}
-                </Pressable>
-
-                {/* GRID BUTTONS */}
-                <View style={[styles.gridContainer, { marginTop: 10 }]}>
-                    <Link href={"/progress"} asChild push>
-                        <Pressable style={styles.secondaryButton}>
-                            <Ionicons
-                                name="stats-chart"
-                                size={32}
-                                color="white"
-                            />
-                            <Text style={styles.secondaryButtonText}>
-                                İLERLEMEM
-                            </Text>
-                        </Pressable>
-                    </Link>
-
-                    <Link href={"/plans"} asChild push>
-                        <Pressable style={styles.secondaryButton}>
-                            <Ionicons name="list" size={32} color="white" />
-                            <Text style={styles.secondaryButtonText}>
-                                PLANLARIM
-                            </Text>
-                        </Pressable>
-                    </Link>
                 </View>
-
-                <View style={{ height: 50 }} />
+                <View style={{ height: 100 }} />
             </ScrollView>
         </View>
     );
@@ -539,259 +614,359 @@ const HomeScreen = () => {
 
 export default HomeScreen;
 
-// Styles remain the same (Use previous styles if needed, I'm omitting for brevity as requested)
+// --- STYLING (THEMED) ---
 const styles = StyleSheet.create({
     mainContainer: {
         flex: 1,
         backgroundColor: COLORS.background,
     },
+    centered: {
+        justifyContent: "center",
+        alignItems: "center",
+    },
     scrollView: {
         flex: 1,
     },
     scrollContent: {
-        paddingBottom: 20,
-    },
-    headerContainer: {
-        height: 300,
-        width: "100%",
-        marginBottom: 20,
-    },
-    headerImage: {
-        flex: 1,
-    },
-    fullImageOverlay: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.4)",
-        justifyContent: "flex-end",
-        borderRadius: 30,
-    },
-    textContainer: {
-        padding: 20,
         paddingBottom: 40,
     },
-    headerTitle: {
-        color: "white",
-        fontSize: 40,
-        fontWeight: "bold",
-    },
-    headerSubtitle: {
-        color: COLORS.text,
-        fontSize: 20,
-        marginTop: 5,
-        opacity: 0.9,
-    },
-    section: {
-        paddingHorizontal: 20,
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        color: COLORS.text,
-        fontSize: 28,
-        fontWeight: "600",
-        marginBottom: 14,
-    },
-    chatbotCardSpecial: {
+
+    // HERO HEADER
+    heroContainer: {
+        height: 320,
+        width: width,
         backgroundColor: COLORS.card,
-        borderRadius: 20,
-        padding: 25,
-        borderWidth: 2,
-        borderColor: COLORS.accent,
-        shadowColor: COLORS.accent,
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        elevation: 10,
     },
-    cardIconContainer: {
-        alignItems: "center",
-        marginBottom: 15,
-    },
-    iconGradientCircle: {
-        backgroundColor: COLORS.accent,
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: COLORS.accent,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    cardTitleSpecial: {
-        color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        marginBottom: 8,
-        textAlign: "center",
-    },
-    cardDescriptionSpecial: {
-        color: "#B0B0B0",
-        fontSize: 15,
-        marginBottom: 20,
-        lineHeight: 22,
-        textAlign: "center",
-    },
-    primaryButtonSpecial: {
-        backgroundColor: COLORS.accent,
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderRadius: 12,
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 15,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 6,
-    },
-    buttonContent: {
-        flexDirection: "row",
-        alignItems: "center",
-    },
-    primaryButtonTextSpecial: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold",
-    },
-    progressContainer: {
-        flexDirection: "row",
-        gap: 15,
-    },
-    progressCard: {
+    heroImage: {
         flex: 1,
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 18,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
+        justifyContent: "flex-end",
     },
-    progressHeader: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 15,
+    heroGradient: {
+        height: "100%",
+        justifyContent: "flex-end",
+        paddingHorizontal: 20,
+        paddingBottom: 50,
     },
-    progressLabel: {
-        color: COLORS.text,
-        fontSize: 14,
+    heroTextContainer: {
+        marginBottom: 20,
+    },
+    heroGreeting: {
+        color: COLORS.white,
+        fontSize: 34,
+        fontWeight: "800",
+        letterSpacing: 0.5,
+        textShadowColor: "rgba(0, 0, 0, 0.3)",
+        textShadowOffset: { width: -1, height: 1 },
+        textShadowRadius: 10,
+    },
+    heroMotivation: {
+        color: COLORS.textDim, // Biraz daha yumuşak renk
+        fontSize: 16,
         fontWeight: "600",
+        marginTop: 8,
+        fontStyle: "italic", // Alıntı olduğu için italik güzel durur
+        textShadowColor: "rgba(0, 0, 0, 0.5)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
     },
-    circularProgress: {
+
+    // CONTENT CONTAINER
+    contentOverlappingContainer: {
+        paddingHorizontal: 20,
+        marginTop: -40,
+        zIndex: 10,
+    },
+
+    // --- NO PLAN STATE ---
+    noPlanContainer: {
+        backgroundColor: COLORS.card,
+        borderRadius: 24,
+        padding: 30,
         alignItems: "center",
-        justifyContent: "center",
-        marginVertical: 10,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+        elevation: 5,
     },
-    progressCircle: {
+    noPlanIconCircle: {
         width: 80,
         height: 80,
         borderRadius: 40,
         backgroundColor: COLORS.background,
-        borderWidth: 6,
-        borderColor: COLORS.accent,
         justifyContent: "center",
         alignItems: "center",
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    percentageText: {
-        color: COLORS.accent,
-        fontSize: 22,
+    noPlanTitle: {
+        color: COLORS.text,
+        fontSize: 26,
         fontWeight: "bold",
-    },
-    progressDetail: {
-        color: "#B0B0B0",
-        fontSize: 13,
+        marginBottom: 12,
         textAlign: "center",
-        marginTop: 5,
     },
-    statsContainer: {
-        flex: 1,
-        justifyContent: "space-between",
+    noPlanDesc: {
+        color: COLORS.textDim,
+        fontSize: 16,
+        textAlign: "center",
+        marginBottom: 25,
+        lineHeight: 24,
     },
-    statItem: {
+    createPlanButtonLarge: {
+        width: "100%",
+        borderRadius: 16,
+        overflow: "hidden",
+        shadowColor: COLORS.accent,
+        shadowOffset: { width: 0, height: 5 },
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        elevation: 8,
+        marginBottom: 20,
+    },
+    createPlanGradient: {
+        paddingVertical: 16,
+        paddingHorizontal: 24,
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        justifyContent: "space-between",
     },
-    statTextContainer: {
-        flex: 1,
-    },
-    statValue: {
-        color: COLORS.text,
-        fontSize: 20,
-        fontWeight: "bold",
-    },
-    statLabel: {
-        color: "#B0B0B0",
-        fontSize: 12,
-        marginTop: 2,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: "rgba(176, 176, 176, 0.2)",
-        marginVertical: 12,
-    },
-    infoCard: {
-        backgroundColor: COLORS.card,
-        padding: 15,
-        borderRadius: 12,
-    },
-    dateBox: {
-        backgroundColor: COLORS.background,
-        padding: 10,
-        borderRadius: 8,
-        alignItems: "center",
-        justifyContent: "center",
-        width: 50,
-    },
-    dateText: {
-        color: COLORS.accent,
+    createPlanButtonText: {
+        color: COLORS.white,
         fontSize: 18,
         fontWeight: "bold",
     },
-    monthText: {
-        color: COLORS.text,
-        fontSize: 10,
-        fontWeight: "bold",
+    emptyStatsRow: {
+        borderTopWidth: 1,
+        borderTopColor: COLORS.cardBorder,
+        paddingTop: 15,
+        width: "100%",
+        alignItems: "center",
     },
-    workoutTitle: {
-        color: "white",
-        fontSize: 16,
+    emptyStatsText: {
+        color: COLORS.inactive,
+        fontSize: 14,
         fontWeight: "600",
     },
-    workoutTime: {
-        color: "#B0B0B0",
-        fontSize: 13,
-        marginTop: 2,
-    },
-    gridContainer: {
+
+    // --- ACTIVE STATE ---
+
+    // Floating Stats
+    floatingStatsContainer: {
         flexDirection: "row",
         justifyContent: "space-between",
-        paddingHorizontal: 20,
-        gap: 15,
+        gap: 12,
+        marginBottom: 30,
     },
-    secondaryButton: {
-        flex: 1,
-        backgroundColor: COLORS.accent,
+    statCard: {
+        backgroundColor: COLORS.card,
+        borderRadius: 20,
         padding: 20,
-        borderRadius: 15,
-        alignItems: "center",
-        justifyContent: "center",
-        height: 100,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        elevation: 6,
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
     },
-    secondaryButtonText: {
-        color: "white",
-        marginTop: 8,
-        fontSize: 16,
+    statCardMain: {
+        flex: 1.2,
+        justifyContent: "space-between",
+        height: 160,
+    },
+    statsColumnRight: {
+        flex: 1,
+        justifyContent: "space-between",
+        gap: 12, // DİKEY BOŞLUK
+        height: 160,
+    },
+    statCardSmall: {
+        backgroundColor: COLORS.card,
+        borderRadius: 16,
+        paddingHorizontal: 15,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        flex: 1,
+        justifyContent: "flex-start",
+    },
+    iconBoxSmall: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    statIconRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 10,
+    },
+    statIcon: {
+        marginRight: 8,
+    },
+    statLabelMain: {
+        color: COLORS.textDim,
+        fontSize: 14,
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: 1,
+    },
+    statValueMain: {
+        color: COLORS.text,
+        fontSize: 36,
+        fontWeight: "900",
+    },
+    statUnitMain: {
+        fontSize: 18,
+        color: COLORS.accent,
+        fontWeight: "600",
+    },
+    statValueSmall: {
+        color: COLORS.text,
+        fontSize: 18,
         fontWeight: "bold",
+    },
+    statLabelSmall: {
+        color: COLORS.textDim,
+        fontSize: 12,
+    },
+
+    // Section
+    sectionContainer: {
+        marginBottom: 25,
+    },
+    sectionTitle: {
+        color: COLORS.text,
+        fontSize: 20,
+        fontWeight: "700",
+        marginBottom: 15,
+        marginLeft: 5,
+    },
+
+    // Next Workout Ticket
+    workoutTicket: {
+        borderRadius: 22,
+        padding: 15,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        flexDirection: "row",
+        minHeight: 110,
+    },
+    ticketLeft: {
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginRight: 15,
+    },
+    ticketDateBox: {
+        backgroundColor: COLORS.background,
+        borderRadius: 14,
+        width: 55,
+        height: 60,
+        justifyContent: "center",
+        alignItems: "center",
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    ticketDateBoxToday: {
+        backgroundColor: COLORS.accent,
+        borderColor: COLORS.accent,
+    },
+    ticketDay: {
+        color: COLORS.text,
+        fontSize: 20,
+        fontWeight: "800",
+    },
+    ticketMonth: {
+        color: COLORS.textDim,
+        fontSize: 10,
+        fontWeight: "700",
+    },
+    ticketIconBox: {
+        marginTop: 10,
+    },
+    ticketContent: {
+        flex: 1,
+        justifyContent: "center",
+    },
+    ticketType: {
+        fontSize: 12,
+        fontWeight: "800",
+        textTransform: "uppercase",
+        letterSpacing: 1,
+        marginBottom: 6,
+    },
+    ticketTitle: {
+        color: COLORS.text,
+        fontSize: 18,
+        fontWeight: "700",
+        marginBottom: 10,
+        lineHeight: 22,
+    },
+    ticketMetaRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 15,
+    },
+    ticketMetaItem: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+    },
+    ticketMetaText: {
+        color: COLORS.textDim,
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    emptyWorkoutTicket: {
+        backgroundColor: COLORS.cardVariant,
+        borderRadius: 22,
+        padding: 25,
+        alignItems: "center",
+        justifyContent: "center",
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        borderStyle: "dashed",
+    },
+    emptyTicketText: {
+        color: COLORS.textDim,
+        fontSize: 16,
+        fontWeight: "600",
+        marginTop: 10,
+    },
+    emptyTicketSubText: {
+        color: COLORS.inactive,
+        fontSize: 13,
+        marginTop: 5,
+    },
+
+    // Quick Links
+    quickLinksRow: {
+        flexDirection: "row",
+        justifyContent: "center",
+        gap: 20,
+        marginTop: 10,
+    },
+    quickLinkButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: COLORS.card,
+        paddingVertical: 10,
+        paddingHorizontal: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        gap: 8,
+    },
+    quickLinkText: {
+        color: COLORS.textDim,
+        fontSize: 14,
+        fontWeight: "600",
     },
 });
