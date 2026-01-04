@@ -1,3 +1,4 @@
+import { API_URL } from "@/constants/Config"; // <--- MERKEZİ CONFIG KULLANIMI
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
@@ -41,8 +42,6 @@ type AuthState = {
 };
 
 const authStorageKey = "auth-token";
-// IP Adresini Kontrol Et: Emülatör: 127.0.0.1, Fiziksel Cihaz: Bilgisayar IP'si (örn: 192.168.1.35)
-const BASE_URL = "http://127.0.0.1:8000/api";
 
 export const AuthContext = createContext<AuthState>({
     isLoggedIn: false,
@@ -67,7 +66,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // --- YARDIMCI: Token ile Kullanıcı Verisini Çek ---
     const fetchUserProfile = async (currentToken: string) => {
         try {
-            const response = await fetch(`${BASE_URL}/users/me/`, {
+            // URL'i Config'den alıyoruz (Hata riskini azaltır)
+            const response = await fetch(`${API_URL}/users/me/`, {
                 method: "GET",
                 headers: {
                     Authorization: `Bearer ${currentToken}`,
@@ -103,7 +103,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // --- 1. LOGIN ---
     const logIn = async (email: string, password: string) => {
         try {
-            const response = await fetch(`${BASE_URL}/token/`, {
+            const response = await fetch(`${API_URL}/token/`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -136,7 +136,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         password: string
     ) => {
         try {
-            const response = await fetch(`${BASE_URL}/users/`, {
+            const response = await fetch(`${API_URL}/users/`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -181,23 +181,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setUser(null);
     };
 
-    // --- NAVİGASYON KORUMASI (PROTECTED ROUTE) ---
+    // --- NAVİGASYON KORUMASI ---
     useEffect(() => {
-        // Uygulama hazır değilse (token kontrolü bitmediyse) yönlendirme yapma
         if (!isReady) return;
 
         const inProtectedGroup = segments[0] === "(protected)";
 
         if (isLoggedIn && !inProtectedGroup) {
-            // Giriş yapmış ama Login ekranındaysa -> Home'a at
             router.replace("/");
         } else if (!isLoggedIn && inProtectedGroup) {
-            // Giriş yapmamış ama Home'daysa -> Login'e at
             router.replace("/login");
         }
     }, [isLoggedIn, segments, isReady]);
 
-    // --- STORAGE CHECK (UYGULAMA AÇILIŞI) ---
+    // --- STORAGE CHECK ---
     const getAuthFromStorage = async () => {
         try {
             const savedToken = await AsyncStorage.getItem(authStorageKey);

@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
     Dimensions,
+    FlatList,
     Pressable,
     ScrollView,
     StatusBar,
@@ -19,39 +20,54 @@ import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
+const ITEM_WIDTH = 60; // Her bir gün kutusunun genişliği (margin dahil)
+const SPACING = (width - ITEM_WIDTH) / 2; // Ortalamak için kenar boşluğu
 
 // --- TİPLER ---
 type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
 
+const getLocalDateString = (date: Date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
 export default function HomeCalendarScreen() {
     const { token, refreshUserData } = useContext(AuthContext);
-
-    // Eğer ana sayfadan bir antrenman ID'si ile gelirsek onu yakalayalım
+    const flatListRef = useRef<FlatList>(null);
     const params = useLocalSearchParams();
     const { initialWorkoutId, initialDate } = params;
 
-    const [weekDays, setWeekDays] = useState<any[]>([]);
     const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
-
-    // Takvimin şu an gösterdiği haftanın Pazartesi günü
-    const [currentWeekStart, setCurrentWeekStart] = useState<Date>(new Date());
-    // Kullanıcının tıkladığı/seçtiği gün
     const [selectedDate, setSelectedDate] = useState<string>(
-        new Date().toISOString().split("T")[0]
+        getLocalDateString()
     );
-
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // --- YARDIMCI FONKSİYONLAR ---
+    // --- TAKVİM GÜNLERİ (6 AY) ---
+    const calendarDays = useMemo(() => {
+        const days = [];
+        const range = 90;
+        const baseDate = new Date(); // Referans her zaman bugün olsun
 
-    // Bir tarihin ait olduğu haftanın Pazartesisini bulur
-    const getMonday = (d: Date) => {
-        const date = new Date(d);
-        const day = date.getDay();
-        const diff = date.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-        return new Date(date.setDate(diff));
-    };
+        for (let i = -range; i <= range; i++) {
+            const date = new Date(baseDate);
+            date.setDate(baseDate.getDate() + i);
+            const dateStr = getLocalDateString(date);
+
+            days.push({
+                fullDate: dateStr,
+                dayName: date
+                    .toLocaleDateString("tr-TR", { weekday: "short" })
+                    .toUpperCase(),
+                dateNum: date.getDate(),
+                isToday: dateStr === getLocalDateString(),
+            });
+        }
+        return days;
+    }, []);
 
     const getWorkoutTypeStyle = (type: string) => {
         switch (type) {
@@ -100,7 +116,6 @@ export default function HomeCalendarScreen() {
         }
     };
 
-    // --- VERİ ÇEKME ---
     useEffect(() => {
         const fetchData = async () => {
             if (!token) return;
@@ -111,25 +126,17 @@ export default function HomeCalendarScreen() {
                 const data = await response.json();
                 setAllWorkouts(data);
 
-                // Başlangıç tarihini ayarla (Parametre varsa oraya git, yoksa bugüne)
-                let startTarget = new Date();
-
                 if (initialDate) {
-                    startTarget = new Date(initialDate as string);
-                    setSelectedDate(initialDate as string);
+                    // Gelen tarih YYYY-MM-DD formatında olmalı, saat varsa temizle
+                    setSelectedDate(String(initialDate).split("T")[0]);
                 } else if (initialWorkoutId) {
-                    const targetWorkout = data.find(
+                    const target = data.find(
                         (w: any) => w.id === initialWorkoutId
                     );
-                    if (targetWorkout) {
-                        startTarget = new Date(targetWorkout.scheduled_date);
-                        setSelectedDate(targetWorkout.scheduled_date);
-                    }
+                    if (target) setSelectedDate(target.scheduled_date);
                 }
-
-                setCurrentWeekStart(getMonday(startTarget));
             } catch (error) {
-                console.log("Calendar fetch error:", error);
+                console.log("Fetch error:", error);
             } finally {
                 setLoading(false);
             }
@@ -137,55 +144,65 @@ export default function HomeCalendarScreen() {
         fetchData();
     }, [token]);
 
-    // --- HAFTAYI OLUŞTUR ---
+    // --- ORTALAMA MANTIĞI (SCROLL TO CENTER) ---
     useEffect(() => {
-        if (!currentWeekStart) return;
-
-        const days = [];
-        // Pazartesiden pazara 7 gün üret
-        for (let i = 0; i < 7; i++) {
-            const day = new Date(currentWeekStart);
-            day.setDate(currentWeekStart.getDate() + i);
-            const dateStr = day.toISOString().split("T")[0];
-
-            // O güne ait antrenmanı bul
-            const workout = allWorkouts.find(
-                (w: any) => w.scheduled_date === dateStr
+        if (!loading && calendarDays.length > 0 && flatListRef.current) {
+            const index = calendarDays.findIndex(
+                (d) => d.fullDate === selectedDate
             );
 
-            days.push({
-                dayName: day
-                    .toLocaleDateString("tr-TR", { weekday: "short" })
-                    .toUpperCase(),
-                dateNum: day.getDate(),
-                fullDate: dateStr,
-                workout: workout,
-                isToday: new Date().toISOString().split("T")[0] === dateStr,
-            });
+            if (index !== -1) {
+                // viewPosition yerine offset kullanıyoruz, çok daha stabil.
+                // Formül: (Index * ItemWidth)
+                // Padding (SPACING) sayesinde eleman tam ortaya gelir.
+                flatListRef.current.scrollToOffset({
+                    offset: index * ITEM_WIDTH,
+                    animated: true,
+                });
+            }
         }
-        setWeekDays(days);
-    }, [currentWeekStart, allWorkouts]);
+    }, [selectedDate, loading, calendarDays]);
 
-    // --- NAVİGASYON ---
-    const changeWeek = (direction: "prev" | "next") => {
-        const newStart = new Date(currentWeekStart);
-        newStart.setDate(newStart.getDate() + (direction === "next" ? 7 : -7));
-        setCurrentWeekStart(newStart);
-
-        // Hafta değişince seçili günü de o haftanın Pazartesi'si yapalım (Opsiyonel)
-        // setSelectedDate(newStart.toISOString().split('T')[0]);
+    const onScrollToIndexFailed = (info: { index: number }) => {
+        setTimeout(() => {
+            flatListRef.current?.scrollToOffset({
+                offset: info.index * ITEM_WIDTH,
+                animated: true,
+            });
+        }, 500);
     };
 
-    // --- TAMAMLA BUTONU ---
+    const changeDay = (direction: "prev" | "next") => {
+        const current = new Date(selectedDate);
+        current.setDate(current.getDate() + (direction === "next" ? 1 : -1));
+        setSelectedDate(getLocalDateString(current));
+    };
+
+    const goToToday = () => {
+        setSelectedDate(getLocalDateString(new Date()));
+    };
+
     const handleMarkCompleted = () => {
-        const workout = weekDays.find(
-            (d) => d.fullDate === selectedDate
-        )?.workout;
+        const workout = allWorkouts.find(
+            (w) => w.scheduled_date === selectedDate
+        );
         if (!workout) return;
+
+        // BUG FIX: Sadece tarih kısmını alıp karşılaştırıyoruz
+        const todayStr = getLocalDateString();
+        const workoutDateStr = workout.scheduled_date.split("T")[0];
+
+        if (workoutDateStr > todayStr) {
+            Alert.alert(
+                "Henüz Erken ⏳",
+                "Gelecek tarihli bir antrenmanı şimdiden tamamlayamazsın."
+            );
+            return;
+        }
 
         Alert.alert(
             "Antrenmanı Tamamla",
-            "Bu antrenmanı planlanan verilerle tamamlandı saymak istiyor musun?",
+            "Bu antrenmanı tamamlandı olarak işaretlemek istiyor musun?",
             [
                 { text: "İptal", style: "cancel" },
                 {
@@ -193,7 +210,6 @@ export default function HomeCalendarScreen() {
                     onPress: async () => {
                         setIsProcessing(true);
                         try {
-                            // 1. Status Update
                             await fetch(`${API_URL}/workouts/${workout.id}/`, {
                                 method: "PATCH",
                                 headers: {
@@ -203,17 +219,16 @@ export default function HomeCalendarScreen() {
                                 body: JSON.stringify({ status: "completed" }),
                             });
 
-                            // 2. Result Create
                             const resultData = {
                                 workout: workout.id,
-                                actual_date: workout.scheduled_date,
+                                completed_at: new Date().toISOString(),
                                 actual_duration: workout.planned_duration || 30,
                                 actual_distance:
                                     workout.planned_distance || 5.0,
                                 feeling: "normal",
                             };
 
-                            await fetch(`${API_URL}/workout-results/`, {
+                            const postRes = await fetch(`${API_URL}/results/`, {
                                 method: "POST",
                                 headers: {
                                     Authorization: `Bearer ${token}`,
@@ -222,26 +237,93 @@ export default function HomeCalendarScreen() {
                                 body: JSON.stringify(resultData),
                             });
 
-                            // 3. Verileri tazele
+                            if (!postRes.ok) throw new Error("Result failed");
+                            const createdResult = await postRes.json();
+
                             await refreshUserData();
 
-                            // Local state güncelleme
-                            const updatedWorkouts = allWorkouts.map((w) =>
+                            const updatedList = allWorkouts.map((w) =>
                                 w.id === workout.id
-                                    ? { ...w, status: "completed" }
+                                    ? {
+                                          ...w,
+                                          status: "completed",
+                                          result: createdResult,
+                                      }
                                     : w
                             );
-                            setAllWorkouts(updatedWorkouts);
-
+                            setAllWorkouts(updatedList);
                             Alert.alert(
-                                "Harika!",
-                                "Antrenman başarıyla kaydedildi."
+                                "Tebrikler! 🎉",
+                                "Antrenman kaydedildi."
                             );
                         } catch (error) {
-                            Alert.alert(
-                                "Hata",
-                                "İşlem sırasında bir sorun oluştu."
+                            Alert.alert("Hata", "İşlem başarısız oldu.");
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleMarkIncomplete = () => {
+        const workout = allWorkouts.find(
+            (w) => w.scheduled_date === selectedDate
+        );
+        if (!workout || !workout.result) {
+            Alert.alert("Hata", "Kayıt bulunamadı.");
+            return;
+        }
+
+        Alert.alert(
+            "Geri Al",
+            "Bu antrenmanı tamamlanmamış olarak işaretlemek istiyor musun?",
+            [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                    text: "Evet, Geri Al",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsProcessing(true);
+                        try {
+                            await fetch(
+                                `${API_URL}/results/${workout.result.id}/`,
+                                {
+                                    method: "DELETE",
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                    },
+                                }
                             );
+
+                            await fetch(`${API_URL}/workouts/${workout.id}/`, {
+                                method: "PATCH",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    status: "scheduled",
+                                    is_completed: false,
+                                }),
+                            });
+
+                            await refreshUserData();
+
+                            const updatedList = allWorkouts.map((w) =>
+                                w.id === workout.id
+                                    ? {
+                                          ...w,
+                                          status: "scheduled",
+                                          result: null,
+                                      }
+                                    : w
+                            );
+                            setAllWorkouts(updatedList);
+                            Alert.alert("Tamam", "Durum geri alındı.");
+                        } catch (error) {
+                            Alert.alert("Hata", "Geri alma başarısız.");
                         } finally {
                             setIsProcessing(false);
                         }
@@ -259,29 +341,33 @@ export default function HomeCalendarScreen() {
         );
     }
 
-    // Seçili günün antrenmanını bul
-    const selectedDayData = weekDays.find((d) => d.fullDate === selectedDate);
-    const selectedWorkout = selectedDayData?.workout;
+    const selectedWorkout = allWorkouts.find(
+        (w) => w.scheduled_date === selectedDate
+    );
     const typeStyle = selectedWorkout
         ? getWorkoutTypeStyle(selectedWorkout.workout_type)
         : null;
 
-    // Ay ismi (Haftanın ilk gününe göre)
-    const monthName = currentWeekStart.toLocaleDateString("tr-TR", {
+    // Header Başlığı
+    const displayDate = new Date(selectedDate);
+    const monthName = displayDate.toLocaleDateString("tr-TR", {
         month: "long",
         year: "numeric",
     });
+    const isTodaySelected = selectedDate === getLocalDateString();
+
+    // Gelecek Tarih Kontrolü (UI için)
+    const isFuture = selectedDate > getLocalDateString();
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" />
 
-            {/* --- CALENDAR STRIP (FIXED TOP) --- */}
+            {/* --- CALENDAR STRIP --- */}
             <View style={styles.calendarSection}>
-                {/* Header: Ay ve Oklar */}
-                <View style={styles.monthRow}>
+                <View style={styles.headerRow}>
                     <Pressable
-                        onPress={() => changeWeek("prev")}
+                        onPress={() => changeDay("prev")}
                         style={styles.arrowBtn}
                     >
                         <Ionicons
@@ -291,10 +377,20 @@ export default function HomeCalendarScreen() {
                         />
                     </Pressable>
 
-                    <Text style={styles.monthTitle}>{monthName}</Text>
+                    <View style={styles.titleContainer}>
+                        <Text style={styles.monthTitle}>{monthName}</Text>
+                        {!isTodaySelected && (
+                            <Pressable
+                                onPress={goToToday}
+                                style={styles.todayBadge}
+                            >
+                                <Text style={styles.todayText}>Bugün</Text>
+                            </Pressable>
+                        )}
+                    </View>
 
                     <Pressable
-                        onPress={() => changeWeek("next")}
+                        onPress={() => changeDay("next")}
                         style={styles.arrowBtn}
                     >
                         <Ionicons
@@ -305,70 +401,99 @@ export default function HomeCalendarScreen() {
                     </Pressable>
                 </View>
 
-                {/* Günler */}
-                <View style={styles.daysRow}>
-                    {weekDays.map((item, index) => {
-                        const isSelected = item.fullDate === selectedDate;
-                        return (
-                            <Pressable
-                                key={index}
-                                style={[
-                                    styles.dayItem,
-                                    isSelected && styles.dayItemSelected,
-                                    !isSelected &&
-                                        item.isToday &&
-                                        styles.dayItemToday,
-                                ]}
-                                onPress={() => setSelectedDate(item.fullDate)}
-                            >
-                                <Text
-                                    style={[
-                                        styles.dayName,
-                                        isSelected && styles.textWhite,
-                                        !isSelected &&
-                                            item.isToday && {
-                                                color: COLORS.accent,
-                                            },
-                                    ]}
-                                >
-                                    {item.dayName.charAt(0)}
-                                </Text>
-                                <Text
-                                    style={[
-                                        styles.dayNumber,
-                                        isSelected && styles.textWhite,
-                                        !isSelected &&
-                                            item.isToday && {
-                                                color: COLORS.accent,
-                                            },
-                                    ]}
-                                >
-                                    {item.dateNum}
-                                </Text>
+                <View>
+                    <FlatList
+                        ref={flatListRef}
+                        data={calendarDays}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => item.fullDate}
+                        getItemLayout={(data, index) => ({
+                            length: ITEM_WIDTH,
+                            offset: ITEM_WIDTH * index,
+                            index,
+                        })}
+                        onScrollToIndexFailed={onScrollToIndexFailed}
+                        // İLK ve SON elemanı ortalamak için padding
+                        contentContainerStyle={{ paddingHorizontal: SPACING }}
+                        // Snap efekti için
+                        snapToInterval={ITEM_WIDTH}
+                        decelerationRate="fast"
+                        renderItem={({ item }) => {
+                            const isSelected = item.fullDate === selectedDate;
+                            const hasWorkout = allWorkouts.some(
+                                (w) => w.scheduled_date === item.fullDate
+                            );
+                            const workoutStatus = hasWorkout
+                                ? allWorkouts.find(
+                                      (w) => w.scheduled_date === item.fullDate
+                                  )?.status
+                                : null;
 
-                                {/* Dot Indicator */}
-                                <View
+                            return (
+                                <Pressable
                                     style={[
-                                        styles.dot,
-                                        isSelected
-                                            ? { backgroundColor: COLORS.white }
-                                            : item.workout
-                                            ? {
-                                                  backgroundColor:
-                                                      item.workout.status ===
-                                                      "completed"
-                                                          ? COLORS.success
-                                                          : COLORS.accent,
-                                              }
-                                            : {
-                                                  backgroundColor:
-                                                      "transparent",
-                                              },
+                                        styles.dayItem,
+                                        isSelected && styles.dayItemSelected,
+                                        !isSelected &&
+                                            item.isToday &&
+                                            styles.dayItemToday,
                                     ]}
-                                />
-                            </Pressable>
-                        );
-                    })}
+                                    onPress={() =>
+                                        setSelectedDate(item.fullDate)
+                                    }
+                                >
+                                    <Text
+                                        style={[
+                                            styles.dayName,
+                                            isSelected && styles.textWhite,
+                                            !isSelected &&
+                                                item.isToday && {
+                                                    color: COLORS.accent,
+                                                },
+                                        ]}
+                                    >
+                                        {item.dayName.charAt(0)}
+                                    </Text>
+                                    <Text
+                                        style={[
+                                            styles.dayNumber,
+                                            isSelected && styles.textWhite,
+                                            !isSelected &&
+                                                item.isToday && {
+                                                    color: COLORS.accent,
+                                                },
+                                        ]}
+                                    >
+                                        {item.dateNum}
+                                    </Text>
+
+                                    <View
+                                        style={[
+                                            styles.dot,
+                                            isSelected
+                                                ? {
+                                                      backgroundColor:
+                                                          COLORS.white,
+                                                  }
+                                                : hasWorkout
+                                                ? {
+                                                      backgroundColor:
+                                                          workoutStatus ===
+                                                          "completed"
+                                                              ? COLORS.success
+                                                              : COLORS.accent,
+                                                  }
+                                                : {
+                                                      backgroundColor:
+                                                          "transparent",
+                                                  },
+                                        ]}
+                                    />
+                                </Pressable>
+                            );
+                        }}
+                    />
                 </View>
             </View>
 
@@ -377,11 +502,9 @@ export default function HomeCalendarScreen() {
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* --- WORKOUT DETAIL --- */}
                 <View style={styles.detailSection}>
                     {selectedWorkout ? (
                         <View>
-                            {/* MAIN CARD */}
                             <LinearGradient
                                 colors={
                                     (typeStyle?.bgGradient as any) || [
@@ -473,16 +596,14 @@ export default function HomeCalendarScreen() {
                                 </View>
                             </LinearGradient>
 
-                            {/* DESCRIPTION */}
                             <View style={styles.descCard}>
                                 <Text style={styles.descLabel}>Açıklama</Text>
                                 <Text style={styles.descText}>
                                     {selectedWorkout.description ||
-                                        "Bu antrenman için özel bir not bulunmuyor. Hedeflerine odaklan ve koşunun tadını çıkar."}
+                                        "Bu antrenman için özel bir not bulunmuyor."}
                                 </Text>
                             </View>
 
-                            {/* ACTIONS */}
                             <View style={styles.actionContainer}>
                                 {selectedWorkout.status !== "completed" ? (
                                     <Pressable
@@ -491,10 +612,17 @@ export default function HomeCalendarScreen() {
                                         disabled={isProcessing}
                                     >
                                         <LinearGradient
-                                            colors={[
-                                                COLORS.accent,
-                                                COLORS.secondary,
-                                            ]}
+                                            colors={
+                                                isFuture
+                                                    ? [
+                                                          COLORS.cardBorder,
+                                                          COLORS.cardBorder,
+                                                      ]
+                                                    : [
+                                                          COLORS.accent,
+                                                          COLORS.secondary,
+                                                      ]
+                                            }
                                             start={{ x: 0, y: 0 }}
                                             end={{ x: 1, y: 0 }}
                                             style={styles.gradientBtn}
@@ -506,10 +634,16 @@ export default function HomeCalendarScreen() {
                                                     <Text
                                                         style={styles.btnText}
                                                     >
-                                                        Antrenmanı Tamamla
+                                                        {isFuture
+                                                            ? "Günü Bekleniyor"
+                                                            : "Antrenmanı Tamamla"}
                                                     </Text>
                                                     <Ionicons
-                                                        name="checkmark-circle-outline"
+                                                        name={
+                                                            isFuture
+                                                                ? "time-outline"
+                                                                : "checkmark-circle-outline"
+                                                        }
                                                         size={22}
                                                         color="white"
                                                     />
@@ -518,16 +652,37 @@ export default function HomeCalendarScreen() {
                                         </LinearGradient>
                                     </Pressable>
                                 ) : (
-                                    <View style={styles.disabledBtn}>
-                                        <Text style={styles.disabledBtnText}>
-                                            Bu antrenman tamamlandı 🎉
-                                        </Text>
-                                    </View>
+                                    // DÜZELTİLEN BUTON YAZISI
+                                    <Pressable
+                                        style={styles.undoButton}
+                                        onPress={handleMarkIncomplete}
+                                        disabled={isProcessing}
+                                    >
+                                        {isProcessing ? (
+                                            <ActivityIndicator
+                                                color={COLORS.success}
+                                            />
+                                        ) : (
+                                            <>
+                                                <Ionicons
+                                                    name="checkmark-circle"
+                                                    size={24}
+                                                    color={COLORS.success}
+                                                />
+                                                <Text
+                                                    style={
+                                                        styles.undoButtonText
+                                                    }
+                                                >
+                                                    Tamamlandı ✓ (Geri Al)
+                                                </Text>
+                                            </>
+                                        )}
+                                    </Pressable>
                                 )}
                             </View>
                         </View>
                     ) : (
-                        /* EMPTY STATE */
                         <View style={styles.emptyState}>
                             <View style={styles.emptyIconCircle}>
                                 <Ionicons
@@ -542,7 +697,7 @@ export default function HomeCalendarScreen() {
                                     "tr-TR",
                                     { day: "numeric", month: "long" }
                                 )}{" "}
-                                tarihinde planlanmış bir antrenman yok.
+                                tarihinde antrenman yok.
                             </Text>
                             <Pressable
                                 style={styles.addWorkoutBtn}
@@ -568,7 +723,6 @@ const styles = StyleSheet.create({
     scrollView: { flex: 1 },
     scrollContent: { paddingBottom: 40, paddingTop: 20 },
 
-    // CALENDAR STRIP
     calendarSection: {
         paddingTop: 10,
         paddingBottom: 20,
@@ -582,19 +736,30 @@ const styles = StyleSheet.create({
         elevation: 5,
         zIndex: 10,
     },
-    monthRow: {
+    headerRow: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
         paddingHorizontal: 20,
         marginBottom: 15,
+        height: 40,
     },
+    titleContainer: { flexDirection: "row", alignItems: "center", gap: 8 },
     monthTitle: {
         fontSize: 16,
         fontWeight: "bold",
         color: COLORS.text,
         textTransform: "capitalize",
     },
+    todayBadge: {
+        backgroundColor: COLORS.cardVariant,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: COLORS.accent,
+    },
+    todayText: { fontSize: 10, color: COLORS.accent, fontWeight: "700" },
     arrowBtn: {
         padding: 8,
         borderRadius: 12,
@@ -602,16 +767,11 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
-    daysRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        paddingHorizontal: 15,
-    },
     dayItem: {
         alignItems: "center",
         justifyContent: "center",
-        width: 45,
-        height: 70,
+        width: ITEM_WIDTH,
+        height: 75,
         borderRadius: 25,
         backgroundColor: "transparent",
     },
@@ -622,35 +782,18 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.4,
         shadowRadius: 6,
     },
-    dayItemToday: {
-        borderWidth: 1,
-        borderColor: COLORS.accent,
-    },
+    dayItemToday: { borderWidth: 1, borderColor: COLORS.accent },
     dayName: {
         fontSize: 12,
         color: COLORS.textDim,
         marginBottom: 4,
         fontWeight: "600",
     },
-    dayNumber: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: COLORS.text,
-    },
+    dayNumber: { fontSize: 16, fontWeight: "bold", color: COLORS.text },
     textWhite: { color: "white" },
-    dot: {
-        width: 5,
-        height: 5,
-        borderRadius: 2.5,
-        marginTop: 6,
-    },
+    dot: { width: 5, height: 5, borderRadius: 2.5, marginTop: 6 },
 
-    // DETAIL SECTION
-    detailSection: {
-        paddingHorizontal: 20,
-    },
-
-    // WORKOUT CARD
+    detailSection: { paddingHorizontal: 20 },
     mainCard: {
         borderRadius: 24,
         padding: 24,
@@ -672,21 +815,9 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         gap: 6,
     },
-    typeText: {
-        fontSize: 12,
-        fontWeight: "bold",
-        textTransform: "uppercase",
-    },
-    completedBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 4,
-    },
-    completedText: {
-        color: COLORS.success,
-        fontSize: 12,
-        fontWeight: "bold",
-    },
+    typeText: { fontSize: 12, fontWeight: "bold", textTransform: "uppercase" },
+    completedBadge: { flexDirection: "row", alignItems: "center", gap: 4 },
+    completedText: { color: COLORS.success, fontSize: 12, fontWeight: "bold" },
     workoutTitle: {
         fontSize: 24,
         fontWeight: "bold",
@@ -702,23 +833,14 @@ const styles = StyleSheet.create({
         padding: 15,
         borderRadius: 16,
     },
-    metaItem: {
-        alignItems: "center",
-        flex: 1,
-    },
-    divider: {
-        width: 1,
-        height: 20,
-        backgroundColor: "rgba(255,255,255,0.1)",
-    },
+    metaItem: { alignItems: "center", flex: 1 },
+    divider: { width: 1, height: 20, backgroundColor: "rgba(255,255,255,0.1)" },
     metaValue: {
         color: COLORS.text,
         fontSize: 16,
         fontWeight: "bold",
         marginTop: 4,
     },
-
-    // DESCRIPTION
     descCard: {
         backgroundColor: COLORS.card,
         borderRadius: 20,
@@ -734,16 +856,8 @@ const styles = StyleSheet.create({
         marginBottom: 8,
         textTransform: "uppercase",
     },
-    descText: {
-        fontSize: 15,
-        color: COLORS.text,
-        lineHeight: 24,
-    },
-
-    // ACTIONS
-    actionContainer: {
-        marginBottom: 30,
-    },
+    descText: { fontSize: 15, color: COLORS.text, lineHeight: 24 },
+    actionContainer: { marginBottom: 30 },
     completeButton: {
         shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 5 },
@@ -759,26 +873,19 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         gap: 10,
     },
-    btnText: {
-        color: "white",
-        fontSize: 18,
-        fontWeight: "bold",
-    },
-    disabledBtn: {
-        backgroundColor: COLORS.card,
+    btnText: { color: "white", fontSize: 18, fontWeight: "bold" },
+    undoButton: {
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
         paddingVertical: 18,
         borderRadius: 18,
-        alignItems: "center",
+        backgroundColor: COLORS.card,
         borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+        borderColor: COLORS.success,
+        gap: 10,
     },
-    disabledBtnText: {
-        color: COLORS.success,
-        fontSize: 16,
-        fontWeight: "bold",
-    },
-
-    // EMPTY STATE
+    undoButtonText: { color: COLORS.success, fontSize: 16, fontWeight: "bold" },
     emptyState: {
         alignItems: "center",
         justifyContent: "center",
@@ -816,8 +923,5 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.accent,
     },
-    addWorkoutText: {
-        color: COLORS.accent,
-        fontWeight: "600",
-    },
+    addWorkoutText: { color: COLORS.accent, fontWeight: "600" },
 });

@@ -403,20 +403,26 @@ const HomeScreen = () => {
                                     Sıradaki Hedefin
                                 </Text>
                                 <Pressable
-                                    onPress={() =>
-                                        router.push(
-                                            nextWorkout
-                                                ? {
-                                                      pathname:
-                                                          "/home_calendar",
-                                                      params: {
-                                                          workoutId:
-                                                              nextWorkout.id,
-                                                      },
-                                                  }
-                                                : "/home_calendar"
-                                        )
-                                    }
+                                    onPress={() => {
+                                        if (nextWorkout) {
+                                            // EĞER ANTRENMAN VARSA: O TARİHE VE ANTRENMANA GİT
+                                            router.push({
+                                                pathname:
+                                                    "/(protected)/(tabs)/(home)/home_calendar",
+                                                params: {
+                                                    initialWorkoutId:
+                                                        nextWorkout.id,
+                                                    initialDate:
+                                                        nextWorkout.scheduled_date, // Tarihi de gönderiyoruz ki o haftayı açsın
+                                                },
+                                            });
+                                        } else {
+                                            // ANTRENMAN YOKSA: BUGÜNÜ AÇ
+                                            router.push(
+                                                "/(protected)/(tabs)/(home)/home_calendar"
+                                            );
+                                        }
+                                    }}
                                 >
                                     {nextWorkout && workoutStyle && dateInfo ? (
                                         <LinearGradient
