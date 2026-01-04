@@ -1,0 +1,682 @@
+{
+    "info": {
+        "_postman_id": "d9c8b1c9-9999-8888-7777-111213141517",
+        "name": "PaceUp",
+        "description": "Backend geliştirme ve test süreçleri için tam kapsamlı API koleksiyonu.\n\nÖzellikler:\n- Tüm modeller için (User, Program, Workout, Result, Notification)  işlemleri.\n- Otomatik ID yakalama (Bir kayıt oluşturunca ID'si değişkene atanır, güncelleme/silme işlemlerinde otomatik kullanılır).\n- Yanlış veri düzeltme senaryoları (Update Gender, Fix Date vb.).\n- Dashboard ve İstatistik uçları.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "item": [
+        {
+            "name": "0. Auth (Token Management)",
+            "item": [
+                {
+                    "name": "Register (New User)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "if (pm.response.code === 201) {",
+                                    "    var jsonData = pm.response.json();",
+                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access);",
+                                    "    pm.collectionVariables.set(\"refresh_token\", jsonData.refresh);",
+                                    "    pm.collectionVariables.set(\"user_id\", jsonData.id);",
+                                    "    console.log(\"User Registered & Logged In\");",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"test.admin@runapp.com\",\n    \"password\": \"Admin123!\",\n    \"first_name\": \"Test\",\n    \"last_name\": \"Kullanıcı\",\n    \"gender\": \"male\",\n    \"weight\": 80,\n    \"height\": 180,\n    \"current_pace\": 360,\n    \"weekly_goal\": 3\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/users/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Login (Get Token)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "if (jsonData.access) {",
+                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access);",
+                                    "    pm.collectionVariables.set(\"refresh_token\", jsonData.refresh);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "auth": {
+                            "type": "noauth"
+                        },
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"email\": \"test.admin@runapp.com\",\n    \"password\": \"Admin123!\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/token/",
+                            "host": ["{{base_url}}"],
+                            "path": ["token", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Refresh Token",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "if(jsonData.access) {",
+                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"refresh\": \"{{refresh_token}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/token/refresh/",
+                            "host": ["{{base_url}}"],
+                            "path": ["token", "refresh", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "1. User ",
+            "item": [
+                {
+                    "name": "Get My Profile",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/users/me/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", "me", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Profile (Fix Gender/Weight)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"gender\": \"female\",\n    \"weight\": 65.0,\n    \"current_pace\": 330\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/users/me/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", "me", ""]
+                        },
+                        "description": "Kullanıcı bilgilerini kısmi güncellemek için. Yanlış girilen cinsiyet veya kiloyu düzeltir."
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Change Settings (Notifications)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"notification_workout_reminder\": false,\n    \"preferred_reminder_time\": \"07:00:00\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/users/me/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", "me", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List All Users (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/users/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete User (ByID)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/users/{{user_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["users", "{{user_id}}", ""]
+                        },
+                        "description": "DİKKAT: Kullanıcıyı siler. ID, Register işleminden otomatik gelir."
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "2. Program ",
+            "item": [
+                {
+                    "name": "Create Program",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "pm.collectionVariables.set(\"program_id\", jsonData.id);"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"title\": \"Yarı Maraton Hazırlık\",\n    \"description\": \"Orta seviye koşucular için.\",\n    \"goal\": \"21K Tamamlama\",\n    \"start_date\": \"2025-06-01\",\n    \"end_date\": \"2025-09-01\",\n    \"duration_weeks\": 12,\n    \"difficulty\": \"intermediate\",\n    \"workouts_per_week\": 4,\n    \"total_workouts_count\": 48,\n    \"ai_generated\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/programs/",
+                            "host": ["{{base_url}}"],
+                            "path": ["programs", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List My Programs",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/programs/",
+                            "host": ["{{base_url}}"],
+                            "path": ["programs", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Get Program Detail",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/programs/{{program_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["programs", "{{program_id}}", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Program (Pause/Cancel)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"status\": \"paused\",\n    \"title\": \"Yarı Maraton (Duraklatıldı)\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/programs/{{program_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["programs", "{{program_id}}", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Program",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/programs/{{program_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["programs", "{{program_id}}", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "3. Workout ",
+            "item": [
+                {
+                    "name": "Create Workout",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "pm.collectionVariables.set(\"workout_id\", jsonData.id);"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"program\": \"{{program_id}}\",\n    \"title\": \"Pazar Uzunu\",\n    \"workout_type\": \"long\",\n    \"scheduled_date\": \"2025-06-07\",\n    \"planned_distance\": 15.0,\n    \"planned_duration\": 90,\n    \"target_pace_seconds\": 360\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/workouts/",
+                            "host": ["{{base_url}}"],
+                            "path": ["workouts", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List Workouts",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/workouts/",
+                            "host": ["{{base_url}}"],
+                            "path": ["workouts", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Workout (Reschedule)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"scheduled_date\": \"2025-06-08\",\n    \"title\": \"Pazar Uzunu (Ertellendi)\",\n    \"status\": \"rescheduled\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/workouts/{{workout_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["workouts", "{{workout_id}}", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Workout",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/workouts/{{workout_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["workouts", "{{workout_id}}", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "4. Result ",
+            "item": [
+                {
+                    "name": "Create Result (Log Run)",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "pm.collectionVariables.set(\"result_id\", jsonData.id);"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"workout\": \"{{workout_id}}\",\n    \"actual_distance\": 15.2,\n    \"actual_duration\": 92,\n    \"feeling\": \"hard\",\n    \"user_notes\": \"Sonlara doğru zorlandım.\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/results/",
+                            "host": ["{{base_url}}"],
+                            "path": ["results", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List Results",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/results/",
+                            "host": ["{{base_url}}"],
+                            "path": ["results", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Update Result (Fix Notes)",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"user_notes\": \"Zorlandım ama bitirdim. Su içmeyi unutma.\",\n    \"feeling\": \"normal\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/results/{{result_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["results", "{{result_id}}", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Delete Result",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/results/{{result_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["results", "{{result_id}}", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "5. System (Achiev & Notif)",
+            "item": [
+                {
+                    "name": "List Achievements",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/achievements/",
+                            "host": ["{{base_url}}"],
+                            "path": ["achievements", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "List Notifications",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "exec": [
+                                    "var jsonData = pm.response.json();",
+                                    "if(jsonData.length > 0) {",
+                                    "    pm.collectionVariables.set(\"notif_id\", jsonData[0].id);",
+                                    "}"
+                                ],
+                                "type": "text/javascript"
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/notifications/",
+                            "host": ["{{base_url}}"],
+                            "path": ["notifications", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Mark Notif as Read",
+                    "request": {
+                        "method": "PATCH",
+                        "header": [],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"is_read\": true\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/notifications/{{notif_id}}/",
+                            "host": ["{{base_url}}"],
+                            "path": ["notifications", "{{notif_id}}", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        },
+        {
+            "name": "6. Dashboard Stats",
+            "item": [
+                {
+                    "name": "Summary Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/stats/summary/",
+                            "host": ["{{base_url}}"],
+                            "path": ["stats", "summary", ""]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Charts Data",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/stats/charts/?period=month",
+                            "host": ["{{base_url}}"],
+                            "path": ["stats", "charts", ""],
+                            "query": [
+                                {
+                                    "key": "period",
+                                    "value": "month"
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "Active Program Stats",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{base_url}}/stats/program/",
+                            "host": ["{{base_url}}"],
+                            "path": ["stats", "program", ""]
+                        }
+                    },
+                    "response": []
+                }
+            ]
+        }
+    ],
+    "auth": {
+        "type": "bearer",
+        "bearer": [
+            {
+                "key": "token",
+                "value": "{{access_token}}",
+                "type": "string"
+            }
+        ]
+    },
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [""]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [""]
+            }
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://127.0.0.1:8000/api",
+            "type": "string"
+        },
+        {
+            "key": "access_token",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "refresh_token",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "user_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "program_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "workout_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "result_id",
+            "value": "",
+            "type": "string"
+        },
+        {
+            "key": "notif_id",
+            "value": "",
+            "type": "string"
+        }
+    ]
+}
