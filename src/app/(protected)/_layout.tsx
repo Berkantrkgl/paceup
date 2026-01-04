@@ -38,24 +38,6 @@ export default function ProtectedLayout() {
             />
 
             <Stack.Screen
-                name="calendar_modal"
-                options={{
-                    title: "Yaklaşan Etkinlik",
-                    headerStyle: {
-                        backgroundColor: COLORS.background,
-                    },
-                    headerTintColor: COLORS.text,
-                    headerTitleStyle: {
-                        color: COLORS.text,
-                        fontSize: 20,
-                        fontWeight: "600",
-                    },
-                    presentation: "modal",
-                    headerShadowVisible: false,
-                }}
-            />
-
-            <Stack.Screen
                 name="chatbot"
                 options={{
                     title: "AI Koşu Koçu",

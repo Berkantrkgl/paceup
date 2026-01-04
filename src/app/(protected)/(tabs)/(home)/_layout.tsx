@@ -2,7 +2,7 @@ import { COLORS } from "@/constants/Colors";
 import { Stack } from "expo-router";
 import React from "react";
 
-const _layout = () => {
+const HomeLayout = () => {
     return (
         <Stack
             screenOptions={{
@@ -12,17 +12,26 @@ const _layout = () => {
                 headerTintColor: COLORS.text,
                 headerTitleStyle: {
                     color: COLORS.text,
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: "600",
                 },
                 headerShadowVisible: false,
+                contentStyle: { backgroundColor: COLORS.background },
             }}
         >
             <Stack.Screen
                 name="index"
                 options={{
-                    title: "Home",
                     headerShown: false,
+                }}
+            />
+
+            {/* YENİ EKRAN: Standart Stack Geçişi (Sağdan sola) */}
+            <Stack.Screen
+                name="home_calendar"
+                options={{
+                    title: "Antrenman Takvimi",
+                    headerBackTitle: "Geri",
                 }}
             />
 
@@ -37,4 +46,4 @@ const _layout = () => {
     );
 };
 
-export default _layout;
+export default HomeLayout;

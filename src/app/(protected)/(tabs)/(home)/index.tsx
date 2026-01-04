@@ -408,13 +408,13 @@ const HomeScreen = () => {
                                             nextWorkout
                                                 ? {
                                                       pathname:
-                                                          "/calendar_modal",
+                                                          "/home_calendar",
                                                       params: {
                                                           workoutId:
                                                               nextWorkout.id,
                                                       },
                                                   }
-                                                : "/calendar_modal"
+                                                : "/home_calendar"
                                         )
                                     }
                                 >
