@@ -1,34 +1,152 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useContext, useState } from "react";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
+    Dimensions,
     Pressable,
     RefreshControl,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Text,
     View,
 } from "react-native";
-import { Calendar } from "react-native-calendars";
+import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
 
 import { COLORS } from "@/constants/Colors";
+import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
-// API URL
-const API_URL = "http://127.0.0.1:8000/api";
+const { width } = Dimensions.get("window");
+// Kenar boşluklarını hesaba katarak kutu genişliği
+const CELL_WIDTH = (width - 40) / 7;
+
+// --- 1. LOCALE SETUP ---
+LocaleConfig.locales["tr"] = {
+    monthNames: [
+        "Ocak",
+        "Şubat",
+        "Mart",
+        "Nisan",
+        "Mayıs",
+        "Haziran",
+        "Temmuz",
+        "Ağustos",
+        "Eylül",
+        "Ekim",
+        "Kasım",
+        "Aralık",
+    ],
+    monthNamesShort: [
+        "Oca",
+        "Şub",
+        "Mar",
+        "Nis",
+        "May",
+        "Haz",
+        "Tem",
+        "Ağu",
+        "Eyl",
+        "Eki",
+        "Kas",
+        "Ara",
+    ],
+    dayNames: [
+        "Pazar",
+        "Pazartesi",
+        "Salı",
+        "Çarşamba",
+        "Perşembe",
+        "Cuma",
+        "Cumartesi",
+    ],
+    dayNamesShort: ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"],
+    today: "Bugün",
+};
+LocaleConfig.defaultLocale = "tr";
+
+// --- 2. RENK PALETİ (Home Screen ile Uyumlu & Canlı) ---
+// Home ekranındaki COLORS.danger, success vb. tonlarının "Neon" versiyonları
+const THEME_COLORS = {
+    tempo: "#FF4501", // Home'daki Accent (Turuncu/Kırmızı)
+    easy: "#4ECDC4", // Home'daki Success
+    interval: "#FFD93D", // Home'daki Warning
+    long: "#A569BD", // Home'daki Info
+    rest: "#B0A89E", // Home'daki TextDim
+    default: "#FA7D09", // Home'daki Secondary
+};
+
+type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
+
+const getWorkoutTheme = (type: WorkoutTypeEnum) => {
+    switch (type) {
+        case "tempo":
+            return {
+                color: THEME_COLORS.tempo,
+                name: "Tempo",
+                icon: "speedometer",
+                bgGradient: [THEME_COLORS.tempo + "50", COLORS.card],
+            };
+        case "easy":
+            return {
+                color: THEME_COLORS.easy,
+                name: "Hafif",
+                icon: "leaf",
+                bgGradient: [THEME_COLORS.easy + "50", COLORS.card],
+            };
+        case "interval":
+            return {
+                color: THEME_COLORS.interval,
+                name: "İnterval",
+                icon: "flash",
+                bgGradient: [THEME_COLORS.interval + "50", COLORS.card],
+            };
+        case "long":
+            return {
+                color: THEME_COLORS.long,
+                name: "Uzun",
+                icon: "infinite",
+                bgGradient: [THEME_COLORS.long + "50", COLORS.card],
+            };
+        case "rest":
+            return {
+                color: THEME_COLORS.rest,
+                name: "Dinlenme",
+                icon: "moon",
+                bgGradient: [COLORS.cardVariant, COLORS.card],
+            };
+        default:
+            return {
+                color: THEME_COLORS.default,
+                name: "Koşu",
+                icon: "fitness",
+                bgGradient: [THEME_COLORS.default + "50", COLORS.card],
+            };
+    }
+};
 
 const CalendarScreen = () => {
     const { token } = useContext(AuthContext);
-    const [viewMode, setViewMode] = useState("month");
+    const params = useLocalSearchParams();
 
-    const today = new Date().toISOString().split("T")[0];
-    const [selectedDate, setSelectedDate] = useState(today);
-
+    const [selectedDate, setSelectedDate] = useState(
+        params.initialDate
+            ? (params.initialDate as string)
+            : new Date().toISOString().split("T")[0]
+    );
     const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
     const [workoutsMap, setWorkoutsMap] = useState<any>({});
     const [refreshing, setRefreshing] = useState(false);
+    const [currentMonth, setCurrentMonth] = useState(
+        new Date().toISOString().split("T")[0]
+    );
 
-    // --- VERİ ÇEKME ---
+    useEffect(() => {
+        if (params.initialDate) setSelectedDate(params.initialDate as string);
+    }, [params.initialDate]);
+
+    // --- DATA FETCHING ---
     const fetchWorkouts = async () => {
         if (!token) return;
         try {
@@ -38,17 +156,14 @@ const CalendarScreen = () => {
             if (response.ok) {
                 const data = await response.json();
                 setAllWorkouts(data);
-
                 const map: any = {};
                 data.forEach((w: any) => {
-                    const date = w.scheduled_date;
-                    if (!map[date]) map[date] = [];
-                    map[date].push(w);
+                    if (!map[w.scheduled_date]) map[w.scheduled_date] = w;
                 });
                 setWorkoutsMap(map);
             }
         } catch (error) {
-            console.log("Calendar fetch error:", error);
+            console.log("Fetch Error:", error);
         }
     };
 
@@ -64,211 +179,135 @@ const CalendarScreen = () => {
         setRefreshing(false);
     };
 
-    // --- NAVİGASYON (DÜZELTİLEN KISIM) ---
-    const handleWorkoutPress = (workout: any) => {
-        // detail_modal dosyasının tam yolunu buraya yazmalısın.
-        // Eğer dosya yapın: app/(protected)/(tabs)/calendar/detail_modal.tsx ise:
-        router.push({
-            pathname: "/calendar/detail_modal",
-            params: { workoutId: workout.id },
-        });
-    };
+    // --- CUSTOM DAY RENDERER ---
+    const renderCustomDay = ({
+        date,
+        state,
+    }: {
+        date: DateData;
+        state: string;
+    }) => {
+        const dateStr = date.dateString;
+        const workout = workoutsMap[dateStr];
+        const isSelected = dateStr === selectedDate;
+        const isToday = state === "today";
+        const isCurrentMonth = state === "";
 
-    // --- TAKVİM İŞARETLEME ---
-    const markedDates: any = {};
-    allWorkouts.forEach((w: any) => {
-        const date = w.scheduled_date;
-        const isCompleted = w.status === "completed";
-        markedDates[date] = {
-            marked: true,
-            dotColor: isCompleted ? "#4CAF50" : COLORS.accent,
-        };
-    });
-    markedDates[selectedDate] = {
-        ...markedDates[selectedDate],
-        selected: true,
-        selectedColor: COLORS.accent,
-        disableTouchEvent: true,
-    };
+        const theme = workout ? getWorkoutTheme(workout.workout_type) : null;
+        // Eğer antrenman yoksa kenarlık koyu gri olsun, varsa temanın rengi
+        const borderColor = theme ? theme.color : COLORS.cardBorder;
+        const isCompleted = workout?.status === "completed";
 
-    // --- HELPERLAR ---
-    const getWorkoutTypeIcon = (type: string) => {
-        switch (type) {
-            case "tempo":
-                return "speedometer-outline";
-            case "easy":
-                return "walk-outline";
-            case "interval":
-                return "flash-outline";
-            case "long":
-                return "trending-up-outline";
-            case "rest":
-                return "moon-outline";
-            default:
-                return "fitness-outline";
-        }
-    };
-
-    const getWorkoutTypeColor = (type: string) => {
-        switch (type) {
-            case "tempo":
-                return "#FF6B6B";
-            case "easy":
-                return "#4ECDC4";
-            case "interval":
-                return "#FFD93D";
-            case "long":
-                return "#A569BD";
-            case "rest":
-                return "#95A5A6";
-            default:
-                return COLORS.accent;
-        }
-    };
-
-    const formatTime = (timeStr: string) =>
-        timeStr ? timeStr.slice(0, 5) : "-";
-    const formatDuration = (min: number) => (min ? `${min} dk` : "-");
-
-    // Haftalık Görünüm
-    const renderWeekView = () => {
-        const current = new Date();
-        const weekDays = [];
-        for (let i = -3; i <= 3; i++) {
-            const date = new Date(current);
-            date.setDate(current.getDate() + i);
-            const dateString = date.toISOString().split("T")[0];
-
-            const dayWorkouts = workoutsMap[dateString] || [];
-
-            weekDays.push({
-                dateString: dateString,
-                day: date.getDate(),
-                dayName: date.toLocaleDateString("tr-TR", { weekday: "short" }),
-                isToday: dateString === today,
-                workouts: dayWorkouts,
-                isSelected: dateString === selectedDate,
-            });
+        // 1. SEÇİLİ GÜN (Home Screen Gradient stili)
+        if (isSelected) {
+            return (
+                <Pressable
+                    onPress={() => setSelectedDate(dateStr)}
+                    style={styles.dayContainer}
+                >
+                    <LinearGradient
+                        colors={[COLORS.accent, COLORS.secondary]}
+                        style={styles.selectedDayBox}
+                    >
+                        <Text style={styles.selectedDayText}>{date.day}</Text>
+                        {workout && <View style={styles.dotWhite} />}
+                    </LinearGradient>
+                </Pressable>
+            );
         }
 
+        // 2. DİĞER GÜNLER
         return (
-            <View style={styles.weekView}>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {weekDays.map((day) => (
-                        <Pressable
-                            key={day.dateString}
-                            style={[
-                                styles.weekDayCard,
-                                day.isToday && styles.weekDayCardToday,
-                                day.isSelected && styles.weekDayCardSelected,
-                            ]}
-                            onPress={() => setSelectedDate(day.dateString)}
-                        >
-                            <Text
-                                style={[
-                                    styles.weekDayName,
-                                    (day.isSelected || day.isToday) && {
-                                        color: day.isSelected
-                                            ? "white"
-                                            : COLORS.accent,
-                                    },
-                                ]}
-                            >
-                                {day.dayName}
-                            </Text>
-                            <Text
-                                style={[
-                                    styles.weekDayNumber,
-                                    (day.isSelected || day.isToday) && {
-                                        color: day.isSelected
-                                            ? "white"
-                                            : COLORS.accent,
-                                    },
-                                ]}
-                            >
-                                {day.day}
-                            </Text>
-                            <View style={styles.weekDayDots}>
-                                {day.workouts
-                                    .slice(0, 3)
-                                    .map((w: any, idx: number) => (
-                                        <View
-                                            key={idx}
-                                            style={[
-                                                styles.weekDayDot,
-                                                {
-                                                    backgroundColor:
-                                                        getWorkoutTypeColor(
-                                                            w.workout_type
-                                                        ),
-                                                },
-                                            ]}
-                                        />
-                                    ))}
-                            </View>
-                        </Pressable>
-                    ))}
-                </ScrollView>
-            </View>
+            <Pressable
+                onPress={() => setSelectedDate(dateStr)}
+                style={[
+                    styles.dayContainer,
+                    !isCurrentMonth && { opacity: 0.3 }, // Başka ayın günleri silik
+                ]}
+            >
+                <View
+                    style={[
+                        styles.dayBox,
+                        // --- ANTRENMAN VARSA ---
+                        workout && {
+                            borderColor: borderColor,
+                            borderWidth: 2,
+                            // Dolguyu "45" yaparak belirginleştirdik (Daha opak)
+                            backgroundColor: borderColor + "45",
+                        },
+
+                        // --- BUGÜN (ANTRENMAN YOKSA) ---
+                        isToday &&
+                            !workout && {
+                                borderColor: COLORS.text, // Beyaz çerçeve
+                                borderWidth: 1.5,
+                                backgroundColor: "rgba(255,255,255,0.1)",
+                            },
+
+                        // --- BOŞ GÜNLER (STANDART) ---
+                        // Home screen background ile uyumlu hafif bir kart rengi
+                        !workout &&
+                            !isToday && {
+                                backgroundColor: COLORS.card,
+                                borderColor: COLORS.cardBorder,
+                            },
+                    ]}
+                >
+                    <Text
+                        style={[
+                            styles.dayText,
+                            // Yazı Rengi:
+                            // Antrenman varsa -> Beyaz (Arka plan renkli olduğu için)
+                            // Boş günse -> COLORS.textDim (Home screen'deki gri)
+                            workout || isToday
+                                ? { color: COLORS.white, fontWeight: "800" }
+                                : { color: COLORS.textDim, fontWeight: "600" },
+                        ]}
+                    >
+                        {date.day}
+                    </Text>
+
+                    {/* Tamamlandı İkonu */}
+                    {isCompleted && (
+                        <View style={styles.completedIcon}>
+                            <Ionicons
+                                name="checkmark-circle"
+                                size={14}
+                                color={COLORS.success}
+                            />
+                        </View>
+                    )}
+                </View>
+            </Pressable>
         );
     };
 
-    const selectedDayWorkouts = workoutsMap[selectedDate] || [];
+    const selectedWorkout = workoutsMap[selectedDate];
 
     return (
         <View style={styles.container}>
+            <StatusBar
+                barStyle="light-content"
+                translucent
+                backgroundColor="transparent"
+            />
+
+            {/* --- HEADER --- */}
             <View style={styles.header}>
-                <Text style={styles.headerTitle}>Antrenman Takvimi</Text>
-                <View style={styles.viewToggle}>
-                    <Pressable
-                        style={[
-                            styles.toggleButton,
-                            viewMode === "week" && styles.toggleButtonActive,
-                        ]}
-                        onPress={() => setViewMode("week")}
-                    >
-                        <Ionicons
-                            name="list-outline"
-                            size={20}
-                            color={viewMode === "week" ? "white" : COLORS.text}
-                        />
-                        <Text
-                            style={[
-                                styles.toggleButtonText,
-                                viewMode === "week" &&
-                                    styles.toggleButtonTextActive,
-                            ]}
-                        >
-                            Hafta
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        style={[
-                            styles.toggleButton,
-                            viewMode === "month" && styles.toggleButtonActive,
-                        ]}
-                        onPress={() => setViewMode("month")}
-                    >
-                        <Ionicons
-                            name="calendar-outline"
-                            size={20}
-                            color={viewMode === "month" ? "white" : COLORS.text}
-                        />
-                        <Text
-                            style={[
-                                styles.toggleButtonText,
-                                viewMode === "month" &&
-                                    styles.toggleButtonTextActive,
-                            ]}
-                        >
-                            Ay
-                        </Text>
-                    </Pressable>
+                <Text style={styles.headerTitle}>Takvim</Text>
+                <View style={styles.headerStats}>
+                    <Ionicons
+                        name="calendar-outline"
+                        size={16}
+                        color={COLORS.accent}
+                    />
+                    <Text style={styles.headerStatsText}>
+                        {allWorkouts.length} Plan
+                    </Text>
                 </View>
             </View>
 
             <ScrollView
-                style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
                     <RefreshControl
@@ -278,163 +317,220 @@ const CalendarScreen = () => {
                     />
                 }
             >
-                {viewMode === "month" ? (
-                    <View style={styles.calendarContainer}>
-                        <Calendar
-                            current={selectedDate}
-                            onDayPress={(day: any) =>
-                                setSelectedDate(day.dateString)
-                            }
-                            markedDates={markedDates}
-                            theme={{
-                                calendarBackground: COLORS.card,
-                                textSectionTitleColor: COLORS.text,
-                                selectedDayBackgroundColor: COLORS.accent,
-                                selectedDayTextColor: "white",
-                                todayTextColor: COLORS.accent,
-                                dayTextColor: COLORS.text,
-                                textDisabledColor: "#666",
-                                monthTextColor: COLORS.text,
-                                textMonthFontSize: 18,
-                                textMonthFontWeight: "bold",
-                                arrowColor: COLORS.accent,
-                                "stylesheet.calendar.header": {
-                                    marginTop: 5,
+                {/* --- GRID CALENDAR --- */}
+                <View style={styles.calendarContainer}>
+                    <Calendar
+                        current={currentMonth}
+                        firstDay={1} // Pazartesi Başlangıç
+                        dayComponent={renderCustomDay}
+                        onMonthChange={(date: any) =>
+                            setCurrentMonth(date.dateString)
+                        }
+                        theme={{
+                            calendarBackground: "transparent",
+                            textSectionTitleColor: COLORS.textDim, // Gün isimleri (Pzt, Sal) gri
+                            monthTextColor: COLORS.text, // Ay ismi beyaz
+                            textMonthFontSize: 22,
+                            textMonthFontWeight: "800",
+                            textDayHeaderFontSize: 13,
+                            textDayHeaderFontWeight: "700",
+                            arrowColor: COLORS.accent,
+                            "stylesheet.calendar.header": {
+                                header: {
                                     flexDirection: "row",
                                     justifyContent: "space-between",
+                                    paddingLeft: 10,
+                                    paddingRight: 10,
+                                    marginBottom: 20,
+                                    alignItems: "center",
                                 },
-                            }}
-                            style={styles.calendar}
-                        />
-                    </View>
-                ) : (
-                    renderWeekView()
-                )}
+                                week: {
+                                    flexDirection: "row",
+                                    justifyContent: "space-around",
+                                    paddingBottom: 10,
+                                    marginBottom: 5,
+                                    borderBottomWidth: 1,
+                                    borderBottomColor: COLORS.cardBorder,
+                                },
+                            },
+                        }}
+                    />
+                </View>
 
-                <View style={styles.workoutsSection}>
-                    <Text style={styles.workoutsSectionTitle}>
+                {/* --- DETAIL SECTION (HOME TICKET STYLE) --- */}
+                <View style={styles.detailsSection}>
+                    <Text style={styles.detailsDate}>
                         {new Date(selectedDate).toLocaleDateString("tr-TR", {
                             day: "numeric",
                             month: "long",
-                            year: "numeric",
+                            weekday: "long",
                         })}
                     </Text>
 
-                    {selectedDayWorkouts.length > 0 ? (
-                        selectedDayWorkouts.map((workout: any) => (
-                            <Pressable
-                                key={workout.id}
-                                style={styles.workoutCard}
-                                onPress={() => handleWorkoutPress(workout)}
-                            >
-                                <View
-                                    style={[
-                                        styles.workoutTypeIndicator,
-                                        {
-                                            backgroundColor:
-                                                getWorkoutTypeColor(
-                                                    workout.workout_type
-                                                ),
-                                        },
-                                    ]}
-                                />
-                                <View
-                                    style={[
-                                        styles.workoutIconContainer,
-                                        {
-                                            backgroundColor: `${getWorkoutTypeColor(
-                                                workout.workout_type
-                                            )}20`,
-                                        },
-                                    ]}
-                                >
-                                    <Ionicons
-                                        name={
-                                            getWorkoutTypeIcon(
-                                                workout.workout_type
-                                            ) as any
-                                        }
-                                        size={24}
-                                        color={getWorkoutTypeColor(
-                                            workout.workout_type
-                                        )}
-                                    />
-                                </View>
-                                <View style={styles.workoutContent}>
-                                    <View style={styles.workoutHeader}>
-                                        <Text
-                                            style={styles.workoutTitle}
-                                            numberOfLines={1}
-                                        >
-                                            {workout.title}
-                                        </Text>
-                                        {workout.status === "completed" && (
-                                            <View style={styles.completedBadge}>
+                    {selectedWorkout ? (
+                        <Pressable
+                            onPress={() =>
+                                router.push({
+                                    pathname: "/calendar/detail_modal",
+                                    params: { workoutId: selectedWorkout.id },
+                                })
+                            }
+                        >
+                            {(() => {
+                                const theme = getWorkoutTheme(
+                                    selectedWorkout.workout_type
+                                );
+                                const isCompleted =
+                                    selectedWorkout.status === "completed";
+
+                                return (
+                                    <LinearGradient
+                                        colors={theme.bgGradient as any}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={styles.gradientTicket}
+                                    >
+                                        {/* TICKET LEFT */}
+                                        <View style={styles.ticketLeft}>
+                                            <View
+                                                style={[
+                                                    styles.iconBox,
+                                                    {
+                                                        borderColor:
+                                                            theme.color,
+                                                    },
+                                                ]}
+                                            >
                                                 <Ionicons
-                                                    name="checkmark-circle"
-                                                    size={12}
-                                                    color="#4CAF50"
+                                                    name={theme.icon as any}
+                                                    size={22}
+                                                    color={theme.color}
+                                                />
+                                            </View>
+                                            <Text style={styles.ticketTime}>
+                                                {selectedWorkout.scheduled_time
+                                                    ? selectedWorkout.scheduled_time.slice(
+                                                          0,
+                                                          5
+                                                      )
+                                                    : "--:--"}
+                                            </Text>
+                                        </View>
+
+                                        {/* TICKET CENTER */}
+                                        <View style={styles.ticketCenter}>
+                                            <View
+                                                style={styles.ticketHeaderRow}
+                                            >
+                                                <Text
+                                                    style={[
+                                                        styles.ticketType,
+                                                        { color: theme.color },
+                                                    ]}
+                                                >
+                                                    {theme.name}
+                                                </Text>
+                                                {isCompleted && (
+                                                    <View
+                                                        style={[
+                                                            styles.completedBadge,
+                                                            {
+                                                                backgroundColor:
+                                                                    theme.color,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        <Text
+                                                            style={
+                                                                styles.completedText
+                                                            }
+                                                        >
+                                                            BİTTİ
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+
+                                            <Text
+                                                style={styles.ticketTitle}
+                                                numberOfLines={1}
+                                            >
+                                                {selectedWorkout.title}
+                                            </Text>
+
+                                            <View style={styles.ticketMetaRow}>
+                                                <Ionicons
+                                                    name="timer-outline"
+                                                    size={14}
+                                                    color={COLORS.textDim}
                                                 />
                                                 <Text
-                                                    style={styles.completedText}
+                                                    style={
+                                                        styles.ticketMetaText
+                                                    }
                                                 >
-                                                    Bitti
+                                                    {
+                                                        selectedWorkout.planned_duration
+                                                    }{" "}
+                                                    dk
                                                 </Text>
+
+                                                {selectedWorkout.planned_distance >
+                                                    0 && (
+                                                    <>
+                                                        <Text
+                                                            style={
+                                                                styles.ticketDivider
+                                                            }
+                                                        >
+                                                            •
+                                                        </Text>
+                                                        <Ionicons
+                                                            name="location-outline"
+                                                            size={14}
+                                                            color={
+                                                                COLORS.textDim
+                                                            }
+                                                        />
+                                                        <Text
+                                                            style={
+                                                                styles.ticketMetaText
+                                                            }
+                                                        >
+                                                            {
+                                                                selectedWorkout.planned_distance
+                                                            }{" "}
+                                                            km
+                                                        </Text>
+                                                    </>
+                                                )}
                                             </View>
-                                        )}
-                                    </View>
-                                    <View style={styles.workoutDetails}>
-                                        <View style={styles.workoutDetail}>
-                                            <Ionicons
-                                                name="time-outline"
-                                                size={14}
-                                                color="#B0B0B0"
-                                            />
-                                            <Text
-                                                style={styles.workoutDetailText}
-                                            >
-                                                {formatTime(
-                                                    workout.scheduled_time
-                                                )}
-                                            </Text>
                                         </View>
-                                        <View style={styles.workoutDetail}>
-                                            <Ionicons
-                                                name="timer-outline"
-                                                size={14}
-                                                color="#B0B0B0"
-                                            />
-                                            <Text
-                                                style={styles.workoutDetailText}
-                                            >
-                                                {formatDuration(
-                                                    workout.planned_duration
-                                                )}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                </View>
-                                <Ionicons
-                                    name="chevron-forward"
-                                    size={22}
-                                    color="#B0B0B0"
-                                />
-                            </Pressable>
-                        ))
+
+                                        {/* ARROW */}
+                                        <Ionicons
+                                            name="chevron-forward"
+                                            size={24}
+                                            color={COLORS.cardBorder}
+                                        />
+                                    </LinearGradient>
+                                );
+                            })()}
+                        </Pressable>
                     ) : (
                         <View style={styles.emptyState}>
                             <Ionicons
-                                name="calendar-outline"
-                                size={60}
-                                color="#666"
+                                name="calendar-clear-outline"
+                                size={32}
+                                color={COLORS.textDim}
                             />
-                            <Text style={styles.emptyStateText}>
-                                Bu günde antrenman yok
+                            <Text style={styles.emptyDesc}>
+                                Planlanmış antrenman yok.
                             </Text>
                         </View>
                     )}
                 </View>
-                <View style={{ height: 30 }} />
+                <View style={{ height: 100 }} />
             </ScrollView>
         </View>
     );
@@ -443,174 +539,213 @@ const CalendarScreen = () => {
 export default CalendarScreen;
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.background },
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.background, // #201911
+    },
+    // HEADER
     header: {
-        backgroundColor: COLORS.card,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
         paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 15,
-        borderBottomLeftRadius: 25,
-        borderBottomRightRadius: 25,
+        // DÜZELTME BURADA: Headershown false olduğu için manuel margin
+        paddingTop: 70,
+        paddingBottom: 20,
     },
     headerTitle: {
-        color: COLORS.text,
-        fontSize: 28,
-        fontWeight: "bold",
-        marginBottom: 15,
+        fontSize: 32,
+        fontWeight: "900",
+        color: COLORS.text, // Parlak beyaz
+        letterSpacing: 0.5,
     },
-    viewToggle: {
-        flexDirection: "row",
-        backgroundColor: COLORS.background,
-        borderRadius: 12,
-        padding: 4,
-    },
-    toggleButton: {
-        flex: 1,
+    headerStats: {
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 10,
-        paddingHorizontal: 15,
-        borderRadius: 10,
+        backgroundColor: COLORS.card,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
         gap: 6,
     },
-    toggleButtonActive: { backgroundColor: COLORS.accent },
-    toggleButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-    toggleButtonTextActive: { color: "white" },
-    scrollView: { flex: 1 },
+    headerStatsText: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "700",
+    },
+
+    // CALENDAR GRID
     calendarContainer: {
-        marginHorizontal: 20,
-        marginTop: 20,
-        borderRadius: 15,
-        overflow: "hidden",
+        marginHorizontal: 10,
+        paddingVertical: 10,
+    },
+    dayContainer: {
+        width: CELL_WIDTH,
+        height: CELL_WIDTH,
+        justifyContent: "center",
+        alignItems: "center",
+        marginVertical: 4,
+    },
+    dayBox: {
+        width: CELL_WIDTH - 6,
+        height: CELL_WIDTH - 6,
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: 14,
+        borderWidth: 1,
+    },
+    selectedDayBox: {
+        width: CELL_WIDTH - 2,
+        height: CELL_WIDTH - 2,
+        justifyContent: "center",
+        alignItems: "center",
+        borderRadius: 16,
+        elevation: 8,
+        shadowColor: COLORS.accent,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 8,
+    },
+    dayText: {
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    selectedDayText: {
+        color: COLORS.white,
+        fontSize: 18,
+        fontWeight: "900",
+    },
+    dotWhite: {
+        width: 5,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: COLORS.white,
+        marginTop: 4,
+    },
+    completedIcon: {
+        position: "absolute",
+        top: -6,
+        right: -6,
+        backgroundColor: COLORS.background,
+        borderRadius: 10,
+        padding: 1,
+        zIndex: 2,
+    },
+
+    // DETAILS SECTION
+    detailsSection: {
+        paddingHorizontal: 20,
+        marginTop: 15,
+    },
+    detailsDate: {
+        color: COLORS.textDim,
+        fontSize: 14,
+        fontWeight: "700",
+        textTransform: "uppercase",
+        letterSpacing: 1,
+        marginBottom: 15,
+        marginLeft: 5,
+    },
+
+    // HOME STYLE TICKET
+    gradientTicket: {
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 18,
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        // Shadow
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
-    },
-    calendar: { borderRadius: 15 },
-    weekView: { paddingVertical: 20, paddingLeft: 20 },
-    weekDayCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 15,
-        marginRight: 12,
-        alignItems: "center",
-        minWidth: 70,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.2,
-        shadowRadius: 3,
+        shadowRadius: 6,
         elevation: 4,
     },
-    weekDayCardToday: { borderWidth: 2, borderColor: COLORS.accent },
-    weekDayCardSelected: { backgroundColor: COLORS.accent },
-    weekDayName: {
-        color: "#B0B0B0",
-        fontSize: 12,
-        fontWeight: "600",
-        marginBottom: 8,
-    },
-    weekDayNumber: {
-        color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        marginBottom: 8,
-    },
-    weekDayDots: { flexDirection: "row", gap: 4 },
-    weekDayDot: { width: 6, height: 6, borderRadius: 3 },
-    workoutsSection: { paddingHorizontal: 20, marginTop: 25 },
-    workoutsSectionTitle: {
-        color: COLORS.text,
-        fontSize: 20,
-        fontWeight: "600",
-        marginBottom: 15,
-    },
-    workoutCard: {
-        flexDirection: "row",
+    ticketLeft: {
         alignItems: "center",
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 16,
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
-    },
-    workoutTypeIndicator: {
-        position: "absolute",
-        left: 0,
-        top: 0,
-        bottom: 0,
-        width: 4,
-        borderTopLeftRadius: 15,
-        borderBottomLeftRadius: 15,
-    },
-    workoutIconContainer: {
+        justifyContent: "center",
+        marginRight: 15,
         width: 50,
-        height: 50,
-        borderRadius: 25,
+    },
+    iconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.background,
         justifyContent: "center",
         alignItems: "center",
-        marginLeft: 8,
-        marginRight: 12,
+        borderWidth: 1,
+        marginBottom: 6,
     },
-    workoutContent: { flex: 1 },
-    workoutHeader: {
+    ticketTime: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    ticketCenter: {
+        flex: 1,
+    },
+    ticketHeaderRow: {
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 8,
+        marginBottom: 6,
+        gap: 8,
     },
-    workoutTitle: {
+    ticketType: {
+        fontSize: 11,
+        fontWeight: "800",
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+    },
+    ticketTitle: {
         color: COLORS.text,
-        fontSize: 16,
+        fontSize: 17,
+        fontWeight: "700",
+        marginBottom: 6,
+    },
+    ticketMetaRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+    },
+    ticketMetaText: {
+        color: COLORS.textDim,
+        fontSize: 13,
         fontWeight: "600",
-        flex: 1,
-        paddingRight: 5,
+    },
+    ticketDivider: {
+        color: COLORS.textDim,
+        marginHorizontal: 4,
+        fontSize: 10,
     },
     completedBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "rgba(76, 175, 80, 0.15)",
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        gap: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
     },
-    completedText: { color: "#4CAF50", fontSize: 11, fontWeight: "600" },
-    workoutDetails: { flexDirection: "row", gap: 15 },
-    workoutDetail: { flexDirection: "row", alignItems: "center", gap: 4 },
-    workoutDetailText: { color: "#B0B0B0", fontSize: 13 },
+    completedText: {
+        color: COLORS.background,
+        fontSize: 9,
+        fontWeight: "900",
+    },
+
+    // EMPTY STATE
     emptyState: {
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 60,
         backgroundColor: COLORS.card,
-        borderRadius: 15,
-    },
-    emptyStateText: {
-        color: "#B0B0B0",
-        fontSize: 16,
-        marginTop: 15,
-        marginBottom: 20,
-    },
-    addWorkoutButton: {
-        flexDirection: "row",
+        borderRadius: 20,
+        padding: 25,
         alignItems: "center",
-        gap: 8,
-        backgroundColor: COLORS.background,
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-        borderRadius: 12,
+        flexDirection: "row",
+        gap: 15,
         borderWidth: 1,
-        borderColor: COLORS.accent,
+        borderColor: COLORS.cardBorder,
+        borderStyle: "dashed",
     },
-    addWorkoutButtonText: {
-        color: COLORS.accent,
+    emptyDesc: {
+        color: COLORS.textDim,
         fontSize: 14,
         fontWeight: "600",
     },
