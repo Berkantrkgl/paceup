@@ -118,6 +118,8 @@ class NotificationViewSet(viewsets.ModelViewSet):
 
 from rest_framework.views import APIView
 
+# core/views.py
+
 class StatsSummaryView(APIView):
     """
     Hero kartları ve Haftalık Hedef durumu.
@@ -136,18 +138,23 @@ class StatsSummaryView(APIView):
             total_cal=Sum('calories_burned')
         )
 
-        # 2. HAFTALIK DURUM (Pazartesi'den bugüne)
-        # Haftanın başlangıcını bul (Pazartesi = 0)
+        # 2. HAFTALIK DURUM
         start_of_week = today - timedelta(days=today.weekday())
-        
         this_week_count = WorkoutResult.objects.filter(
             user=user,
             completed_at__date__gte=start_of_week
         ).count()
 
-        # 3. AKTİF GÜN SAYISI
-        days_active = (today - user.date_joined.date()).days
-        if days_active < 1: days_active = 1
+        # --- 3. DÜZELTİLEN KISIM: GERÇEK AKTİF GÜN SAYISI ---
+        # Kullanıcının antrenman yaptığı benzersiz gün sayısı (count distinct dates)
+        # values('completed_at__date') ile tarihleri gruplarız, sonra count alırız.
+        active_days_count = WorkoutResult.objects.filter(user=user)\
+            .values('completed_at__date')\
+            .distinct()\
+            .count()
+
+        # Eğer hiç yoksa 0 döner, görsel açıdan en az 1 görünsün istersen logic ekleyebilirsin
+        # ama doğrusu 0 veya gerçek sayıdır.
 
         return Response({
             # Hero Kartları
@@ -158,13 +165,12 @@ class StatsSummaryView(APIView):
             
             # Streak & Aktivite
             "current_streak": user.current_streak, 
-            "days_active": days_active,
+            "days_active": active_days_count, # <-- ARTIK GERÇEK SAYI
 
-            # Haftalık Hedef (Halka Grafik için)
-            "weekly_goal": user.weekly_goal,       # Hedef: 3
-            "weekly_progress": this_week_count,    # Yapılan: 1
+            # Haftalık Hedef
+            "weekly_goal": user.weekly_goal,
+            "weekly_progress": this_week_count,
         })
-        
 
 
 class StatsChartsView(APIView):

@@ -1,4 +1,4 @@
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete
 from django.dispatch import receiver
 from django.db.models import F
 from django.utils import timezone
@@ -6,75 +6,68 @@ from datetime import timedelta
 from .models import User, WorkoutResult, Achievement, Notification, Program, Workout
 
 # -------------------------------------------------------------------------
-# 1. SİNYAL: ANTRENMAN TAMAMLANINCA (Data Aggregation & Streak)
+# 1. SİNYAL: ANTRENMAN TAMAMLANINCA (Data Aggregation & Program Streak)
 # -------------------------------------------------------------------------
 @receiver(post_save, sender=WorkoutResult)
 def handle_workout_completion(sender, instance, created, **kwargs):
-    """
-    Bir WorkoutResult kaydedildiğinde:
-    1. User istatistiklerini güncelle (Toplam mesafe, süre ve SERİ).
-    2. Eğer bu planlı bir antrenmansa, Program ve Workout durumunu güncelle.
-    """
     if created:
         user = instance.user
         
-        # --- A) STREAK (SERİ) HESAPLAMA MANTIĞI ---
-        # Antrenmanın yapıldığı tarihi alıyoruz (Saat bilgisinden arındırılmış)
-        current_workout_date = instance.completed_at.date()
-
-        # Kullanıcının bu antrenmandan ÖNCEKİ en son antrenmanını buluyoruz.
-        # completed_at alanına göre sıralayıp en sonuncuyu alıyoruz.
-        last_workout = WorkoutResult.objects.filter(
-            user=user,
-            completed_at__lt=instance.completed_at # Şu ankinden tarihçe eski olanlar
-        ).order_by('-completed_at').first()
-
-        # Varsayılan olarak seri 1'dir (Eğer ilk antrenmansa)
-        new_streak = 1
-
-        if last_workout:
-            last_workout_date = last_workout.completed_at.date()
-            
-            # Tarih farkını hesapla
-            delta = current_workout_date - last_workout_date
-            
-            if delta.days == 1:
-                # Son antrenman DÜN yapılmış -> Seri artar
-                new_streak = user.current_streak + 1
-            elif delta.days == 0:
-                # Son antrenman BUGÜN yapılmış -> Aynı gün çift idman, seri değişmez
-                new_streak = user.current_streak
-            else:
-                # Aradan 1 günden fazla geçmiş -> Zincir kırıldı, seri 1
-                new_streak = 1
+        # --- A) YENİ STREAK MANTIĞI: PROGRAM SADAKATİ ---
+        # Mantık: Aktif programdaki geçmiş antrenmanlara bak. 
+        # Sondan başa doğru "Tamamlanmış" olanları say. İlk firede dur.
         
-        # Hesaplanan yeni streak'i kullanıcı objesine ata
+        new_streak = 0
+        
+        # 1. Eğer bu sonuç bir plana bağlıysa planın geçmişine bak
+        if instance.workout:
+            current_program = instance.workout.program
+            
+            # Bu programdaki, bugüne kadar olan (bugün dahil) tüm antrenmanları 
+            # tarihe göre tersten (yeniden eskiye) çek.
+            past_workouts = Workout.objects.filter(
+                program=current_program,
+                scheduled_date__lte=instance.workout.scheduled_date
+            ).order_by('-scheduled_date')
+
+            # Zinciri kontrol et
+            for w in past_workouts:
+                if w.is_completed:
+                    new_streak += 1
+                else:
+                    # Zincir koptu (Yapılmamış/Atlanmış antrenman)
+                    break
+        
+        # 2. Eğer programsız (Serbest) koşuysa
+        else:
+            # Serbest koşular mevcut seriyi bozmaz ama artırır mı?
+            # Senin kuralına göre "Program antrenmanları" bazlı olduğu için
+            # serbest koşuyu seriye dahil etmiyor veya mevcut seriyi koruyoruz.
+            # Şimdilik mevcut seriyi koruyalım ama artırmayalım.
+            new_streak = user.current_streak 
+            # İstersen: new_streak += 1 yapabilirsin.
+
+        # Yeni seriyi kaydet
         user.current_streak = new_streak
 
-        # En uzun seri rekorunu kontrol et
-        if new_streak > user.longest_streak:
-            user.longest_streak = new_streak
+        # Rekor Kontrolü
+        if user.current_streak > user.longest_streak:
+            user.longest_streak = user.current_streak
 
-        # --- B) User İstatistiklerini Güncelle (Atomic Update) ---
-        # F() expression kullanarak Race Condition'ı önlüyoruz.
+        # --- B) İstatistikleri Güncelle ---
         user.total_workouts = F('total_workouts') + 1
         user.total_distance = F('total_distance') + instance.actual_distance
         user.total_time = F('total_time') + instance.actual_duration
         
-        # Tüm değişiklikleri (Hem streak hem F() değerleri) tek seferde kaydet
         user.save() 
 
         # --- C) Planlı Antrenman Yönetimi ---
-        # Eğer bu koşu bir plana bağlıysa (Serbest koşu değilse)
         if instance.workout:
             workout = instance.workout
-            
-            # 1. Workout statüsünü güncelle
             workout.is_completed = True
             workout.status = Workout.Status.COMPLETED
             workout.save()
 
-            # 2. Program ilerlemesini güncelle
             program = workout.program
             program.completed_workouts_count = F('completed_workouts_count') + 1
             program.save()
@@ -182,3 +175,47 @@ def create_achievement_notification(sender, instance, created, **kwargs):
             notification_type=Notification.NotificationType.ACHIEVEMENT,
             # Kullanıcı bildirime tıklarsa Achievement listesine gitmesi için bir logic eklenebilir.
         )
+        
+        
+# -------------------------------------------------------------------------
+# 4. SİNYAL: ANTRENMAN İPTAL EDİLİNCE / SİLİNİNCE (Undo Logic)
+# -------------------------------------------------------------------------
+@receiver(post_delete, sender=WorkoutResult)
+def handle_workout_deletion(sender, instance, **kwargs):
+    """
+    Bir WorkoutResult silindiğinde (Kullanıcı 'Tamamlanmadı'ya bastığında):
+    Kullanıcı istatistiklerini geri al (Azalt).
+    """
+    user = instance.user
+    
+    # İstatistikleri düşür
+    if user.total_workouts > 0:
+        user.total_workouts = F('total_workouts') - 1
+        
+    if user.total_distance >= instance.actual_distance:
+        user.total_distance = F('total_distance') - instance.actual_distance
+        
+    if user.total_time >= instance.actual_duration:
+        user.total_time = F('total_time') - instance.actual_duration
+
+    # Streak'i yeniden hesaplamak karmaşık olduğu için (aradaki zinciri bulmak gerekir)
+    # şimdilik basitçe: Eğer bu antrenman son seri günüyse seriyi 1 azalt diyebiliriz
+    # ama veri tutarlılığı için streak'e dokunmamak veya sıfırlamamak daha güvenli olabilir.
+    # Şimdilik temel istatistikleri düzeltiyoruz.
+    
+    user.save()
+
+    # Eğer bu sonuç bir plana bağlıysa, planın sayacını da düşür
+    if instance.workout:
+        workout = instance.workout
+        
+        # Workout statüsünü otomatiğe bağlamak yerine frontend'den yönetmek daha güvenli
+        # ama garanti olsun diye burada da statüyü 'scheduled' yapabiliriz.
+        workout.is_completed = False
+        workout.status = Workout.Status.SCHEDULED
+        workout.save()
+
+        program = workout.program
+        if program.completed_workouts_count > 0:
+            program.completed_workouts_count = F('completed_workouts_count') - 1
+            program.save()

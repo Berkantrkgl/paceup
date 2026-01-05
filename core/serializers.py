@@ -20,7 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
             # 3. Koşu Bilgileri & Tercihler
             'experience_level', 'preferred_distance', 
             'current_max_distance', 
-            'current_pace', 'pace_display', # <--- EKLENDİ
+            'current_pace', 'pace_display',
             'weekly_goal',
 
             # 4. İstatistikler (Sadece Okunabilir)
@@ -48,7 +48,6 @@ class UserSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
-        # Username logic artık model.save()'de ama burada da fallback olarak kalabilir
         if 'username' not in validated_data:
             email = validated_data.get('email')
             validated_data['username'] = email.split('@')[0]
@@ -69,7 +68,7 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
-# 2. WORKOUT RESULT SERIALIZER
+# 2. WORKOUT RESULT SERIALIZER (KRİTİK DÜZELTME BURADA)
 class WorkoutResultSerializer(serializers.ModelSerializer):
     # Frontend'e "05:30" formatında pace döner
     pace_display = serializers.ReadOnlyField()
@@ -77,7 +76,11 @@ class WorkoutResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkoutResult
         fields = '__all__'
-        read_only_fields = ['actual_pace_seconds', 'completed_at', 'calories_burned']
+        
+        # 'user' backend tarafından (request.user) atanacak, frontend göndermeyecek.
+        # 'completed_at' frontend'den gelebilir (Geçmişe dönük veri için), o yüzden read_only değil.
+        # 'calories_burned' ve 'actual_pace' model.save() metodunda hesaplanır.
+        read_only_fields = ['user', 'actual_pace_seconds', 'calories_burned']
 
 
 # 3. WORKOUT SERIALIZER
@@ -92,7 +95,7 @@ class WorkoutSerializer(serializers.ModelSerializer):
             'id', 'program', 'title', 'workout_type', 
             'scheduled_date', 'day_of_week',
             'planned_distance', 'planned_duration', 
-            'target_pace_seconds', 'pace_display', # <--- EKLENDİ
+            'target_pace_seconds', 'pace_display', 
             'status', 'is_completed', 
             'result', 
             'created_at'
@@ -113,8 +116,8 @@ class ProgramSerializer(serializers.ModelSerializer):
             'difficulty', 'workouts_per_week', 
             'total_workouts_count', 'completed_workouts_count',
             'status',
-            'current_week_calculated', # <--- EKLENDİ
-            'progress_percent',        # <--- EKLENDİ
+            'current_week_calculated', 
+            'progress_percent',        
             'ai_generated', 'ai_parameters',
             'created_at'
         ]
