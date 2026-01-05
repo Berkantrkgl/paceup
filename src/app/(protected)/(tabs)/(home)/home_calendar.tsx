@@ -20,7 +20,11 @@ import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
-const ITEM_WIDTH = 60; // Her bir gün kutusunun genişliği (margin dahil)
+
+// --- SABİT DEĞERLER (MATEMATİK İÇİN KRİTİK) ---
+const BOX_WIDTH = 50; // Kutunun kendi genişliği
+const BOX_MARGIN = 5; // Kutunun sağ ve sol marjini (toplam 10)
+const ITEM_WIDTH = BOX_WIDTH + BOX_MARGIN * 2; // 60px (Layout hesabı için gerçek genişlik)
 const SPACING = (width - ITEM_WIDTH) / 2; // Ortalamak için kenar boşluğu
 
 // --- TİPLER ---
@@ -46,11 +50,11 @@ export default function HomeCalendarScreen() {
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // --- TAKVİM GÜNLERİ (6 AY) ---
+    // --- TAKVİM GÜNLERİ ---
     const calendarDays = useMemo(() => {
         const days = [];
         const range = 90;
-        const baseDate = new Date(); // Referans her zaman bugün olsun
+        const baseDate = new Date();
 
         for (let i = -range; i <= range; i++) {
             const date = new Date(baseDate);
@@ -127,7 +131,6 @@ export default function HomeCalendarScreen() {
                 setAllWorkouts(data);
 
                 if (initialDate) {
-                    // Gelen tarih YYYY-MM-DD formatında olmalı, saat varsa temizle
                     setSelectedDate(String(initialDate).split("T")[0]);
                 } else if (initialWorkoutId) {
                     const target = data.find(
@@ -144,21 +147,19 @@ export default function HomeCalendarScreen() {
         fetchData();
     }, [token]);
 
-    // --- ORTALAMA MANTIĞI (SCROLL TO CENTER) ---
+    // --- SCROLL TO CENTER (DÜZELTİLMİŞ) ---
     useEffect(() => {
         if (!loading && calendarDays.length > 0 && flatListRef.current) {
             const index = calendarDays.findIndex(
                 (d) => d.fullDate === selectedDate
             );
-
             if (index !== -1) {
-                // viewPosition yerine offset kullanıyoruz, çok daha stabil.
-                // Formül: (Index * ItemWidth)
-                // Padding (SPACING) sayesinde eleman tam ortaya gelir.
-                flatListRef.current.scrollToOffset({
-                    offset: index * ITEM_WIDTH,
-                    animated: true,
-                });
+                setTimeout(() => {
+                    flatListRef.current?.scrollToOffset({
+                        offset: index * ITEM_WIDTH,
+                        animated: true,
+                    });
+                }, 100);
             }
         }
     }, [selectedDate, loading, calendarDays]);
@@ -188,11 +189,8 @@ export default function HomeCalendarScreen() {
         );
         if (!workout) return;
 
-        // BUG FIX: Sadece tarih kısmını alıp karşılaştırıyoruz
         const todayStr = getLocalDateString();
-        const workoutDateStr = workout.scheduled_date.split("T")[0];
-
-        if (workoutDateStr > todayStr) {
+        if (workout.scheduled_date.split("T")[0] > todayStr) {
             Alert.alert(
                 "Henüz Erken ⏳",
                 "Gelecek tarihli bir antrenmanı şimdiden tamamlayamazsın."
@@ -347,23 +345,17 @@ export default function HomeCalendarScreen() {
     const typeStyle = selectedWorkout
         ? getWorkoutTypeStyle(selectedWorkout.workout_type)
         : null;
-
-    // Header Başlığı
-    const displayDate = new Date(selectedDate);
-    const monthName = displayDate.toLocaleDateString("tr-TR", {
+    const monthName = new Date(selectedDate).toLocaleDateString("tr-TR", {
         month: "long",
         year: "numeric",
     });
     const isTodaySelected = selectedDate === getLocalDateString();
-
-    // Gelecek Tarih Kontrolü (UI için)
     const isFuture = selectedDate > getLocalDateString();
 
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" />
 
-            {/* --- CALENDAR STRIP --- */}
             <View style={styles.calendarSection}>
                 <View style={styles.headerRow}>
                     <Pressable
@@ -376,7 +368,6 @@ export default function HomeCalendarScreen() {
                             color={COLORS.text}
                         />
                     </Pressable>
-
                     <View style={styles.titleContainer}>
                         <Text style={styles.monthTitle}>{monthName}</Text>
                         {!isTodaySelected && (
@@ -388,7 +379,6 @@ export default function HomeCalendarScreen() {
                             </Pressable>
                         )}
                     </View>
-
                     <Pressable
                         onPress={() => changeDay("next")}
                         style={styles.arrowBtn}
@@ -414,82 +404,76 @@ export default function HomeCalendarScreen() {
                             index,
                         })}
                         onScrollToIndexFailed={onScrollToIndexFailed}
-                        // İLK ve SON elemanı ortalamak için padding
                         contentContainerStyle={{ paddingHorizontal: SPACING }}
-                        // Snap efekti için
                         snapToInterval={ITEM_WIDTH}
                         decelerationRate="fast"
                         renderItem={({ item }) => {
                             const isSelected = item.fullDate === selectedDate;
-                            const hasWorkout = allWorkouts.some(
+                            const workout = allWorkouts.find(
                                 (w) => w.scheduled_date === item.fullDate
                             );
-                            const workoutStatus = hasWorkout
-                                ? allWorkouts.find(
-                                      (w) => w.scheduled_date === item.fullDate
-                                  )?.status
-                                : null;
+                            const hasWorkout = !!workout;
+                            const isCompleted = workout?.status === "completed";
+
+                            // Stil Hazırlığı
+                            let containerStyle: any = [styles.dayItem];
+                            let nameStyle: any = [styles.dayName];
+                            let numStyle: any = [styles.dayNumber];
+
+                            // 1. SEÇİLİ GÜN (Accent Dolu Arkaplan)
+                            if (isSelected) {
+                                containerStyle.push(styles.dayItemSelected);
+                                nameStyle.push(styles.textWhite);
+                                numStyle.push(styles.textWhite);
+                            }
+                            // 2. TAMAMLANMIŞ GÜN (Transparan Yeşil + Yeşil Yazı)
+                            else if (isCompleted) {
+                                containerStyle.push(styles.dayItemCompleted);
+                                nameStyle.push(styles.textSuccess);
+                                numStyle.push(styles.textSuccess);
+                            }
+                            // 3. BUGÜN (Seçili değilse)
+                            else if (item.isToday) {
+                                containerStyle.push(styles.dayItemToday);
+                                nameStyle.push({ color: COLORS.accent });
+                                numStyle.push({ color: COLORS.accent });
+                            }
 
                             return (
                                 <Pressable
-                                    style={[
-                                        styles.dayItem,
-                                        isSelected && styles.dayItemSelected,
-                                        !isSelected &&
-                                            item.isToday &&
-                                            styles.dayItemToday,
-                                    ]}
+                                    style={containerStyle}
                                     onPress={() =>
                                         setSelectedDate(item.fullDate)
                                     }
                                 >
-                                    <Text
-                                        style={[
-                                            styles.dayName,
-                                            isSelected && styles.textWhite,
-                                            !isSelected &&
-                                                item.isToday && {
-                                                    color: COLORS.accent,
-                                                },
-                                        ]}
-                                    >
+                                    <Text style={nameStyle}>
                                         {item.dayName.charAt(0)}
                                     </Text>
-                                    <Text
-                                        style={[
-                                            styles.dayNumber,
-                                            isSelected && styles.textWhite,
-                                            !isSelected &&
-                                                item.isToday && {
-                                                    color: COLORS.accent,
-                                                },
-                                        ]}
-                                    >
-                                        {item.dateNum}
-                                    </Text>
+                                    <Text style={numStyle}>{item.dateNum}</Text>
 
-                                    <View
-                                        style={[
-                                            styles.dot,
-                                            isSelected
-                                                ? {
-                                                      backgroundColor:
-                                                          COLORS.white,
-                                                  }
-                                                : hasWorkout
-                                                ? {
-                                                      backgroundColor:
-                                                          workoutStatus ===
-                                                          "completed"
-                                                              ? COLORS.success
-                                                              : COLORS.accent,
-                                                  }
-                                                : {
-                                                      backgroundColor:
-                                                          "transparent",
-                                                  },
-                                        ]}
-                                    />
+                                    {/* --- WATERMARK --- */}
+                                    {!isSelected && isCompleted && (
+                                        <View style={styles.completedOverlay}>
+                                            <Ionicons
+                                                name="checkmark-sharp"
+                                                size={40}
+                                                color={COLORS.success}
+                                                style={{ opacity: 0.25 }}
+                                            />
+                                        </View>
+                                    )}
+
+                                    {/* --- NOKTA --- */}
+                                    {!isSelected &&
+                                        !isCompleted &&
+                                        hasWorkout && (
+                                            <View
+                                                style={[
+                                                    styles.dot,
+                                                    styles.dotScheduled,
+                                                ]}
+                                            />
+                                        )}
                                 </Pressable>
                             );
                         }}
@@ -652,7 +636,6 @@ export default function HomeCalendarScreen() {
                                         </LinearGradient>
                                     </Pressable>
                                 ) : (
-                                    // DÜZELTİLEN BUTON YAZISI
                                     <Pressable
                                         style={styles.undoButton}
                                         onPress={handleMarkIncomplete}
@@ -767,20 +750,36 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
+    // DÜZELTİLEN STİLLER
     dayItem: {
         alignItems: "center",
         justifyContent: "center",
-        width: ITEM_WIDTH,
+        width: BOX_WIDTH, // 50px
         height: 75,
         borderRadius: 25,
         backgroundColor: "transparent",
+        position: "relative",
+        overflow: "hidden",
+        marginHorizontal: BOX_MARGIN, // 5px sağ + 5px sol = 10px boşluk
     },
+    // ...
     dayItemSelected: {
         backgroundColor: COLORS.accent,
         shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.4,
         shadowRadius: 6,
+    },
+    dayItemCompleted: {
+        backgroundColor: COLORS.success + "25",
+        borderColor: COLORS.success + "50",
+        borderWidth: 1,
+    },
+    completedOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: "center",
+        alignItems: "center",
+        zIndex: -1,
     },
     dayItemToday: { borderWidth: 1, borderColor: COLORS.accent },
     dayName: {
@@ -791,8 +790,11 @@ const styles = StyleSheet.create({
     },
     dayNumber: { fontSize: 16, fontWeight: "bold", color: COLORS.text },
     textWhite: { color: "white" },
+    textSuccess: { color: COLORS.success, fontWeight: "700" },
     dot: { width: 5, height: 5, borderRadius: 2.5, marginTop: 6 },
+    dotScheduled: { backgroundColor: COLORS.accent },
 
+    // Diğer stiller aynen kalacak
     detailSection: { paddingHorizontal: 20 },
     mainCard: {
         borderRadius: 24,

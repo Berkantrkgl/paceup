@@ -400,7 +400,7 @@ const HomeScreen = () => {
                             {/* NEXT WORKOUT TICKET */}
                             <View style={styles.sectionContainer}>
                                 <Text style={styles.sectionTitle}>
-                                    Sıradaki Hedefin
+                                    Sıradaki Antreman
                                 </Text>
                                 <Pressable
                                     onPress={() => {
