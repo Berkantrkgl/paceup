@@ -203,35 +203,54 @@ const ProgressScreen = () => {
 
                     {/* Sağ Sütun */}
                     <View style={styles.statsColumn}>
+                        {/* 1. KART: AKTİF SERİ (Current Streak) */}
                         <View style={styles.statCardSmall}>
-                            <Ionicons
-                                name="flame"
-                                size={20}
-                                color={COLORS.secondary}
-                                style={{ marginRight: 8 }}
-                            />
+                            <View
+                                style={[
+                                    styles.iconBoxSmall,
+                                    {
+                                        backgroundColor:
+                                            COLORS.secondary + "20",
+                                    },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="flame"
+                                    size={20}
+                                    color={COLORS.secondary}
+                                />
+                            </View>
                             <View>
+                                {/* Veriyi user.current_streak'ten çekiyoruz */}
                                 <Text style={styles.statValueSmall}>
-                                    {summaryStats.days_active}
+                                    {summaryStats.current_streak} Gün
                                 </Text>
                                 <Text style={styles.statLabelSmall}>
-                                    Gün Aktif
+                                    Aktif Seri
                                 </Text>
                             </View>
                         </View>
+
+                        {/* 2. KART: TOPLAM KOŞU (Total Workouts) */}
                         <View style={styles.statCardSmall}>
-                            <Ionicons
-                                name="fitness"
-                                size={20}
-                                color={COLORS.warning}
-                                style={{ marginRight: 8 }}
-                            />
+                            <View
+                                style={[
+                                    styles.iconBoxSmall,
+                                    { backgroundColor: COLORS.warning + "20" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="fitness"
+                                    size={20}
+                                    color={COLORS.warning}
+                                />
+                            </View>
                             <View>
                                 <Text style={styles.statValueSmall}>
                                     {summaryStats.total_workouts}
                                 </Text>
                                 <Text style={styles.statLabelSmall}>
-                                    Antrenman
+                                    Toplam Koşu
                                 </Text>
                             </View>
                         </View>
@@ -536,6 +555,15 @@ const styles = StyleSheet.create({
 
     statValueSmall: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
     statLabelSmall: { color: COLORS.textDim, fontSize: 12 },
+
+    iconBoxSmall: {
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        justifyContent: "center",
+        alignItems: "center",
+        marginRight: 10,
+    },
 
     // PROGRAM CARD
     programCard: {
