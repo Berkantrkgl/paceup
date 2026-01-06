@@ -77,12 +77,32 @@ class ProgramViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
+# core/views.py
+
 class WorkoutViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Workout.objects.filter(program__user=self.request.user)
+        user = self.request.user
+        today = timezone.now().date()
+        
+        # --- GÜNCELLENMİŞ AUTO-MISSING MANTIĞI ---
+        # Artık 'status' alanının ne yazdığına bakmıyoruz.
+        # Kural: Tarihi geçmişse (< today) VE tamamlanmamışsa (is_completed=False), Missed yap.
+        
+        # Önce güncelle (Update)
+        # Not: Zaten 'missed' olanları tekrar güncellememek için exclude ekledik.
+        Workout.objects.filter(
+            program__user=user,
+            scheduled_date__lt=today, # Bugünden öncekiler
+            is_completed=False        # Tamamlanmamış olanlar (Status ne olursa olsun)
+        ).exclude(
+            status=Workout.Status.MISSED # Zaten missed olanları atla
+        ).update(status=Workout.Status.MISSED)
+
+        # Sonra listeyi dön
+        return Workout.objects.filter(program__user=user)
 
 class WorkoutResultViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutResultSerializer
