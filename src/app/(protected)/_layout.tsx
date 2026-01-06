@@ -36,32 +36,6 @@ export default function ProtectedLayout() {
                     headerShown: false,
                 }}
             />
-
-            <Stack.Screen
-                name="chatbot"
-                options={{
-                    title: "AI Koşu Koçu",
-                    headerBackTitle: "Geri",
-                }}
-            />
-
-            <Stack.Screen
-                name="chatbot_modal"
-                options={{
-                    title: "Plan Düzenle",
-                    headerStyle: {
-                        backgroundColor: COLORS.background,
-                    },
-                    headerTintColor: COLORS.text,
-                    headerTitleStyle: {
-                        color: COLORS.text,
-                        fontSize: 20,
-                        fontWeight: "600",
-                    },
-                    presentation: "modal",
-                    headerShadowVisible: false,
-                }}
-            />
         </Stack>
     );
 }

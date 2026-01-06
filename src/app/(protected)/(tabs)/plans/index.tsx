@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
 import React, { useCallback, useContext, useState } from "react";
 import {
@@ -13,10 +14,8 @@ import {
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
+import { API_URL } from "@/constants/Config"; // Ensure correct import
 import { AuthContext } from "@/utils/authContext";
-
-// API URL
-const API_URL = "http://127.0.0.1:8000/api";
 
 const PlansScreen = () => {
     const { token } = useContext(AuthContext);
@@ -24,7 +23,7 @@ const PlansScreen = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // --- VERİ ÇEKME FONKSİYONU ---
+    // --- FETCH DATA ---
     const fetchPlans = async () => {
         if (!token) return;
         try {
@@ -42,7 +41,6 @@ const PlansScreen = () => {
         }
     };
 
-    // Sayfa her odaklandığında veriyi yenile (örn: yeni plan ekleyip dönünce)
     useFocusEffect(
         useCallback(() => {
             fetchPlans();
@@ -55,7 +53,7 @@ const PlansScreen = () => {
         setRefreshing(false);
     };
 
-    // --- PLAN SİLME ---
+    // --- ACTIONS ---
     const handleDeletePlan = (planId: string) => {
         Alert.alert(
             "Planı Sil",
@@ -77,7 +75,6 @@ const PlansScreen = () => {
                                 }
                             );
                             if (response.ok) {
-                                // Listeden çıkar
                                 setUserPlans((prev) =>
                                     prev.filter((p) => p.id !== planId)
                                 );
@@ -93,12 +90,11 @@ const PlansScreen = () => {
         );
     };
 
-    // --- PLAN DURAKLATMA / DEVAM ETTİRME ---
     const handleTogglePause = async (plan: any) => {
         const newStatus = plan.status === "active" ? "paused" : "active";
-
-        // Optimistik Güncelleme (Hemen arayüzde göster)
         const oldPlans = [...userPlans];
+
+        // Optimistic update
         setUserPlans((prev) =>
             prev.map((p) =>
                 p.id === plan.id ? { ...p, status: newStatus } : p
@@ -114,94 +110,274 @@ const PlansScreen = () => {
                 },
                 body: JSON.stringify({ status: newStatus }),
             });
-
-            if (!response.ok) {
-                // Hata varsa geri al
-                setUserPlans(oldPlans);
-                Alert.alert("Hata", "Durum güncellenemedi.");
-            }
+            if (!response.ok) throw new Error("Update failed");
         } catch (error) {
-            setUserPlans(oldPlans);
+            setUserPlans(oldPlans); // Revert on error
+            Alert.alert("Hata", "Durum güncellenemedi.");
         }
     };
 
     const handleEditPlan = (plan: any) => {
         router.push({
-            pathname: "/chatbot_modal",
+            pathname: "/(protected)/(tabs)/plans/chatbot_modal",
             params: { planId: plan.id, planTitle: plan.title },
         });
     };
 
-    // --- HELPERLAR ---
-    const getStatusColor = (status: string) => {
+    const handleCreatePlan = () => {
+        router.push("/(protected)/(tabs)/plans/chatbot");
+    };
+
+    // --- HELPERS ---
+    const getStatusInfo = (status: string) => {
         switch (status) {
             case "active":
-                return "#4CAF50";
+                return { color: COLORS.success, text: "Aktif", icon: "flash" };
             case "completed":
-                return "#2196F3";
+                return {
+                    color: "#2196F3",
+                    text: "Tamamlandı",
+                    icon: "checkmark-circle",
+                };
             case "paused":
-                return "#FFA726";
+                return {
+                    color: "#FFA726",
+                    text: "Duraklatıldı",
+                    icon: "pause-circle",
+                };
+            case "cancelled":
+                return {
+                    color: COLORS.danger,
+                    text: "İptal Edildi",
+                    icon: "close-circle",
+                };
             default:
-                return "#B0B0B0";
+                return {
+                    color: COLORS.textDim,
+                    text: status,
+                    icon: "help-circle",
+                };
         }
     };
 
-    const getStatusText = (status: string) => {
-        switch (status) {
-            case "active":
-                return "Aktif";
-            case "completed":
-                return "Tamamlandı";
-            case "paused":
-                return "Duraklatıldı";
-            default:
-                return status;
-        }
-    };
-
-    const getDifficultyText = (difficulty: string) => {
+    const getDifficultyInfo = (difficulty: string) => {
         switch (difficulty) {
             case "beginner":
-                return "Başlangıç";
+                return {
+                    text: "Başlangıç",
+                    icon: "fitness",
+                    color: COLORS.success,
+                };
             case "intermediate":
-                return "Orta";
+                return {
+                    text: "Orta",
+                    icon: "speedometer",
+                    color: COLORS.warning,
+                };
             case "advanced":
-                return "İleri";
+                return { text: "İleri", icon: "rocket", color: COLORS.danger };
             default:
-                return difficulty;
+                return {
+                    text: difficulty,
+                    icon: "help",
+                    color: COLORS.textDim,
+                };
         }
     };
 
-    const getDifficultyIcon = (difficulty: string): any => {
-        switch (difficulty) {
-            case "beginner":
-                return "fitness-outline";
-            case "intermediate":
-                return "speedometer-outline";
-            case "advanced":
-                return "rocket-outline";
-            default:
-                return "help-outline";
-        }
-    };
+    // --- RENDER HELPERS ---
+    const renderPlanCard = (plan: any) => {
+        const statusInfo = getStatusInfo(plan.status);
+        const difficultyInfo = getDifficultyInfo(plan.difficulty);
 
-    // Kategorilere Ayır
-    const activePlans = userPlans.filter((p) => p.status === "active");
-    const completedPlans = userPlans.filter((p) => p.status === "completed");
-    const pausedPlans = userPlans.filter((p) => p.status === "paused");
+        // Use the backend-calculated progress_percent if available, fallback to manual calc
+        const progress =
+            plan.progress_percent !== undefined
+                ? plan.progress_percent
+                : plan.total_workouts_count > 0
+                ? Math.round(
+                      (plan.completed_workouts_count /
+                          plan.total_workouts_count) *
+                          100
+                  )
+                : 0;
+
+        return (
+            <View
+                key={plan.id}
+                style={[
+                    styles.planCard,
+                    plan.status === "paused" && styles.pausedCard,
+                ]}
+            >
+                {/* Header Row */}
+                <View style={styles.cardHeader}>
+                    <View style={styles.badgesRow}>
+                        <View
+                            style={[
+                                styles.statusBadge,
+                                { backgroundColor: statusInfo.color + "20" },
+                            ]}
+                        >
+                            <Ionicons
+                                name={statusInfo.icon as any}
+                                size={14}
+                                color={statusInfo.color}
+                            />
+                            <Text
+                                style={[
+                                    styles.badgeText,
+                                    { color: statusInfo.color },
+                                ]}
+                            >
+                                {statusInfo.text}
+                            </Text>
+                        </View>
+                        <View
+                            style={[
+                                styles.difficultyBadge,
+                                { borderColor: difficultyInfo.color },
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    styles.difficultyText,
+                                    { color: difficultyInfo.color },
+                                ]}
+                            >
+                                {difficultyInfo.text}
+                            </Text>
+                        </View>
+                    </View>
+                    <Pressable
+                        onPress={() => handleDeletePlan(plan.id)}
+                        style={styles.deleteIcon}
+                    >
+                        <Ionicons
+                            name="trash-outline"
+                            size={20}
+                            color={COLORS.textDim}
+                        />
+                    </Pressable>
+                </View>
+
+                {/* Title & Desc */}
+                <Text style={styles.planTitle}>{plan.title}</Text>
+                <Text style={styles.planDesc} numberOfLines={2}>
+                    {plan.description}
+                </Text>
+
+                {/* Goal */}
+                <View style={styles.goalRow}>
+                    <Ionicons
+                        name="flag-outline"
+                        size={16}
+                        color={COLORS.textDim}
+                    />
+                    <Text style={styles.goalText}>{plan.goal}</Text>
+                </View>
+
+                {/* Stats Row (Duration & Frequency) */}
+                <View style={styles.statsGrid}>
+                    <View style={styles.statItem}>
+                        <Ionicons
+                            name="calendar-outline"
+                            size={14}
+                            color={COLORS.textDim}
+                        />
+                        <Text style={styles.statText}>
+                            {plan.duration_weeks} Hafta
+                        </Text>
+                    </View>
+                    <View style={styles.statItem}>
+                        <Ionicons
+                            name="fitness-outline"
+                            size={14}
+                            color={COLORS.textDim}
+                        />
+                        <Text style={styles.statText}>
+                            {plan.workouts_per_week} ant/hafta
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Progress Bar */}
+                <View style={styles.progressContainer}>
+                    <View style={styles.progressLabelRow}>
+                        <Text style={styles.progressLabel}>İlerleme</Text>
+                        <Text style={styles.progressValue}>{progress}%</Text>
+                    </View>
+                    <View style={styles.progressBarBg}>
+                        <View
+                            style={[
+                                styles.progressBarFill,
+                                {
+                                    width: `${progress}%`,
+                                    backgroundColor: statusInfo.color,
+                                },
+                            ]}
+                        />
+                    </View>
+                    <Text style={styles.progressSubtext}>
+                        {plan.completed_workouts_count} /{" "}
+                        {plan.total_workouts_count} antrenman •{" "}
+                        {plan.current_week_calculated
+                            ? `${plan.current_week_calculated}. Hafta`
+                            : "Planlanıyor"}
+                    </Text>
+                </View>
+
+                {/* Actions (Only for Active/Paused) */}
+                {plan.status !== "completed" && plan.status !== "cancelled" && (
+                    <View style={styles.actionRow}>
+                        <Pressable
+                            style={styles.actionButton}
+                            onPress={() => handleEditPlan(plan)}
+                        >
+                            <Ionicons
+                                name="create-outline"
+                                size={18}
+                                color={COLORS.text}
+                            />
+                            <Text style={styles.actionButtonText}>Düzenle</Text>
+                        </Pressable>
+                        <View style={styles.verticalDivider} />
+                        <Pressable
+                            style={styles.actionButton}
+                            onPress={() => handleTogglePause(plan)}
+                        >
+                            <Ionicons
+                                name={
+                                    plan.status === "active"
+                                        ? "pause-outline"
+                                        : "play-outline"
+                                }
+                                size={18}
+                                color={COLORS.text}
+                            />
+                            <Text style={styles.actionButtonText}>
+                                {plan.status === "active"
+                                    ? "Duraklat"
+                                    : "Devam Et"}
+                            </Text>
+                        </Pressable>
+                    </View>
+                )}
+            </View>
+        );
+    };
 
     if (isLoading) {
         return (
-            <View
-                style={[
-                    styles.container,
-                    { justifyContent: "center", alignItems: "center" },
-                ]}
-            >
+            <View style={[styles.container, styles.centered]}>
                 <ActivityIndicator size="large" color={COLORS.accent} />
             </View>
         );
     }
+
+    const activePlans = userPlans.filter((p) => p.status === "active");
+    const pausedPlans = userPlans.filter((p) => p.status === "paused");
+    const completedPlans = userPlans.filter((p) => p.status === "completed");
 
     return (
         <View style={styles.container}>
@@ -217,63 +393,27 @@ const PlansScreen = () => {
                     />
                 }
             >
-                {/* Header Stats */}
-                <View style={styles.headerSection}>
-                    <Text style={styles.headerTitle}>Antrenman Planlarım</Text>
-                    <View style={styles.statsRow}>
-                        <View style={styles.statItem}>
-                            <Ionicons name="flash" size={20} color="#4CAF50" />
-                            <Text style={styles.statValue}>
-                                {activePlans.length}
-                            </Text>
-                            <Text style={styles.statLabel}>Aktif</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Ionicons
-                                name="checkmark-circle"
-                                size={20}
-                                color="#2196F3"
-                            />
-                            <Text style={styles.statValue}>
-                                {completedPlans.length}
-                            </Text>
-                            <Text style={styles.statLabel}>Tamamlandı</Text>
-                        </View>
-                        <View style={styles.statDivider} />
-                        <View style={styles.statItem}>
-                            <Ionicons
-                                name="pause-circle"
-                                size={20}
-                                color="#FFA726"
-                            />
-                            <Text style={styles.statValue}>
-                                {pausedPlans.length}
-                            </Text>
-                            <Text style={styles.statLabel}>Duraklatıldı</Text>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Create New Plan Button */}
-                <View style={styles.section}>
-                    <Pressable
-                        style={styles.createPlanButton}
-                        onPress={() => router.push("/chatbot")}
+                {/* CREATE NEW BUTTON */}
+                <Pressable onPress={handleCreatePlan}>
+                    <LinearGradient
+                        colors={[COLORS.accent, COLORS.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.createButton}
                     >
-                        <View style={styles.createPlanIcon}>
+                        <View style={styles.createIconBg}>
                             <Ionicons
-                                name="add-circle"
-                                size={32}
-                                color="white"
+                                name="add"
+                                size={24}
+                                color={COLORS.accent}
                             />
                         </View>
-                        <View style={styles.createPlanContent}>
-                            <Text style={styles.createPlanTitle}>
+                        <View style={styles.createTextContainer}>
+                            <Text style={styles.createTitle}>
                                 Yeni Plan Oluştur
                             </Text>
-                            <Text style={styles.createPlanDescription}>
-                                AI koçunla yeni bir antrenman planı oluştur
+                            <Text style={styles.createSubtitle}>
+                                AI Koçunla hedefine ulaş
                             </Text>
                         </View>
                         <Ionicons
@@ -281,365 +421,55 @@ const PlansScreen = () => {
                             size={24}
                             color="white"
                         />
-                    </Pressable>
-                </View>
+                    </LinearGradient>
+                </Pressable>
 
-                {/* Active Plans */}
+                {/* ACTIVE PLANS */}
                 {activePlans.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Aktif Planlar</Text>
-                        {activePlans.map((plan) => (
-                            <View key={plan.id} style={styles.planCard}>
-                                {/* Header */}
-                                <View style={styles.planHeader}>
-                                    <View style={styles.planHeaderLeft}>
-                                        <View
-                                            style={[
-                                                styles.statusBadge,
-                                                {
-                                                    backgroundColor:
-                                                        getStatusColor(
-                                                            plan.status
-                                                        ),
-                                                },
-                                            ]}
-                                        >
-                                            <Text
-                                                style={styles.statusBadgeText}
-                                            >
-                                                {getStatusText(plan.status)}
-                                            </Text>
-                                        </View>
-                                        <View style={styles.difficultyBadge}>
-                                            <Ionicons
-                                                name={getDifficultyIcon(
-                                                    plan.difficulty
-                                                )}
-                                                size={14}
-                                                color={COLORS.accent}
-                                            />
-                                            <Text style={styles.difficultyText}>
-                                                {getDifficultyText(
-                                                    plan.difficulty
-                                                )}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Pressable
-                                        onPress={() =>
-                                            handleDeletePlan(plan.id)
-                                        }
-                                    >
-                                        <Ionicons
-                                            name="trash-outline"
-                                            size={22}
-                                            color="#FF6B6B"
-                                        />
-                                    </Pressable>
-                                </View>
-
-                                <Text style={styles.planTitle}>
-                                    {plan.title}
-                                </Text>
-                                <Text style={styles.planDescription}>
-                                    {plan.description}
-                                </Text>
-
-                                <View style={styles.planGoal}>
-                                    <Ionicons
-                                        name="flag"
-                                        size={18}
-                                        color={COLORS.accent}
-                                    />
-                                    <Text style={styles.planGoalText}>
-                                        Hedef: {plan.goal}
-                                    </Text>
-                                </View>
-
-                                {/* Progress */}
-                                <View style={styles.progressSection}>
-                                    <View style={styles.progressInfo}>
-                                        <Text style={styles.progressText}>
-                                            Hafta {plan.current_week}/
-                                            {plan.duration_weeks}
-                                        </Text>
-                                        <Text style={styles.progressPercentage}>
-                                            {plan.total_workouts_count > 0
-                                                ? Math.round(
-                                                      (plan.completed_workouts_count /
-                                                          plan.total_workouts_count) *
-                                                          100
-                                                  )
-                                                : 0}
-                                            %
-                                        </Text>
-                                    </View>
-                                    <View style={styles.progressBarContainer}>
-                                        <View
-                                            style={[
-                                                styles.progressBar,
-                                                {
-                                                    width: `${
-                                                        (plan.completed_workouts_count /
-                                                            Math.max(
-                                                                plan.total_workouts_count,
-                                                                1
-                                                            )) *
-                                                        100
-                                                    }%`,
-                                                },
-                                            ]}
-                                        />
-                                    </View>
-                                    <Text style={styles.workoutsText}>
-                                        {plan.completed_workouts_count}/
-                                        {plan.total_workouts_count} antrenman
-                                        tamamlandı
-                                    </Text>
-                                </View>
-
-                                {/* Info Grid */}
-                                <View style={styles.planInfoGrid}>
-                                    <View style={styles.planInfoItem}>
-                                        <Ionicons
-                                            name="calendar-outline"
-                                            size={16}
-                                            color="#B0B0B0"
-                                        />
-                                        <Text style={styles.planInfoText}>
-                                            {plan.duration_weeks} Hafta
-                                        </Text>
-                                    </View>
-                                    <View style={styles.planInfoItem}>
-                                        <Ionicons
-                                            name="fitness-outline"
-                                            size={16}
-                                            color="#B0B0B0"
-                                        />
-                                        <Text style={styles.planInfoText}>
-                                            {plan.workouts_per_week} ant/hafta
-                                        </Text>
-                                    </View>
-                                </View>
-
-                                {/* Actions */}
-                                <View style={styles.actionButtons}>
-                                    <Pressable
-                                        style={styles.editButton}
-                                        onPress={() => handleEditPlan(plan)}
-                                    >
-                                        <Ionicons
-                                            name="create-outline"
-                                            size={20}
-                                            color="white"
-                                        />
-                                        <Text style={styles.editButtonText}>
-                                            Düzenle
-                                        </Text>
-                                    </Pressable>
-
-                                    <Pressable
-                                        style={styles.pauseButton}
-                                        onPress={() => handleTogglePause(plan)}
-                                    >
-                                        <Ionicons
-                                            name="pause-outline"
-                                            size={20}
-                                            color={COLORS.accent}
-                                        />
-                                        <Text style={styles.pauseButtonText}>
-                                            Duraklat
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        ))}
+                        {activePlans.map(renderPlanCard)}
                     </View>
                 )}
 
-                {/* Paused Plans */}
+                {/* PAUSED PLANS */}
                 {pausedPlans.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>
                             Duraklatılan Planlar
                         </Text>
-                        {pausedPlans.map((plan) => (
-                            <View
-                                key={plan.id}
-                                style={[styles.planCard, styles.pausedCard]}
-                            >
-                                <View style={styles.planHeader}>
-                                    <View style={styles.planHeaderLeft}>
-                                        <View
-                                            style={[
-                                                styles.statusBadge,
-                                                {
-                                                    backgroundColor:
-                                                        getStatusColor(
-                                                            plan.status
-                                                        ),
-                                                },
-                                            ]}
-                                        >
-                                            <Text
-                                                style={styles.statusBadgeText}
-                                            >
-                                                {getStatusText(plan.status)}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Pressable
-                                        onPress={() =>
-                                            handleDeletePlan(plan.id)
-                                        }
-                                    >
-                                        <Ionicons
-                                            name="trash-outline"
-                                            size={22}
-                                            color="#FF6B6B"
-                                        />
-                                    </Pressable>
-                                </View>
-
-                                <Text style={styles.planTitle}>
-                                    {plan.title}
-                                </Text>
-                                <Text style={styles.planDescription}>
-                                    {plan.description}
-                                </Text>
-
-                                <View style={styles.actionButtons}>
-                                    <Pressable
-                                        style={styles.editButton}
-                                        onPress={() => handleTogglePause(plan)}
-                                    >
-                                        <Ionicons
-                                            name="play-outline"
-                                            size={20}
-                                            color="white"
-                                        />
-                                        <Text style={styles.editButtonText}>
-                                            Devam Et
-                                        </Text>
-                                    </Pressable>
-                                    <Pressable
-                                        style={styles.pauseButton}
-                                        onPress={() => handleEditPlan(plan)}
-                                    >
-                                        <Ionicons
-                                            name="create-outline"
-                                            size={20}
-                                            color={COLORS.accent}
-                                        />
-                                        <Text style={styles.pauseButtonText}>
-                                            Düzenle
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        ))}
+                        {pausedPlans.map(renderPlanCard)}
                     </View>
                 )}
 
-                {/* Completed Plans */}
+                {/* COMPLETED PLANS */}
                 {completedPlans.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>
-                            Tamamlanan Planlar
+                            Tamamlanan Geçmiş
                         </Text>
-                        {completedPlans.map((plan) => (
-                            <View
-                                key={plan.id}
-                                style={[styles.planCard, styles.completedCard]}
-                            >
-                                <View style={styles.planHeader}>
-                                    <View style={styles.planHeaderLeft}>
-                                        <View
-                                            style={[
-                                                styles.statusBadge,
-                                                {
-                                                    backgroundColor:
-                                                        getStatusColor(
-                                                            plan.status
-                                                        ),
-                                                },
-                                            ]}
-                                        >
-                                            <Ionicons
-                                                name="checkmark"
-                                                size={14}
-                                                color="white"
-                                                style={{ marginRight: 4 }}
-                                            />
-                                            <Text
-                                                style={styles.statusBadgeText}
-                                            >
-                                                {getStatusText(plan.status)}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <Pressable
-                                        onPress={() =>
-                                            handleDeletePlan(plan.id)
-                                        }
-                                    >
-                                        <Ionicons
-                                            name="trash-outline"
-                                            size={22}
-                                            color="#FF6B6B"
-                                        />
-                                    </Pressable>
-                                </View>
-
-                                <Text style={styles.planTitle}>
-                                    {plan.title}
-                                </Text>
-                                <Text style={styles.planDescription}>
-                                    {plan.description}
-                                </Text>
-
-                                <View style={styles.completedInfo}>
-                                    <Ionicons
-                                        name="trophy"
-                                        size={24}
-                                        color="#FFD93D"
-                                    />
-                                    <Text style={styles.completedText}>
-                                        {plan.total_workouts_count} antrenmanı
-                                        başarıyla tamamladın!
-                                    </Text>
-                                </View>
-                            </View>
-                        ))}
+                        {completedPlans.map(renderPlanCard)}
                     </View>
                 )}
 
-                {/* Empty State */}
+                {/* EMPTY STATE */}
                 {userPlans.length === 0 && !isLoading && (
                     <View style={styles.emptyState}>
                         <Ionicons
                             name="clipboard-outline"
-                            size={80}
-                            color="#666"
+                            size={64}
+                            color={COLORS.textDim}
                         />
-                        <Text style={styles.emptyStateTitle}>
-                            Henüz Plan Yok
+                        <Text style={styles.emptyTitle}>
+                            Henüz Bir Planın Yok
                         </Text>
-                        <Text style={styles.emptyStateDescription}>
-                            AI koçunla hemen yeni bir antrenman planı oluştur!
+                        <Text style={styles.emptyText}>
+                            Yeni bir plan oluşturarak antrenmanlara başla!
                         </Text>
-                        <Pressable
-                            style={styles.emptyStateButton}
-                            onPress={() => router.push("/chatbot")}
-                        >
-                            <Text style={styles.emptyStateButtonText}>
-                                Plan Oluştur
-                            </Text>
-                        </Pressable>
                     </View>
                 )}
 
-                <View style={{ height: 30 }} />
+                <View style={{ height: 40 }} />
             </ScrollView>
         </View>
     );
@@ -648,321 +478,160 @@ const PlansScreen = () => {
 export default PlansScreen;
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
+    container: { flex: 1, backgroundColor: COLORS.background },
+    centered: { justifyContent: "center", alignItems: "center" },
+    scrollView: { flex: 1 },
+    scrollContent: { padding: 20 },
 
-    // Header Section
-    headerSection: {
-        backgroundColor: COLORS.card,
-        paddingHorizontal: 20,
-        paddingVertical: 25,
-        borderBottomLeftRadius: 25,
-        borderBottomRightRadius: 25,
-        marginBottom: 20,
-    },
-    headerTitle: {
-        color: COLORS.text,
-        fontSize: 28,
-        fontWeight: "bold",
-        marginBottom: 20,
-    },
-    statsRow: {
+    // CREATE BUTTON
+    createButton: {
         flexDirection: "row",
-        justifyContent: "space-around",
         alignItems: "center",
-    },
-    statItem: {
-        alignItems: "center",
-        flex: 1,
-    },
-    statValue: {
-        color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        marginTop: 8,
-        marginBottom: 4,
-    },
-    statLabel: {
-        color: "#B0B0B0",
-        fontSize: 12,
-    },
-    statDivider: {
-        width: 1,
-        height: 40,
-        backgroundColor: "rgba(255, 255, 255, 0.1)",
-    },
-
-    // Section
-    section: {
-        paddingHorizontal: 20,
-        marginBottom: 20,
-    },
-    sectionTitle: {
-        color: COLORS.text,
-        fontSize: 20,
-        fontWeight: "600",
-        marginBottom: 15,
-    },
-
-    // Create Plan Button
-    createPlanButton: {
-        backgroundColor: COLORS.accent,
-        borderRadius: 15,
         padding: 20,
-        flexDirection: "row",
-        alignItems: "center",
-        shadowColor: "#000",
+        borderRadius: 20,
+        marginBottom: 30,
+        shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
+        shadowRadius: 8,
+        elevation: 5,
     },
-    createPlanIcon: {
+    createIconBg: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: "white",
+        alignItems: "center",
+        justifyContent: "center",
         marginRight: 15,
     },
-    createPlanContent: {
-        flex: 1,
-    },
-    createPlanTitle: {
+    createTextContainer: { flex: 1 },
+    createTitle: {
         color: "white",
         fontSize: 18,
         fontWeight: "bold",
         marginBottom: 4,
     },
-    createPlanDescription: {
-        color: "rgba(255, 255, 255, 0.8)",
-        fontSize: 13,
+    createSubtitle: { color: "rgba(255,255,255,0.8)", fontSize: 13 },
+
+    // SECTIONS
+    section: { marginBottom: 25 },
+    sectionTitle: {
+        color: COLORS.text,
+        fontSize: 18,
+        fontWeight: "700",
+        marginBottom: 15,
+        paddingLeft: 5,
     },
 
-    // Plan Card
+    // PLAN CARD
     planCard: {
         backgroundColor: COLORS.card,
-        borderRadius: 15,
+        borderRadius: 20,
         padding: 20,
         marginBottom: 15,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    pausedCard: {
-        opacity: 0.8,
-    },
-    completedCard: {
-        borderWidth: 2,
-        borderColor: "#2196F3",
-    },
-    planHeader: {
+    pausedCard: { opacity: 0.7 },
+    cardHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 15,
+        marginBottom: 12,
     },
-    planHeaderLeft: {
-        flexDirection: "row",
-        gap: 10,
-    },
+    badgesRow: { flexDirection: "row", gap: 8 },
     statusBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
         flexDirection: "row",
         alignItems: "center",
-    },
-    statusBadgeText: {
-        color: "white",
-        fontSize: 12,
-        fontWeight: "bold",
-    },
-    difficultyBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "rgba(255, 107, 107, 0.15)",
         paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 12,
+        paddingVertical: 5,
+        borderRadius: 8,
         gap: 4,
     },
-    difficultyText: {
-        color: COLORS.accent,
-        fontSize: 12,
-        fontWeight: "600",
+    badgeText: { fontSize: 12, fontWeight: "700" },
+    difficultyBadge: {
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+        borderWidth: 1,
     },
+    difficultyText: { fontSize: 11, fontWeight: "600" },
+    deleteIcon: { padding: 5 },
+
     planTitle: {
         color: COLORS.text,
         fontSize: 20,
         fontWeight: "bold",
-        marginBottom: 8,
+        marginBottom: 6,
     },
-    planDescription: {
-        color: "#B0B0B0",
+    planDesc: {
+        color: COLORS.textDim,
         fontSize: 14,
         lineHeight: 20,
-        marginBottom: 15,
+        marginBottom: 12,
     },
-    planGoal: {
+
+    goalRow: {
         flexDirection: "row",
         alignItems: "center",
         gap: 8,
-        backgroundColor: COLORS.background,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 10,
-        marginBottom: 15,
+        marginBottom: 10,
     },
-    planGoalText: {
-        color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "600",
-    },
+    goalText: { color: COLORS.textDim, fontSize: 13, fontStyle: "italic" },
 
-    // Progress
-    progressSection: {
-        marginBottom: 15,
-    },
-    progressInfo: {
+    statsGrid: { flexDirection: "row", gap: 15, marginBottom: 15 },
+    statItem: { flexDirection: "row", alignItems: "center", gap: 6 },
+    statText: { color: COLORS.textDim, fontSize: 12 },
+
+    // PROGRESS
+    progressContainer: { marginBottom: 20 },
+    progressLabelRow: {
         flexDirection: "row",
         justifyContent: "space-between",
-        marginBottom: 8,
+        marginBottom: 6,
     },
-    progressText: {
-        color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "600",
-    },
-    progressPercentage: {
-        color: COLORS.accent,
-        fontSize: 14,
-        fontWeight: "bold",
-    },
-    progressBarContainer: {
-        height: 8,
+    progressLabel: { color: COLORS.textDim, fontSize: 12, fontWeight: "600" },
+    progressValue: { color: COLORS.text, fontSize: 12, fontWeight: "bold" },
+    progressBarBg: {
+        height: 6,
         backgroundColor: COLORS.background,
-        borderRadius: 4,
-        overflow: "hidden",
-        marginBottom: 8,
+        borderRadius: 3,
+        marginBottom: 6,
     },
-    progressBar: {
-        height: "100%",
-        backgroundColor: COLORS.accent,
-        borderRadius: 4,
-    },
-    workoutsText: {
-        color: "#B0B0B0",
-        fontSize: 12,
-    },
+    progressBarFill: { height: "100%", borderRadius: 3 },
+    progressSubtext: { color: COLORS.textDim, fontSize: 11 },
 
-    // Plan Info Grid
-    planInfoGrid: {
+    // ACTIONS
+    actionRow: {
         flexDirection: "row",
-        flexWrap: "wrap",
-        gap: 15,
-        marginBottom: 15,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.cardBorder,
+        paddingTop: 15,
+        justifyContent: "space-evenly",
+        alignItems: "center",
     },
-    planInfoItem: {
+    actionButton: {
         flexDirection: "row",
         alignItems: "center",
         gap: 6,
+        padding: 5,
     },
-    planInfoText: {
-        color: "#B0B0B0",
-        fontSize: 12,
+    actionButtonText: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
+    verticalDivider: {
+        width: 1,
+        height: 20,
+        backgroundColor: COLORS.cardBorder,
     },
 
-    // Completed Info
-    completedInfo: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        backgroundColor: "rgba(255, 217, 61, 0.15)",
-        padding: 15,
-        borderRadius: 12,
-        marginBottom: 15,
-    },
-    completedText: {
-        flex: 1,
+    // EMPTY STATE
+    emptyState: { alignItems: "center", marginTop: 50, padding: 20 },
+    emptyTitle: {
         color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "600",
-    },
-
-    // Action Buttons
-    actionButtons: {
-        flexDirection: "row",
-        gap: 12,
-    },
-    editButton: {
-        flex: 1,
-        backgroundColor: COLORS.accent,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 12,
-        borderRadius: 12,
-        gap: 8,
-    },
-    editButtonText: {
-        color: "white",
-        fontSize: 15,
-        fontWeight: "bold",
-    },
-    pauseButton: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.accent,
-        gap: 8,
-    },
-    pauseButtonText: {
-        color: COLORS.accent,
-        fontSize: 15,
-        fontWeight: "bold",
-    },
-
-    // Empty State
-    emptyState: {
-        alignItems: "center",
-        justifyContent: "center",
-        paddingVertical: 80,
-        paddingHorizontal: 40,
-    },
-    emptyStateTitle: {
-        color: COLORS.text,
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: "bold",
         marginTop: 20,
         marginBottom: 10,
     },
-    emptyStateDescription: {
-        color: "#B0B0B0",
-        fontSize: 15,
-        textAlign: "center",
-        lineHeight: 22,
-        marginBottom: 30,
-    },
-    emptyStateButton: {
-        backgroundColor: COLORS.accent,
-        paddingHorizontal: 30,
-        paddingVertical: 15,
-        borderRadius: 25,
-    },
-    emptyStateButtonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold",
-    },
+    emptyText: { color: COLORS.textDim, fontSize: 14, textAlign: "center" },
 });

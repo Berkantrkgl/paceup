@@ -1,9 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useContext, useState } from "react";
 import {
     Alert,
+    Dimensions,
     Pressable,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Switch,
     Text,
@@ -11,373 +14,278 @@ import {
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
-import { AuthContext } from "@/utils/authContext"; // <--- Context Import Edildi
+import { AuthContext } from "@/utils/authContext";
+
+const { width } = Dimensions.get("window");
 
 const ProfileScreen = () => {
-    // Context'ten user verisini ve logOut fonksiyonunu alıyoruz
     const { user, logOut } = useContext(AuthContext);
 
-    // Bildirim ayarları şimdilik local state (İleride backend'e bağlanabilir)
     const [notifications, setNotifications] = useState({
-        workoutReminder: user?.notification_workout_reminder ?? true, // Varsa user'dan al
+        workoutReminder: user?.notification_workout_reminder ?? true,
         weeklyReport: true,
-        achievements: true,
-        planUpdates: true,
     });
 
-    // --- HELPER: İsim Formatlama ---
+    // --- HELPERS ---
     const getDisplayName = () => {
-        if (user?.first_name && user?.last_name) {
+        if (user?.first_name && user?.last_name)
             return `${user.first_name} ${user.last_name}`;
-        }
         if (user?.first_name) return user.first_name;
         return user?.username || "Koşucu";
     };
 
-    // --- HELPER: Tarih Formatlama ---
     const getMemberSince = () => {
         if (!user?.date_joined) return "Yeni Üye";
-        const date = new Date(user.date_joined);
-        return date.toLocaleDateString("tr-TR", {
+        return new Date(user.date_joined).toLocaleDateString("tr-TR", {
             month: "long",
             year: "numeric",
         });
     };
 
-    // --- HELPER: Enum Formatlama (beginner -> Beginner) ---
-    const formatText = (text?: string) => {
+    const formatEnum = (text?: string) => {
         if (!text) return "-";
         return text.charAt(0).toUpperCase() + text.slice(1).replace("_", " ");
     };
 
     const handleLogout = () => {
-        Alert.alert("Çıkış Yap", "Çıkış yapmak istediğinize emin misiniz?", [
-            { text: "İptal", style: "cancel" },
+        Alert.alert("Çıkış Yap", "Hesabınızdan çıkış yapılacak.", [
+            { text: "Vazgeç", style: "cancel" },
             {
                 text: "Çıkış Yap",
                 style: "destructive",
-                onPress: async () => {
-                    await logOut(); // Context'teki logout fonksiyonunu çağır
-                },
+                onPress: async () => await logOut(),
             },
         ]);
     };
 
-    // Diğer butonlar için placeholder fonksiyonlar
     const showComingSoon = () =>
-        Alert.alert("Yakında", "Bu özellik yakında eklenecek!");
+        Alert.alert("Yakında", "Bu özellik geliştirme aşamasında.");
+
+    // --- REUSABLE MENU ITEM ---
+    const MenuItem = ({
+        icon,
+        color,
+        title,
+        value,
+        isSwitch,
+        switchValue,
+        onSwitchChange,
+        onPress,
+        showChevron = true,
+    }: any) => (
+        <Pressable
+            style={({ pressed }) => [
+                styles.menuItem,
+                pressed && !isSwitch && styles.menuItemPressed,
+            ]}
+            onPress={isSwitch ? null : onPress}
+        >
+            <View style={styles.menuLeft}>
+                <View
+                    style={[styles.iconBox, { backgroundColor: color + "20" }]}
+                >
+                    <Ionicons name={icon} size={20} color={color} />
+                </View>
+                <View>
+                    <Text style={styles.menuTitle}>{title}</Text>
+                    {value && <Text style={styles.menuSubtitle}>{value}</Text>}
+                </View>
+            </View>
+
+            {isSwitch ? (
+                <Switch
+                    value={switchValue}
+                    onValueChange={onSwitchChange}
+                    trackColor={{ false: "#3e3e3e", true: COLORS.accent }}
+                    thumbColor={"white"}
+                />
+            ) : (
+                <View style={styles.menuRight}>
+                    {showChevron && (
+                        <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={COLORS.textDim}
+                        />
+                    )}
+                </View>
+            )}
+        </Pressable>
+    );
 
     return (
         <View style={styles.container}>
+            {/* Status Bar'ı transparan yapıyoruz ki gradient arkada görünsün */}
+            <StatusBar
+                barStyle="light-content"
+                translucent
+                backgroundColor="transparent"
+            />
+
             <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContent}
             >
-                {/* Profile Header */}
-                <View style={styles.headerSection}>
-                    <View style={styles.profileImageContainer}>
-                        {/* Profil resmi backend'de varsa göster, yoksa placeholder */}
-                        <View style={styles.profileImagePlaceholder}>
-                            <Text
-                                style={{
-                                    fontSize: 36,
-                                    fontWeight: "bold",
-                                    color: COLORS.text,
-                                }}
+                {/* --- 1. MODERN HEADER (GRADIENT) --- */}
+                <LinearGradient
+                    colors={[COLORS.accent, COLORS.background]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 0, y: 0.8 }}
+                    style={styles.headerGradient}
+                >
+                    <View style={styles.profileContent}>
+                        <View style={styles.avatarContainer}>
+                            <View style={styles.avatarPlaceholder}>
+                                <Text style={styles.avatarText}>
+                                    {user?.first_name
+                                        ? user.first_name
+                                              .charAt(0)
+                                              .toUpperCase()
+                                        : "U"}
+                                </Text>
+                            </View>
+                            <Pressable
+                                style={styles.editBadge}
+                                onPress={showComingSoon}
                             >
-                                {user?.first_name
-                                    ? user.first_name.charAt(0).toUpperCase()
-                                    : "U"}
-                            </Text>
+                                <Ionicons
+                                    name="camera"
+                                    size={14}
+                                    color="white"
+                                />
+                            </Pressable>
                         </View>
 
-                        <Pressable
-                            style={styles.editImageButton}
-                            onPress={showComingSoon}
-                        >
-                            <Ionicons name="camera" size={20} color="white" />
-                        </Pressable>
+                        <Text style={styles.userName}>{getDisplayName()}</Text>
+                        <View style={styles.memberChip}>
+                            <Text style={styles.memberText}>
+                                {getMemberSince()} tarihinden beri üye
+                            </Text>
+                        </View>
                     </View>
+                </LinearGradient>
 
-                    <Text style={styles.userName}>{getDisplayName()}</Text>
-                    <Text style={styles.userEmail}>{user?.email}</Text>
-
-                    <View style={styles.memberBadge}>
-                        <Ionicons
-                            name="time-outline"
-                            size={16}
-                            color={COLORS.accent}
-                        />
-                        <Text style={styles.memberText}>
-                            Üye: {getMemberSince()}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Quick Stats - CANLI VERİLER */}
-                <View style={styles.statsSection}>
-                    <View style={styles.statBox}>
+                {/* --- 2. FLOATING STATS CARD --- */}
+                <View style={styles.statsCard}>
+                    <View style={styles.statItem}>
                         <Text style={styles.statValue}>
                             {user?.total_workouts || 0}
                         </Text>
                         <Text style={styles.statLabel}>Koşu</Text>
                     </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statBox}>
+                    <View style={styles.verticalDivider} />
+                    <View style={styles.statItem}>
                         <Text style={styles.statValue}>
                             {user?.total_distance?.toFixed(1) || 0}
                         </Text>
                         <Text style={styles.statLabel}>KM</Text>
                     </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statBox}>
-                        {/* Dakikayı saate çevir */}
+                    <View style={styles.verticalDivider} />
+                    <View style={styles.statItem}>
                         <Text style={styles.statValue}>
                             {Math.floor((user?.total_time || 0) / 60)}
                         </Text>
                         <Text style={styles.statLabel}>Saat</Text>
                     </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statBox}>
-                        {/* Aktif Plan sayısı şimdilik sabit veya hesaplanabilir */}
-                        <Text style={styles.statValue}>1</Text>
-                        <Text style={styles.statLabel}>Plan</Text>
+                </View>
+
+                {/* --- 3. MENU SECTIONS --- */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>KİŞİSEL BİLGİLER</Text>
+                    <View style={styles.menuGroup}>
+                        <MenuItem
+                            icon="person"
+                            color="#4ECDC4"
+                            title="Vücut Ölçüleri"
+                            value={`${user?.height || "-"} cm • ${
+                                user?.weight || "-"
+                            } kg`}
+                            onPress={showComingSoon}
+                        />
+                        <View style={styles.separator} />
+                        <MenuItem
+                            icon="fitness"
+                            color="#FFD93D"
+                            title="Deneyim Seviyesi"
+                            value={formatEnum(user?.experience_level)}
+                            onPress={showComingSoon}
+                        />
+                        <View style={styles.separator} />
+                        <MenuItem
+                            icon="trophy"
+                            color="#FF6B6B"
+                            title="Haftalık Hedef"
+                            value={`${user?.weekly_goal || 3} Antrenman`}
+                            onPress={showComingSoon}
+                        />
                     </View>
                 </View>
 
-                {/* Personal Info Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Kişisel Bilgiler</Text>
-
-                    <Pressable style={styles.menuItem} onPress={showComingSoon}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="person-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Profil Bilgileri
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    {/* Yaş hesaplama karmaşık olduğu için şimdilik boy/kilo */}
-                                    {user?.height || "-"} cm •{" "}
-                                    {user?.weight || "-"} kg
-                                </Text>
-                            </View>
-                        </View>
-                        <Ionicons
-                            name="chevron-forward"
-                            size={22}
-                            color="#B0B0B0"
-                        />
-                    </Pressable>
-
-                    <Pressable style={styles.menuItem} onPress={showComingSoon}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="fitness-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Koşu Tercihleri
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    {formatText(user?.experience_level)} •{" "}
-                                    {formatText(user?.preferred_distance)}
-                                </Text>
-                            </View>
-                        </View>
-                        <Ionicons
-                            name="chevron-forward"
-                            size={22}
-                            color="#B0B0B0"
-                        />
-                    </Pressable>
-
-                    <Pressable style={styles.menuItem} onPress={showComingSoon}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="locate-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Haftalık Hedef
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    Haftada {user?.weekly_goal || 3} antrenman
-                                </Text>
-                            </View>
-                        </View>
-                        <Ionicons
-                            name="chevron-forward"
-                            size={22}
-                            color="#B0B0B0"
-                        />
-                    </Pressable>
-                </View>
-
-                {/* Notifications Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Bildirimler</Text>
-
-                    <View style={styles.menuItem}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="alarm-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Antrenman Hatırlatıcı
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    Antrenman saatinden önce bildirim
-                                </Text>
-                            </View>
-                        </View>
-                        <Switch
-                            value={notifications.workoutReminder}
-                            onValueChange={(value) =>
-                                setNotifications({
-                                    ...notifications,
-                                    workoutReminder: value,
-                                })
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>TERCİHLER</Text>
+                    <View style={styles.menuGroup}>
+                        <MenuItem
+                            icon="notifications"
+                            color="#A569BD"
+                            title="Antrenman Bildirimleri"
+                            isSwitch
+                            switchValue={notifications.workoutReminder}
+                            onSwitchChange={(v: boolean) =>
+                                setNotifications((prev) => ({
+                                    ...prev,
+                                    workoutReminder: v,
+                                }))
                             }
-                            trackColor={{
-                                false: "#767577",
-                                true: COLORS.accent,
-                            }}
-                            thumbColor={"white"}
+                        />
+                        <View style={styles.separator} />
+                        <MenuItem
+                            icon="moon"
+                            color="#95A5A6"
+                            title="Tema Ayarları"
+                            value="Karanlık Mod (Varsayılan)"
+                            onPress={showComingSoon}
                         />
                     </View>
-                    {/* Diğer switchler aynı kalabilir */}
                 </View>
 
-                {/* Account Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Hesap</Text>
-
-                    <Pressable style={styles.menuItem}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="mail-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    E-posta Adresi
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    {user?.email}
-                                </Text>
-                            </View>
-                        </View>
-                        {/* E-posta değiştirilemez olduğu için ok işaretini kaldırdım */}
-                    </Pressable>
-
-                    <Pressable style={styles.menuItem} onPress={showComingSoon}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="lock-closed-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Şifre Değiştir
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    Hesap güvenliği
-                                </Text>
-                            </View>
-                        </View>
-                        <Ionicons
-                            name="chevron-forward"
-                            size={22}
-                            color="#B0B0B0"
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionHeader}>HESAP</Text>
+                    <View style={styles.menuGroup}>
+                        <MenuItem
+                            icon="mail"
+                            color={COLORS.textDim}
+                            title="E-posta"
+                            value={user?.email}
+                            showChevron={false}
                         />
-                    </Pressable>
+                        <View style={styles.separator} />
+                        <MenuItem
+                            icon="shield-checkmark"
+                            color={COLORS.textDim}
+                            title="Gizlilik ve Güvenlik"
+                            onPress={showComingSoon}
+                        />
+                    </View>
                 </View>
 
-                {/* Support Section - Aynı Kalabilir */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Destek</Text>
-                    {/* ... Mevcut kodlar ... */}
-                    <Pressable style={styles.menuItem} onPress={showComingSoon}>
-                        <View style={styles.menuItemLeft}>
-                            <View style={styles.menuIconContainer}>
-                                <Ionicons
-                                    name="information-circle-outline"
-                                    size={22}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <View style={styles.menuItemContent}>
-                                <Text style={styles.menuItemTitle}>
-                                    Uygulama Hakkında
-                                </Text>
-                                <Text style={styles.menuItemSubtitle}>
-                                    Versiyon 1.0.0
-                                </Text>
-                            </View>
-                        </View>
-                    </Pressable>
-                </View>
-
-                {/* Danger Zone */}
-                <View style={styles.section}>
+                {/* --- 4. FOOTER --- */}
+                <View style={styles.footerContainer}>
                     <Pressable
                         style={styles.logoutButton}
                         onPress={handleLogout}
                     >
                         <Ionicons
                             name="log-out-outline"
-                            size={22}
-                            color="white"
-                        />
-                        <Text style={styles.logoutButtonText}>Çıkış Yap</Text>
-                    </Pressable>
-
-                    <Pressable
-                        style={styles.deleteButton}
-                        onPress={() =>
-                            Alert.alert(
-                                "Dikkat",
-                                "Hesap silme işlemi henüz aktif değil."
-                            )
-                        }
-                    >
-                        <Ionicons
-                            name="trash-outline"
-                            size={22}
+                            size={20}
                             color="#FF6B6B"
                         />
-                        <Text style={styles.deleteButtonText}>Hesabı Sil</Text>
+                        <Text style={styles.logoutText}>Çıkış Yap</Text>
                     </Pressable>
+
+                    <Text style={styles.versionText}>PaceUp v1.0.0</Text>
                 </View>
 
-                <View style={{ height: 30 }} />
+                <View style={{ height: 100 }} />
             </ScrollView>
         </View>
     );
@@ -386,192 +294,152 @@ const ProfileScreen = () => {
 export default ProfileScreen;
 
 const styles = StyleSheet.create({
-    // Stylelar önceki kod ile BİREBİR AYNI kalabilir.
-    // Tekrar kopyalamana gerek yok, mevcut styles objesini kullanabilirsin.
-    // Sadece container, scrollView vb. temel yapıların olduğundan emin ol.
-    container: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingBottom: 20,
-    },
-    headerSection: {
-        backgroundColor: COLORS.card,
-        paddingVertical: 30,
-        paddingHorizontal: 20,
-        alignItems: "center",
+    container: { flex: 1, backgroundColor: COLORS.background },
+    scrollContent: { paddingBottom: 20 },
+
+    // HEADER & GRADIENT
+    headerGradient: {
+        paddingTop: 85, // <--- BURASI ARTIRILDI (Eskiden 60'tı, tepeden margin etkisi verir)
+        paddingBottom: 50,
         borderBottomLeftRadius: 30,
         borderBottomRightRadius: 30,
-        marginBottom: 20,
+        alignItems: "center",
     },
-    profileImageContainer: {
-        position: "relative",
-        marginBottom: 15,
-    },
-    profileImage: {
+    profileContent: { alignItems: "center" },
+    avatarContainer: { marginBottom: 15, position: "relative" },
+    avatarPlaceholder: {
         width: 100,
         height: 100,
         borderRadius: 50,
-    },
-    profileImagePlaceholder: {
-        width: 100,
-        height: 100,
-        borderRadius: 50,
-        backgroundColor: COLORS.background,
+        backgroundColor: COLORS.card,
         justifyContent: "center",
         alignItems: "center",
-        borderWidth: 2,
-        borderColor: COLORS.accent,
+        borderWidth: 4,
+        borderColor: "rgba(255,255,255,0.1)",
     },
-    editImageButton: {
+    avatarText: { fontSize: 40, fontWeight: "bold", color: COLORS.text },
+    editBadge: {
         position: "absolute",
         bottom: 0,
         right: 0,
         backgroundColor: COLORS.accent,
-        width: 36,
-        height: 36,
-        borderRadius: 18,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
         borderWidth: 3,
-        borderColor: COLORS.card,
+        borderColor: COLORS.background,
     },
     userName: {
-        color: COLORS.text,
         fontSize: 24,
-        fontWeight: "bold",
+        fontWeight: "800",
+        color: COLORS.white,
         marginBottom: 5,
     },
-    userEmail: {
-        color: "#B0B0B0",
-        fontSize: 14,
-        marginBottom: 15,
-    },
-    memberBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "rgba(255, 107, 107, 0.15)",
+    memberChip: {
+        backgroundColor: "rgba(255,255,255,0.15)",
         paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 12,
-        gap: 6,
+        paddingVertical: 4,
+        borderRadius: 20,
     },
     memberText: {
-        color: COLORS.accent,
+        color: "rgba(255,255,255,0.9)",
         fontSize: 12,
         fontWeight: "600",
     },
-    statsSection: {
+
+    // FLOATING STATS
+    statsCard: {
         flexDirection: "row",
         backgroundColor: COLORS.card,
         marginHorizontal: 20,
-        borderRadius: 15,
-        padding: 20,
-        marginBottom: 20,
+        borderRadius: 20,
+        paddingVertical: 20,
+        marginTop: -35, // Floating effect
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: 10 },
         shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
-    },
-    statBox: {
-        flex: 1,
+        shadowRadius: 10,
+        elevation: 10,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
         alignItems: "center",
+        justifyContent: "space-evenly",
     },
+    statItem: { alignItems: "center", width: "30%" },
     statValue: {
+        fontSize: 22,
+        fontWeight: "800",
         color: COLORS.text,
-        fontSize: 20,
-        fontWeight: "bold",
-        marginBottom: 4,
+        marginBottom: 2,
     },
     statLabel: {
-        color: "#B0B0B0",
         fontSize: 12,
-    },
-    statDivider: {
-        width: 1,
-        backgroundColor: "rgba(255, 255, 255, 0.1)",
-        marginHorizontal: 10,
-    },
-    section: {
-        paddingHorizontal: 20,
-        marginBottom: 25,
-    },
-    sectionTitle: {
-        color: COLORS.text,
-        fontSize: 18,
+        color: COLORS.textDim,
         fontWeight: "600",
-        marginBottom: 15,
+        textTransform: "uppercase",
+    },
+    verticalDivider: {
+        width: 1,
+        height: 30,
+        backgroundColor: COLORS.cardBorder,
+    },
+
+    // MENU SECTIONS
+    sectionContainer: { marginTop: 25, paddingHorizontal: 20 },
+    sectionHeader: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "700",
+        marginBottom: 10,
+        marginLeft: 10,
+    },
+    menuGroup: {
+        backgroundColor: COLORS.card,
+        borderRadius: 16,
+        overflow: "hidden",
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
     menuItem: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
-        backgroundColor: COLORS.card,
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 10,
+        paddingVertical: 16,
+        paddingHorizontal: 16,
     },
-    menuItemLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
-    },
-    menuIconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: COLORS.background,
+    menuItemPressed: { backgroundColor: COLORS.cardVariant },
+    menuLeft: { flexDirection: "row", alignItems: "center", gap: 15, flex: 1 },
+    iconBox: {
+        width: 36,
+        height: 36,
+        borderRadius: 10,
         justifyContent: "center",
         alignItems: "center",
-        marginRight: 12,
     },
-    menuItemContent: {
-        flex: 1,
+    menuTitle: { color: COLORS.text, fontSize: 16, fontWeight: "600" },
+    menuSubtitle: { color: COLORS.textDim, fontSize: 13, marginTop: 2 },
+    menuRight: { flexDirection: "row", alignItems: "center" },
+    separator: {
+        height: 1,
+        backgroundColor: COLORS.cardBorder,
+        marginLeft: 67,
     },
-    menuItemTitle: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: "600",
-        marginBottom: 2,
-    },
-    menuItemSubtitle: {
-        color: "#B0B0B0",
-        fontSize: 13,
-    },
+
+    // FOOTER
+    footerContainer: { marginTop: 40, alignItems: "center", gap: 20 },
     logoutButton: {
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: COLORS.accent,
-        padding: 16,
-        borderRadius: 12,
-        gap: 10,
-        marginBottom: 12,
-    },
-    logoutButtonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold",
-    },
-    deleteButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "rgba(255, 107, 107, 0.15)",
-        padding: 16,
-        borderRadius: 12,
-        gap: 10,
+        gap: 8,
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 25,
+        backgroundColor: "rgba(255, 107, 107, 0.1)",
         borderWidth: 1,
-        borderColor: "#FF6B6B",
+        borderColor: "rgba(255, 107, 107, 0.3)",
     },
-    deleteButtonText: {
-        color: "#FF6B6B",
-        fontSize: 16,
-        fontWeight: "bold",
-    },
+    logoutText: { color: "#FF6B6B", fontSize: 16, fontWeight: "700" },
+    versionText: { color: COLORS.textDim, fontSize: 12 },
 });
