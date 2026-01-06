@@ -21,13 +21,17 @@ import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
 
-// --- SABİT DEĞERLER (MATEMATİK İÇİN KRİTİK) ---
-const BOX_WIDTH = 50; // Kutunun kendi genişliği
-const BOX_MARGIN = 5; // Kutunun sağ ve sol marjini (toplam 10)
-const ITEM_WIDTH = BOX_WIDTH + BOX_MARGIN * 2; // 60px (Layout hesabı için gerçek genişlik)
-const SPACING = (width - ITEM_WIDTH) / 2; // Ortalamak için kenar boşluğu
+// --- SABİT DEĞERLER ---
+const BOX_WIDTH = 50;
+const BOX_MARGIN = 5;
+const ITEM_WIDTH = BOX_WIDTH + BOX_MARGIN * 2;
+const SPACING = (width - ITEM_WIDTH) / 2;
 
-// --- TİPLER ---
+// --- RENK PALETİ ---
+const THEME_COLORS = {
+    missed: "#FF3B30",
+};
+
 type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
 
 const getLocalDateString = (date: Date = new Date()) => {
@@ -43,10 +47,10 @@ export default function HomeCalendarScreen() {
     const params = useLocalSearchParams();
     const { initialWorkoutId, initialDate } = params;
 
+    const todayStr = getLocalDateString();
+
     const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
-    const [selectedDate, setSelectedDate] = useState<string>(
-        getLocalDateString()
-    );
+    const [selectedDate, setSelectedDate] = useState<string>(todayStr);
     const [loading, setLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
@@ -67,7 +71,7 @@ export default function HomeCalendarScreen() {
                     .toLocaleDateString("tr-TR", { weekday: "short" })
                     .toUpperCase(),
                 dateNum: date.getDate(),
-                isToday: dateStr === getLocalDateString(),
+                isToday: dateStr === todayStr,
             });
         }
         return days;
@@ -127,19 +131,28 @@ export default function HomeCalendarScreen() {
                 const response = await fetch(`${API_URL}/workouts/`, {
                     headers: { Authorization: `Bearer ${token}` },
                 });
-                const data = await response.json();
-                setAllWorkouts(data);
 
-                if (initialDate) {
-                    setSelectedDate(String(initialDate).split("T")[0]);
-                } else if (initialWorkoutId) {
-                    const target = data.find(
-                        (w: any) => w.id === initialWorkoutId
-                    );
-                    if (target) setSelectedDate(target.scheduled_date);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (Array.isArray(data)) {
+                        setAllWorkouts(data);
+                        if (initialDate) {
+                            setSelectedDate(String(initialDate).split("T")[0]);
+                        } else if (initialWorkoutId) {
+                            const target = data.find(
+                                (w: any) => w.id === initialWorkoutId
+                            );
+                            if (target) setSelectedDate(target.scheduled_date);
+                        }
+                    } else {
+                        setAllWorkouts([]);
+                    }
+                } else {
+                    setAllWorkouts([]);
                 }
             } catch (error) {
                 console.log("Fetch error:", error);
+                setAllWorkouts([]);
             } finally {
                 setLoading(false);
             }
@@ -147,7 +160,6 @@ export default function HomeCalendarScreen() {
         fetchData();
     }, [token]);
 
-    // --- SCROLL TO CENTER (DÜZELTİLMİŞ) ---
     useEffect(() => {
         if (!loading && calendarDays.length > 0 && flatListRef.current) {
             const index = calendarDays.findIndex(
@@ -179,18 +191,14 @@ export default function HomeCalendarScreen() {
         setSelectedDate(getLocalDateString(current));
     };
 
-    const goToToday = () => {
-        setSelectedDate(getLocalDateString(new Date()));
-    };
+    const goToToday = () => setSelectedDate(todayStr);
 
     const handleMarkCompleted = () => {
         const workout = allWorkouts.find(
             (w) => w.scheduled_date === selectedDate
         );
         if (!workout) return;
-
-        const todayStr = getLocalDateString();
-        if (workout.scheduled_date.split("T")[0] > todayStr) {
+        if (workout.scheduled_date > todayStr) {
             Alert.alert(
                 "Henüz Erken ⏳",
                 "Gelecek tarihli bir antrenmanı şimdiden tamamlayamazsın."
@@ -200,7 +208,7 @@ export default function HomeCalendarScreen() {
 
         Alert.alert(
             "Antrenmanı Tamamla",
-            "Bu antrenmanı tamamlandı olarak işaretlemek istiyor musun?",
+            "Tamamlandı olarak işaretlensin mi?",
             [
                 { text: "İptal", style: "cancel" },
                 {
@@ -216,7 +224,6 @@ export default function HomeCalendarScreen() {
                                 },
                                 body: JSON.stringify({ status: "completed" }),
                             });
-
                             const resultData = {
                                 workout: workout.id,
                                 completed_at: new Date().toISOString(),
@@ -225,7 +232,6 @@ export default function HomeCalendarScreen() {
                                     workout.planned_distance || 5.0,
                                 feeling: "normal",
                             };
-
                             const postRes = await fetch(`${API_URL}/results/`, {
                                 method: "POST",
                                 headers: {
@@ -234,22 +240,20 @@ export default function HomeCalendarScreen() {
                                 },
                                 body: JSON.stringify(resultData),
                             });
-
                             if (!postRes.ok) throw new Error("Result failed");
                             const createdResult = await postRes.json();
-
                             await refreshUserData();
-
-                            const updatedList = allWorkouts.map((w) =>
-                                w.id === workout.id
-                                    ? {
-                                          ...w,
-                                          status: "completed",
-                                          result: createdResult,
-                                      }
-                                    : w
+                            setAllWorkouts((prev) =>
+                                prev.map((w) =>
+                                    w.id === workout.id
+                                        ? {
+                                              ...w,
+                                              status: "completed",
+                                              result: createdResult,
+                                          }
+                                        : w
+                                )
                             );
-                            setAllWorkouts(updatedList);
                             Alert.alert(
                                 "Tebrikler! 🎉",
                                 "Antrenman kaydedildi."
@@ -274,42 +278,35 @@ export default function HomeCalendarScreen() {
             return;
         }
 
-        Alert.alert(
-            "Geri Al",
-            "Bu antrenmanı tamamlanmamış olarak işaretlemek istiyor musun?",
-            [
-                { text: "Vazgeç", style: "cancel" },
-                {
-                    text: "Evet, Geri Al",
-                    style: "destructive",
-                    onPress: async () => {
-                        setIsProcessing(true);
-                        try {
-                            await fetch(
-                                `${API_URL}/results/${workout.result.id}/`,
-                                {
-                                    method: "DELETE",
-                                    headers: {
-                                        Authorization: `Bearer ${token}`,
-                                    },
-                                }
-                            );
-
-                            await fetch(`${API_URL}/workouts/${workout.id}/`, {
-                                method: "PATCH",
-                                headers: {
-                                    Authorization: `Bearer ${token}`,
-                                    "Content-Type": "application/json",
-                                },
-                                body: JSON.stringify({
-                                    status: "scheduled",
-                                    is_completed: false,
-                                }),
-                            });
-
-                            await refreshUserData();
-
-                            const updatedList = allWorkouts.map((w) =>
+        Alert.alert("Geri Al", "Tamamlanmamış olarak işaretlensin mi?", [
+            { text: "Vazgeç", style: "cancel" },
+            {
+                text: "Evet, Geri Al",
+                style: "destructive",
+                onPress: async () => {
+                    setIsProcessing(true);
+                    try {
+                        await fetch(
+                            `${API_URL}/results/${workout.result.id}/`,
+                            {
+                                method: "DELETE",
+                                headers: { Authorization: `Bearer ${token}` },
+                            }
+                        );
+                        await fetch(`${API_URL}/workouts/${workout.id}/`, {
+                            method: "PATCH",
+                            headers: {
+                                Authorization: `Bearer ${token}`,
+                                "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                                status: "scheduled",
+                                is_completed: false,
+                            }),
+                        });
+                        await refreshUserData();
+                        setAllWorkouts((prev) =>
+                            prev.map((w) =>
                                 w.id === workout.id
                                     ? {
                                           ...w,
@@ -317,18 +314,17 @@ export default function HomeCalendarScreen() {
                                           result: null,
                                       }
                                     : w
-                            );
-                            setAllWorkouts(updatedList);
-                            Alert.alert("Tamam", "Durum geri alındı.");
-                        } catch (error) {
-                            Alert.alert("Hata", "Geri alma başarısız.");
-                        } finally {
-                            setIsProcessing(false);
-                        }
-                    },
+                            )
+                        );
+                        Alert.alert("Tamam", "Durum geri alındı.");
+                    } catch (error) {
+                        Alert.alert("Hata", "Geri alma başarısız.");
+                    } finally {
+                        setIsProcessing(false);
+                    }
                 },
-            ]
-        );
+            },
+        ]);
     };
 
     if (loading) {
@@ -339,9 +335,9 @@ export default function HomeCalendarScreen() {
         );
     }
 
-    const selectedWorkout = allWorkouts.find(
-        (w) => w.scheduled_date === selectedDate
-    );
+    const selectedWorkout = Array.isArray(allWorkouts)
+        ? allWorkouts.find((w) => w.scheduled_date === selectedDate)
+        : null;
     const typeStyle = selectedWorkout
         ? getWorkoutTypeStyle(selectedWorkout.workout_type)
         : null;
@@ -349,8 +345,101 @@ export default function HomeCalendarScreen() {
         month: "long",
         year: "numeric",
     });
-    const isTodaySelected = selectedDate === getLocalDateString();
-    const isFuture = selectedDate > getLocalDateString();
+    const isTodaySelected = selectedDate === todayStr;
+    const isFuture = selectedDate > todayStr;
+
+    // --- RENDER ITEM ---
+    const renderDayItem = ({ item }: { item: any }) => {
+        const isSelected = item.fullDate === selectedDate;
+        const workout = Array.isArray(allWorkouts)
+            ? allWorkouts.find((w) => w.scheduled_date === item.fullDate)
+            : null;
+        const isCompleted = workout?.status === "completed";
+        const isMissed = workout?.status === "missed";
+        const theme = workout
+            ? getWorkoutTypeStyle(workout.workout_type)
+            : null;
+
+        let containerStyle: any = [styles.dayItem];
+        let nameStyle: any = [styles.dayName];
+        let numStyle: any = [styles.dayNumber];
+
+        if (isSelected) {
+            containerStyle.push(styles.dayItemSelected);
+            nameStyle.push(styles.textWhite);
+            numStyle.push(styles.textWhite);
+        } else if (isCompleted) {
+            containerStyle.push(styles.dayItemCompleted);
+            nameStyle.push(styles.textSuccess);
+            numStyle.push(styles.textSuccess);
+        } else if (isMissed) {
+            containerStyle.push(styles.dayItemMissed);
+            nameStyle.push({ color: THEME_COLORS.missed });
+            numStyle.push({ color: THEME_COLORS.missed });
+        } else if (workout) {
+            containerStyle.push({
+                borderColor: theme?.color,
+                borderWidth: 1.5,
+                backgroundColor: theme?.color + "20",
+            });
+            nameStyle.push({ color: theme?.color, opacity: 0.8 });
+            numStyle.push({ color: COLORS.white });
+        } else {
+            containerStyle.push({ borderColor: "#333", borderWidth: 1 });
+        }
+
+        if (item.isToday && !isSelected && !workout) {
+            containerStyle.push(styles.dayItemToday);
+            nameStyle.push({ color: COLORS.accent });
+            numStyle.push({ color: COLORS.accent });
+        }
+
+        return (
+            <Pressable
+                style={containerStyle}
+                onPress={() => setSelectedDate(item.fullDate)}
+            >
+                <Text style={nameStyle}>{item.dayName.charAt(0)}</Text>
+                <Text style={numStyle}>{item.dateNum}</Text>
+
+                {/* --- BUGÜN İÇİN BAR (YENİ EKLENEN KISIM) --- */}
+                {item.isToday && (
+                    <View
+                        style={[
+                            styles.todayIndicatorBar,
+                            {
+                                backgroundColor: isSelected
+                                    ? COLORS.white
+                                    : COLORS.accent,
+                            },
+                        ]}
+                    />
+                )}
+
+                {/* --- WATERMARK ICONS --- */}
+                {!isSelected && isCompleted && (
+                    <View style={styles.overlayIcon}>
+                        <Ionicons
+                            name="checkmark-sharp"
+                            size={32}
+                            color={COLORS.success}
+                            style={{ opacity: 0.3 }}
+                        />
+                    </View>
+                )}
+                {!isSelected && isMissed && (
+                    <View style={styles.overlayIcon}>
+                        <Ionicons
+                            name="close-sharp"
+                            size={32}
+                            color={THEME_COLORS.missed}
+                            style={{ opacity: 0.3 }}
+                        />
+                    </View>
+                )}
+            </Pressable>
+        );
+    };
 
     return (
         <View style={styles.container}>
@@ -407,76 +496,7 @@ export default function HomeCalendarScreen() {
                         contentContainerStyle={{ paddingHorizontal: SPACING }}
                         snapToInterval={ITEM_WIDTH}
                         decelerationRate="fast"
-                        renderItem={({ item }) => {
-                            const isSelected = item.fullDate === selectedDate;
-                            const workout = allWorkouts.find(
-                                (w) => w.scheduled_date === item.fullDate
-                            );
-                            const hasWorkout = !!workout;
-                            const isCompleted = workout?.status === "completed";
-
-                            // Stil Hazırlığı
-                            let containerStyle: any = [styles.dayItem];
-                            let nameStyle: any = [styles.dayName];
-                            let numStyle: any = [styles.dayNumber];
-
-                            // 1. SEÇİLİ GÜN (Accent Dolu Arkaplan)
-                            if (isSelected) {
-                                containerStyle.push(styles.dayItemSelected);
-                                nameStyle.push(styles.textWhite);
-                                numStyle.push(styles.textWhite);
-                            }
-                            // 2. TAMAMLANMIŞ GÜN (Transparan Yeşil + Yeşil Yazı)
-                            else if (isCompleted) {
-                                containerStyle.push(styles.dayItemCompleted);
-                                nameStyle.push(styles.textSuccess);
-                                numStyle.push(styles.textSuccess);
-                            }
-                            // 3. BUGÜN (Seçili değilse)
-                            else if (item.isToday) {
-                                containerStyle.push(styles.dayItemToday);
-                                nameStyle.push({ color: COLORS.accent });
-                                numStyle.push({ color: COLORS.accent });
-                            }
-
-                            return (
-                                <Pressable
-                                    style={containerStyle}
-                                    onPress={() =>
-                                        setSelectedDate(item.fullDate)
-                                    }
-                                >
-                                    <Text style={nameStyle}>
-                                        {item.dayName.charAt(0)}
-                                    </Text>
-                                    <Text style={numStyle}>{item.dateNum}</Text>
-
-                                    {/* --- WATERMARK --- */}
-                                    {!isSelected && isCompleted && (
-                                        <View style={styles.completedOverlay}>
-                                            <Ionicons
-                                                name="checkmark-sharp"
-                                                size={40}
-                                                color={COLORS.success}
-                                                style={{ opacity: 0.25 }}
-                                            />
-                                        </View>
-                                    )}
-
-                                    {/* --- NOKTA --- */}
-                                    {!isSelected &&
-                                        !isCompleted &&
-                                        hasWorkout && (
-                                            <View
-                                                style={[
-                                                    styles.dot,
-                                                    styles.dotScheduled,
-                                                ]}
-                                            />
-                                        )}
-                                </Pressable>
-                            );
-                        }}
+                        renderItem={renderDayItem}
                     />
                 </View>
             </View>
@@ -523,6 +543,25 @@ export default function HomeCalendarScreen() {
                                             />
                                             <Text style={styles.completedText}>
                                                 Tamamlandı
+                                            </Text>
+                                        </View>
+                                    )}
+                                    {selectedWorkout.status === "missed" && (
+                                        <View style={styles.completedBadge}>
+                                            <Ionicons
+                                                name="close-circle"
+                                                size={16}
+                                                color={THEME_COLORS.missed}
+                                            />
+                                            <Text
+                                                style={[
+                                                    styles.completedText,
+                                                    {
+                                                        color: THEME_COLORS.missed,
+                                                    },
+                                                ]}
+                                            >
+                                                Kaçırıldı
                                             </Text>
                                         </View>
                                     )}
@@ -750,38 +789,59 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
-    // DÜZELTİLEN STİLLER
+
+    // --- GÜN KUTUCUKLARI ---
     dayItem: {
         alignItems: "center",
         justifyContent: "center",
-        width: BOX_WIDTH, // 50px
+        width: BOX_WIDTH,
         height: 75,
         borderRadius: 25,
         backgroundColor: "transparent",
         position: "relative",
         overflow: "hidden",
-        marginHorizontal: BOX_MARGIN, // 5px sağ + 5px sol = 10px boşluk
+        marginHorizontal: BOX_MARGIN,
     },
-    // ...
     dayItemSelected: {
         backgroundColor: COLORS.accent,
         shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.4,
         shadowRadius: 6,
+        borderColor: COLORS.accent,
+        borderWidth: 0,
     },
     dayItemCompleted: {
         backgroundColor: COLORS.success + "25",
-        borderColor: COLORS.success + "50",
-        borderWidth: 1,
+        borderColor: COLORS.success,
+        borderWidth: 1.5,
     },
-    completedOverlay: {
+    dayItemMissed: {
+        backgroundColor: THEME_COLORS.missed + "20",
+        borderColor: THEME_COLORS.missed,
+        borderWidth: 1.5,
+    },
+    dayItemToday: {
+        borderColor: COLORS.accent,
+        borderWidth: 1.5,
+    },
+
+    // YENİ EKLENEN BUGÜN BARI
+    todayIndicatorBar: {
+        width: 16,
+        height: 3,
+        borderRadius: 2,
+        position: "absolute",
+        bottom: 8,
+    },
+
+    overlayIcon: {
         ...StyleSheet.absoluteFillObject,
         justifyContent: "center",
         alignItems: "center",
         zIndex: -1,
     },
-    dayItemToday: { borderWidth: 1, borderColor: COLORS.accent },
+
     dayName: {
         fontSize: 12,
         color: COLORS.textDim,
@@ -791,10 +851,8 @@ const styles = StyleSheet.create({
     dayNumber: { fontSize: 16, fontWeight: "bold", color: COLORS.text },
     textWhite: { color: "white" },
     textSuccess: { color: COLORS.success, fontWeight: "700" },
-    dot: { width: 5, height: 5, borderRadius: 2.5, marginTop: 6 },
-    dotScheduled: { backgroundColor: COLORS.accent },
 
-    // Diğer stiller aynen kalacak
+    // Detail Section
     detailSection: { paddingHorizontal: 20 },
     mainCard: {
         borderRadius: 24,

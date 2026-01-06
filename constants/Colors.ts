@@ -1,21 +1,24 @@
+// constants/Colors.ts
+
 export const COLORS = {
-    background: "#201911", // Ana arka plan (Derin Kahve/Siyah)
+    background: "#201911", // Ana arka plan
     card: "#2F261D", // Kart Rengi
-    cardVariant: "#382E24", // Biraz daha açık kart rengi (Vurgu için)
-    cardBorder: "#4A3F35", // Kart Kenarlıkları
+    cardVariant: "#382E24", // Açık kart
+    cardBorder: "#4A3F35", // Kenarlık
 
     text: "#EAEAEA", // Ana metin
-    textDim: "#B0A89E", // İkincil metinler
+    textDim: "#B0A89E", // Silik metin
 
-    accent: "#FF4501", // Ana Vurgu (Canlı Turuncu)
-    secondary: "#FA7D09", // İkincil Turuncu (Sarımsı)
+    accent: "#FF4501", // Vurgu (Turuncu)
+    secondary: "#FA7D09", // İkincil
 
-    success: "#4ECDC4", // Hafif koşu / Başarı
-    warning: "#FFD93D", // İnterval / Seri
-    danger: "#FF6B6B", // Tempo / Zor
-    info: "#A569BD", // Uzun koşu
+    // GÜNCELLENEN KISIM:
+    success: "#28C76F", // DAHA YEŞİL (Modern Green)
+    warning: "#FFD93D", // Sarı
+    danger: "#FF4D4D", // Kırmızı (Biraz daha canlı yaptım)
+    info: "#A569BD", // Mor
 
-    inactive: "#6D5E52", // Pasif ikonlar
+    inactive: "#6D5E52",
     white: "#FFFFFF",
     transparent: "transparent",
 };

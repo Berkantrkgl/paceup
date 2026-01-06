@@ -66,15 +66,15 @@ LocaleConfig.locales["tr"] = {
 };
 LocaleConfig.defaultLocale = "tr";
 
-// --- 2. RENK PALETİ (Home Screen ile Uyumlu & Canlı) ---
-// Home ekranındaki COLORS.danger, success vb. tonlarının "Neon" versiyonları
+// --- 2. RENK PALETİ ---
 const THEME_COLORS = {
-    tempo: "#FF4501", // Home'daki Accent (Turuncu/Kırmızı)
-    easy: "#4ECDC4", // Home'daki Success
-    interval: "#FFD93D", // Home'daki Warning
-    long: "#A569BD", // Home'daki Info
-    rest: "#B0A89E", // Home'daki TextDim
-    default: "#FA7D09", // Home'daki Secondary
+    tempo: "#FF4501",
+    easy: "#4ECDC4",
+    interval: "#FFD93D",
+    long: "#A569BD",
+    rest: "#B0A89E",
+    default: "#FA7D09",
+    missed: "#FF3B30", // Kaçırılanlar için Kırmızı
 };
 
 type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
@@ -130,16 +130,17 @@ const CalendarScreen = () => {
     const { token } = useContext(AuthContext);
     const params = useLocalSearchParams();
 
+    // BUGÜNÜN TARİHİ (YYYY-MM-DD)
+    const todayStr = new Date().toISOString().split("T")[0];
+
     const [selectedDate, setSelectedDate] = useState(
-        params.initialDate
-            ? (params.initialDate as string)
-            : new Date().toISOString().split("T")[0]
+        params.initialDate ? (params.initialDate as string) : todayStr
     );
     const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
     const [workoutsMap, setWorkoutsMap] = useState<any>({});
     const [refreshing, setRefreshing] = useState(false);
     const [currentMonth, setCurrentMonth] = useState(
-        new Date().toISOString().split("T")[0]
+        params.initialDate ? (params.initialDate as string) : todayStr
     );
 
     useEffect(() => {
@@ -179,7 +180,7 @@ const CalendarScreen = () => {
         setRefreshing(false);
     };
 
-    // --- CUSTOM DAY RENDERER ---
+    // --- ÖZELLEŞTİRİLMİŞ GÜN RENDER FONKSİYONU ---
     const renderCustomDay = ({
         date,
         state,
@@ -190,15 +191,16 @@ const CalendarScreen = () => {
         const dateStr = date.dateString;
         const workout = workoutsMap[dateStr];
         const isSelected = dateStr === selectedDate;
-        const isToday = state === "today";
+        const isToday = dateStr === todayStr;
         const isCurrentMonth = state === "";
 
         const theme = workout ? getWorkoutTheme(workout.workout_type) : null;
-        // Eğer antrenman yoksa kenarlık koyu gri olsun, varsa temanın rengi
-        const borderColor = theme ? theme.color : COLORS.cardBorder;
-        const isCompleted = workout?.status === "completed";
 
-        // 1. SEÇİLİ GÜN (Home Screen Gradient stili)
+        // Backend'den gelen statüleri kullanıyoruz
+        const isCompleted = workout?.status === "completed";
+        const isMissed = workout?.status === "missed"; // Backend'den güncel geldi
+
+        // 1. SEÇİLİ GÜN
         if (isSelected) {
             return (
                 <Pressable
@@ -222,58 +224,93 @@ const CalendarScreen = () => {
                 onPress={() => setSelectedDate(dateStr)}
                 style={[
                     styles.dayContainer,
-                    !isCurrentMonth && { opacity: 0.3 }, // Başka ayın günleri silik
+                    !isCurrentMonth && { opacity: 0.8 },
                 ]}
             >
                 <View
                     style={[
                         styles.dayBox,
-                        // --- ANTRENMAN VARSA ---
-                        workout && {
-                            borderColor: borderColor,
-                            borderWidth: 2,
-                            // Dolguyu "45" yaparak belirginleştirdik (Daha opak)
-                            backgroundColor: borderColor + "45",
+
+                        // A) BOŞ GÜN (KONTRAST YÜKSEK)
+                        !workout && {
+                            backgroundColor: "#333333",
+                            borderColor: "#444444",
+                            borderWidth: 1,
                         },
 
-                        // --- BUGÜN (ANTRENMAN YOKSA) ---
+                        // B) ANTRENMAN GÜNÜ
+                        workout && {
+                            // Missed ise Kırmızı, Değilse Tema Rengi
+                            borderColor: isMissed
+                                ? THEME_COLORS.missed
+                                : theme?.color,
+                            borderWidth: 1.5,
+                            // Missed ise Kırmızı şeffaf dolgu
+                            backgroundColor: isMissed
+                                ? THEME_COLORS.missed + "20"
+                                : theme
+                                ? theme.color + "30"
+                                : "transparent",
+                        },
+
+                        // C) BUGÜN VURGUSU (Antrenman yoksa bile)
                         isToday &&
                             !workout && {
-                                borderColor: COLORS.text, // Beyaz çerçeve
+                                borderColor: COLORS.accent,
                                 borderWidth: 1.5,
-                                backgroundColor: "rgba(255,255,255,0.1)",
-                            },
-
-                        // --- BOŞ GÜNLER (STANDART) ---
-                        // Home screen background ile uyumlu hafif bir kart rengi
-                        !workout &&
-                            !isToday && {
-                                backgroundColor: COLORS.card,
-                                borderColor: COLORS.cardBorder,
+                                backgroundColor: "#333333",
                             },
                     ]}
                 >
                     <Text
                         style={[
                             styles.dayText,
-                            // Yazı Rengi:
-                            // Antrenman varsa -> Beyaz (Arka plan renkli olduğu için)
-                            // Boş günse -> COLORS.textDim (Home screen'deki gri)
-                            workout || isToday
-                                ? { color: COLORS.white, fontWeight: "800" }
-                                : { color: COLORS.textDim, fontWeight: "600" },
+                            {
+                                color: isToday
+                                    ? COLORS.accent
+                                    : workout
+                                    ? COLORS.white
+                                    : "#DDDDDD",
+                                fontWeight: workout || isToday ? "800" : "600",
+                            },
                         ]}
                     >
                         {date.day}
                     </Text>
 
-                    {/* Tamamlandı İkonu */}
+                    {/* BUGÜN BELİRTECİ (ALT ÇİZGİ - BAR) */}
+                    {isToday && (
+                        <View
+                            style={{
+                                width: 16,
+                                height: 3,
+                                borderRadius: 2,
+                                backgroundColor: COLORS.accent,
+                                marginTop: 4,
+                            }}
+                        />
+                    )}
+
+                    {/* --- DURUM İKONLARI (SAĞ ÜST) --- */}
+
+                    {/* 1. Tamamlandı (YEŞİL TİK) */}
                     {isCompleted && (
-                        <View style={styles.completedIcon}>
+                        <View style={styles.statusIcon}>
                             <Ionicons
                                 name="checkmark-circle"
                                 size={14}
                                 color={COLORS.success}
+                            />
+                        </View>
+                    )}
+
+                    {/* 2. Kaçırıldı (KIRMIZI ÇARPI) */}
+                    {isMissed && (
+                        <View style={styles.statusIcon}>
+                            <Ionicons
+                                name="close-circle"
+                                size={14}
+                                color={THEME_COLORS.missed}
                             />
                         </View>
                     )}
@@ -292,7 +329,6 @@ const CalendarScreen = () => {
                 backgroundColor="transparent"
             />
 
-            {/* --- HEADER --- */}
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>Takvim</Text>
                 <View style={styles.headerStats}>
@@ -317,19 +353,18 @@ const CalendarScreen = () => {
                     />
                 }
             >
-                {/* --- GRID CALENDAR --- */}
                 <View style={styles.calendarContainer}>
                     <Calendar
                         current={currentMonth}
-                        firstDay={1} // Pazartesi Başlangıç
+                        firstDay={1}
                         dayComponent={renderCustomDay}
                         onMonthChange={(date: any) =>
                             setCurrentMonth(date.dateString)
                         }
                         theme={{
                             calendarBackground: "transparent",
-                            textSectionTitleColor: COLORS.textDim, // Gün isimleri (Pzt, Sal) gri
-                            monthTextColor: COLORS.text, // Ay ismi beyaz
+                            textSectionTitleColor: "#BBBBBB",
+                            monthTextColor: COLORS.text,
                             textMonthFontSize: 22,
                             textMonthFontWeight: "800",
                             textDayHeaderFontSize: 13,
@@ -349,15 +384,14 @@ const CalendarScreen = () => {
                                     justifyContent: "space-around",
                                     paddingBottom: 10,
                                     marginBottom: 5,
-                                    borderBottomWidth: 1,
-                                    borderBottomColor: COLORS.cardBorder,
+                                    borderBottomWidth: 0,
                                 },
                             },
                         }}
                     />
                 </View>
 
-                {/* --- DETAIL SECTION (HOME TICKET STYLE) --- */}
+                {/* --- DETAIL SECTION (TICKET) --- */}
                 <View style={styles.detailsSection}>
                     <Text style={styles.detailsDate}>
                         {new Date(selectedDate).toLocaleDateString("tr-TR", {
@@ -382,6 +416,8 @@ const CalendarScreen = () => {
                                 );
                                 const isCompleted =
                                     selectedWorkout.status === "completed";
+                                const isMissed =
+                                    selectedWorkout.status === "missed";
 
                                 return (
                                     <LinearGradient
@@ -390,7 +426,6 @@ const CalendarScreen = () => {
                                         end={{ x: 1, y: 1 }}
                                         style={styles.gradientTicket}
                                     >
-                                        {/* TICKET LEFT */}
                                         <View style={styles.ticketLeft}>
                                             <View
                                                 style={[
@@ -417,7 +452,6 @@ const CalendarScreen = () => {
                                             </Text>
                                         </View>
 
-                                        {/* TICKET CENTER */}
                                         <View style={styles.ticketCenter}>
                                             <View
                                                 style={styles.ticketHeaderRow}
@@ -430,10 +464,12 @@ const CalendarScreen = () => {
                                                 >
                                                     {theme.name}
                                                 </Text>
+
+                                                {/* TAMAMLANDI BADGE */}
                                                 {isCompleted && (
                                                     <View
                                                         style={[
-                                                            styles.completedBadge,
+                                                            styles.badge,
                                                             {
                                                                 backgroundColor:
                                                                     theme.color,
@@ -442,22 +478,41 @@ const CalendarScreen = () => {
                                                     >
                                                         <Text
                                                             style={
-                                                                styles.completedText
+                                                                styles.badgeText
                                                             }
                                                         >
                                                             BİTTİ
                                                         </Text>
                                                     </View>
                                                 )}
-                                            </View>
 
+                                                {/* KAÇIRILDI BADGE */}
+                                                {isMissed && (
+                                                    <View
+                                                        style={[
+                                                            styles.badge,
+                                                            {
+                                                                backgroundColor:
+                                                                    THEME_COLORS.missed,
+                                                            },
+                                                        ]}
+                                                    >
+                                                        <Text
+                                                            style={
+                                                                styles.badgeText
+                                                            }
+                                                        >
+                                                            KAÇIRILDI
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
                                             <Text
                                                 style={styles.ticketTitle}
                                                 numberOfLines={1}
                                             >
                                                 {selectedWorkout.title}
                                             </Text>
-
                                             <View style={styles.ticketMetaRow}>
                                                 <Ionicons
                                                     name="timer-outline"
@@ -474,7 +529,6 @@ const CalendarScreen = () => {
                                                     }{" "}
                                                     dk
                                                 </Text>
-
                                                 {selectedWorkout.planned_distance >
                                                     0 && (
                                                     <>
@@ -506,8 +560,6 @@ const CalendarScreen = () => {
                                                 )}
                                             </View>
                                         </View>
-
-                                        {/* ARROW */}
                                         <Ionicons
                                             name="chevron-forward"
                                             size={24}
@@ -541,22 +593,20 @@ export default CalendarScreen;
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background, // #201911
+        backgroundColor: COLORS.background,
     },
-    // HEADER
     header: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
         paddingHorizontal: 20,
-        // DÜZELTME BURADA: Headershown false olduğu için manuel margin
         paddingTop: 70,
         paddingBottom: 20,
     },
     headerTitle: {
         fontSize: 32,
         fontWeight: "900",
-        color: COLORS.text, // Parlak beyaz
+        color: COLORS.text,
         letterSpacing: 0.5,
     },
     headerStats: {
@@ -575,7 +625,6 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: "700",
     },
-
     // CALENDAR GRID
     calendarContainer: {
         marginHorizontal: 10,
@@ -594,7 +643,7 @@ const styles = StyleSheet.create({
         justifyContent: "center",
         alignItems: "center",
         borderRadius: 14,
-        borderWidth: 1,
+        // Border render'da handle ediliyor
     },
     selectedDayBox: {
         width: CELL_WIDTH - 2,
@@ -610,7 +659,6 @@ const styles = StyleSheet.create({
     },
     dayText: {
         fontSize: 14,
-        fontWeight: "600",
     },
     selectedDayText: {
         color: COLORS.white,
@@ -624,7 +672,8 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.white,
         marginTop: 4,
     },
-    completedIcon: {
+    // ORTAK STATUS ICON STİLİ (TIK ve X için)
+    statusIcon: {
         position: "absolute",
         top: -6,
         right: -6,
@@ -633,8 +682,7 @@ const styles = StyleSheet.create({
         padding: 1,
         zIndex: 2,
     },
-
-    // DETAILS SECTION
+    // TICKET / DETAILS
     detailsSection: {
         paddingHorizontal: 20,
         marginTop: 15,
@@ -648,8 +696,6 @@ const styles = StyleSheet.create({
         marginBottom: 15,
         marginLeft: 5,
     },
-
-    // HOME STYLE TICKET
     gradientTicket: {
         flexDirection: "row",
         alignItems: "center",
@@ -657,7 +703,6 @@ const styles = StyleSheet.create({
         borderRadius: 22,
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        // Shadow
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.2,
@@ -721,18 +766,16 @@ const styles = StyleSheet.create({
         marginHorizontal: 4,
         fontSize: 10,
     },
-    completedBadge: {
+    badge: {
         paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: 6,
     },
-    completedText: {
+    badgeText: {
         color: COLORS.background,
         fontSize: 9,
         fontWeight: "900",
     },
-
-    // EMPTY STATE
     emptyState: {
         backgroundColor: COLORS.card,
         borderRadius: 20,
