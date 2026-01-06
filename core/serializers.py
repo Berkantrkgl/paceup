@@ -88,6 +88,10 @@ class WorkoutSerializer(serializers.ModelSerializer):
     result = WorkoutResultSerializer(read_only=True)
     # Hedef pace'i frontend'e "05:30" olarak döner
     pace_display = serializers.ReadOnlyField()
+    
+    # ⚠️ EKLEMEMİZ GEREKEN SATIR BU:
+    # Bu sayede create işleminde sadece Program ID'si (örn: 15) göndererek ilişki kurabiliriz.
+    program = serializers.PrimaryKeyRelatedField(queryset=Program.objects.all())
 
     class Meta:
         model = Workout
