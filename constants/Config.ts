@@ -2,6 +2,7 @@
 // Fiziksel cihaz için bilgisayarının yerel IP'sini (örn: 192.168.1.XX) yazmalısın.
 
 const BASE_URL = "http://127.0.0.1:8000"; // Backend adresin
+export const FASTAPI_URL = "http://localhost:8001";
 
 export const API_URL = `${BASE_URL}/api`;
 // export const MEDIA_URL = `${BASE_URL}/media`; // Profil fotoları vb. için

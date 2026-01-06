@@ -2,6 +2,7 @@ import { COLORS } from "@/constants/Colors";
 import { AuthContext, AuthProvider } from "@/utils/authContext";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import "fast-text-encoding";
 import React, { useContext } from "react";
 import { ActivityIndicator, View } from "react-native";
 

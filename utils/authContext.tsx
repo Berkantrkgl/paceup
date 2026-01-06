@@ -1,6 +1,7 @@
-import { API_URL } from "@/constants/Config"; // <--- MERKEZİ CONFIG KULLANIMI
+import { API_URL } from "@/constants/Config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useSegments } from "expo-router";
+import { jwtDecode } from "jwt-decode"; // 📦 YENİ EKLENDİ
 import { createContext, PropsWithChildren, useEffect, useState } from "react";
 import { Alert } from "react-native";
 
@@ -38,10 +39,13 @@ type AuthState = {
         password: string
     ) => Promise<void>;
     logOut: () => void;
-    refreshUserData: () => Promise<void>;
+    refreshUserData: () => Promise<void>; // ✅ Eskiden vardı, koruduk
+    getValidToken: () => Promise<string | null>; // ✅ YENİ: Token kontrolü için
 };
 
-const authStorageKey = "auth-token";
+// Storage Key'lerini ayırdık
+const ACCESS_TOKEN_KEY = "auth-access-token";
+const REFRESH_TOKEN_KEY = "auth-refresh-token";
 
 export const AuthContext = createContext<AuthState>({
     isLoggedIn: false,
@@ -52,6 +56,7 @@ export const AuthContext = createContext<AuthState>({
     register: async () => {},
     logOut: () => {},
     refreshUserData: async () => {},
+    getValidToken: async () => null,
 });
 
 export function AuthProvider({ children }: PropsWithChildren) {
@@ -63,10 +68,66 @@ export function AuthProvider({ children }: PropsWithChildren) {
     const router = useRouter();
     const segments = useSegments();
 
-    // --- YARDIMCI: Token ile Kullanıcı Verisini Çek ---
+    // --- 1. YARDIMCI: Backend'den Refresh Token ile Yeni Access Token Al ---
+    const refreshAccessToken = async (): Promise<string | null> => {
+        try {
+            const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+            if (!refreshToken) throw new Error("Refresh token yok");
+
+            const response = await fetch(`${API_URL}/token/refresh/`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ refresh: refreshToken }),
+            });
+
+            const data = await response.json();
+
+            if (response.ok && data.access) {
+                // Yeni token'ı kaydet
+                await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+                setToken(data.access);
+                return data.access;
+            } else {
+                throw new Error("Refresh token geçersiz");
+            }
+        } catch (error) {
+            console.log("Token yenileme hatası:", error);
+            logOut(); // Yenileyemezsek çıkış yap
+            return null;
+        }
+    };
+
+    // --- 2. YENİ FONKSİYON: Token Geçerli mi? (Süresi dolduysa yenile) ---
+    // Chatbot ve diğer API isteklerinde bunu kullanacağız.
+    const getValidToken = async (): Promise<string | null> => {
+        // Eğer state'de token yoksa storage'a bak (sayfa yenileme durumu)
+        let currentToken = token;
+        if (!currentToken) {
+            currentToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+        }
+
+        if (!currentToken) return null;
+
+        try {
+            const decoded: any = jwtDecode(currentToken);
+            const now = Date.now() / 1000;
+
+            // Eğer sürenin dolmasına 30 saniyeden az kaldıysa veya dolduysa
+            if (decoded.exp < now + 30) {
+                console.log("Token süresi doluyor/doldu. Yenileniyor...");
+                return await refreshAccessToken();
+            }
+
+            return currentToken;
+        } catch (error) {
+            console.log("Token decode hatası:", error);
+            return null;
+        }
+    };
+
+    // --- YARDIMCI: Kullanıcı Profilini Çek ---
     const fetchUserProfile = async (currentToken: string) => {
         try {
-            // URL'i Config'den alıyoruz (Hata riskini azaltır)
             const response = await fetch(`${API_URL}/users/me/`, {
                 method: "GET",
                 headers: {
@@ -79,47 +140,57 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 const userData: UserData = await response.json();
                 setUser(userData);
             } else {
-                // Token geçersizse çıkış yap
-                logOut();
+                // Sadece 401 ise çıkış yap, diğer hatalarda yapma
+                if (response.status === 401) logOut();
             }
         } catch (error) {
             console.log("User fetch error:", error);
         }
     };
 
-    // --- YARDIMCI: Oturumu Başlat ---
-    const handleSessionStart = async (accessToken: string) => {
+    // --- ESKİ FONKSİYON: Home Ekranı İçin Manuel Yenileme ---
+    // Hata almamak için bunu burada tutuyoruz.
+    const refreshUserData = async () => {
+        const validToken = await getValidToken();
+        if (validToken) {
+            await fetchUserProfile(validToken);
+        }
+    };
+
+    // --- OTURUM BAŞLATMA (Login/Register Sonrası) ---
+    const handleSessionStart = async (
+        accessToken: string,
+        refreshToken: string
+    ) => {
         try {
-            await AsyncStorage.setItem(authStorageKey, accessToken);
+            await AsyncStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
             setToken(accessToken);
             setIsLoggedIn(true);
-            // Önce kullanıcıyı çek, sonra yönlendir (Daha pürüzsüz geçiş için)
             await fetchUserProfile(accessToken);
         } catch (error) {
             console.log("Session start error:", error);
         }
     };
 
-    // --- 1. LOGIN ---
+    // --- LOGIN ---
     const logIn = async (email: string, password: string) => {
         try {
             const response = await fetch(`${API_URL}/token/`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    email: email,
-                    password: password,
-                }),
+                body: JSON.stringify({ email, password }),
             });
 
             const data = await response.json();
 
-            if (response.ok && data.access) {
-                await handleSessionStart(data.access);
+            if (response.ok && data.access && data.refresh) {
+                // Hem access hem refresh token'ı kaydediyoruz
+                await handleSessionStart(data.access, data.refresh);
             } else {
                 Alert.alert(
                     "Giriş Başarısız",
-                    data.detail || "E-posta veya şifre hatalı."
+                    data.detail || "Bilgileri kontrol edin."
                 );
             }
         } catch (error) {
@@ -128,10 +199,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
     };
 
-    // --- 2. REGISTER ---
+    // --- REGISTER ---
     const register = async (
-        firstName: string,
-        lastName: string,
+        fName: string,
+        lName: string,
         email: string,
         password: string
     ) => {
@@ -140,8 +211,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    first_name: firstName,
-                    last_name: lastName,
+                    first_name: fName,
+                    last_name: lName,
                     email: email,
                     password: password,
                 }),
@@ -150,22 +221,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
             const data = await response.json();
 
             if (response.ok) {
-                if (data.access) {
-                    await handleSessionStart(data.access);
+                // Kayıt başarılıysa otomatik giriş yap (Access ve Refresh varsa)
+                if (data.access && data.refresh) {
+                    await handleSessionStart(data.access, data.refresh);
                 } else {
                     Alert.alert(
                         "Başarılı",
-                        "Hesabınız oluşturuldu. Giriş yapabilirsiniz."
+                        "Hesap oluşturuldu. Giriş yapabilirsiniz."
                     );
                     router.replace("/login");
                 }
             } else {
-                let errorMsg = "Kayıt yapılamadı.";
-                if (data.email)
-                    errorMsg = "Bu e-posta adresi zaten kullanılıyor.";
-                else if (data.password)
-                    errorMsg = "Şifre kriterleri sağlanmadı.";
-                Alert.alert("Kayıt Hatası", errorMsg);
+                Alert.alert("Kayıt Hatası", "Bilgileri kontrol edin.");
             }
         } catch (error) {
             console.log("Register error:", error);
@@ -175,33 +242,34 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     // --- LOGOUT ---
     const logOut = async () => {
-        await AsyncStorage.removeItem(authStorageKey);
+        await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
+        await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
+        // Eski key varsa onu da sil temizlik olsun
+        await AsyncStorage.removeItem("auth-token");
+
         setIsLoggedIn(false);
         setToken(null);
         setUser(null);
     };
 
-    // --- NAVİGASYON KORUMASI ---
-    useEffect(() => {
-        if (!isReady) return;
-
-        const inProtectedGroup = segments[0] === "(protected)";
-
-        if (isLoggedIn && !inProtectedGroup) {
-            router.replace("/");
-        } else if (!isLoggedIn && inProtectedGroup) {
-            router.replace("/login");
-        }
-    }, [isLoggedIn, segments, isReady]);
-
-    // --- STORAGE CHECK ---
+    // --- APP BAŞLANGICI: STORAGE KONTROLÜ ---
     const getAuthFromStorage = async () => {
         try {
-            const savedToken = await AsyncStorage.getItem(authStorageKey);
-            if (savedToken) {
-                setToken(savedToken);
+            const savedAccess = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
+            const savedRefresh = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+
+            // Eski sistemden kalan token var mı? Varsa onu access olarak al
+            const oldToken = await AsyncStorage.getItem("auth-token");
+
+            if (savedAccess && savedRefresh) {
+                setToken(savedAccess);
                 setIsLoggedIn(true);
-                await fetchUserProfile(savedToken);
+                await fetchUserProfile(savedAccess);
+            } else if (oldToken) {
+                // Eski versiyondan geçiş yapan kullanıcılar için fallback
+                setToken(oldToken);
+                setIsLoggedIn(true);
+                await fetchUserProfile(oldToken);
             }
         } catch (error) {
             console.log(error);
@@ -210,13 +278,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
     };
 
-    const refreshUserData = async () => {
-        if (token) await fetchUserProfile(token);
-    };
-
     useEffect(() => {
         getAuthFromStorage();
     }, []);
+
+    // --- NAVİGASYON KORUMASI ---
+    useEffect(() => {
+        if (!isReady) return;
+        const inProtectedGroup = segments[0] === "(protected)";
+
+        if (isLoggedIn && !inProtectedGroup) {
+            router.replace("/");
+        } else if (!isLoggedIn && inProtectedGroup) {
+            router.replace("/login");
+        }
+    }, [isLoggedIn, segments, isReady]);
 
     return (
         <AuthContext.Provider
@@ -228,7 +304,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
                 logIn,
                 register,
                 logOut,
-                refreshUserData,
+                refreshUserData, // ✅ Hata veren fonksiyon burada
+                getValidToken, // ✅ Chatbot'un ihtiyacı olan fonksiyon burada
             }}
         >
             {children}
