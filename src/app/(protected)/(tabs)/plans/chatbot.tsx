@@ -29,13 +29,17 @@ type Message = {
     isStreaming?: boolean;
 };
 
-// Thread ID her oturum için benzersiz olsun
-const SESSION_THREAD_ID = `thread-${Math.random().toString(36).substring(7)}`;
-
 const ChatbotScreen = () => {
-    // Sadece getValidToken'a ihtiyacımız var, raw token'ı context'ten almaya gerek yok burada
     const { getValidToken } = useContext(AuthContext);
     const flatListRef = useRef<FlatList>(null);
+
+    // --- DEĞİŞİKLİK BURADA ---
+    // Thread ID'yi component içinde useRef ile oluşturuyoruz.
+    // Bu sayede ekran her açıldığında (mount olduğunda) yeni bir ID üretilir
+    // ama state değişimlerinde (yazı yazarken) ID sabit kalır.
+    const threadIdRef = useRef(
+        `thread-${Math.random().toString(36).substring(7)}`
+    );
 
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputText, setInputText] = useState("");
@@ -50,12 +54,15 @@ const ChatbotScreen = () => {
                 timestamp: new Date(),
             },
         ]);
+
+        // Debug için konsola yeni ID'yi yazdıralım
+        console.log("Yeni Sohbet Başladı, Thread ID:", threadIdRef.current);
     }, []);
 
     const handleSendMessage = async () => {
         if (!inputText.trim()) return;
 
-        // 1. Token Kontrolü (Süresi dolmuşsa yeniler)
+        // 1. Token Kontrolü
         const validToken = await getValidToken();
 
         if (!validToken) {
@@ -96,10 +103,11 @@ const ChatbotScreen = () => {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${validToken}`, // Yenilenmiş token
+                Authorization: `Bearer ${validToken}`,
             },
             body: JSON.stringify({
-                thread_id: SESSION_THREAD_ID,
+                // Global değişken yerine ref.current kullanıyoruz
+                thread_id: threadIdRef.current,
                 messages: [
                     {
                         role: "user",
@@ -152,7 +160,6 @@ const ChatbotScreen = () => {
             setIsTyping(false);
             eventSource.close();
 
-            // Kullanıcıya hata bildirimi (Opsiyonel)
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === aiMsgId && msg.text === ""
