@@ -278,53 +278,77 @@ export default function HomeCalendarScreen() {
             return;
         }
 
-        Alert.alert("Geri Al", "Tamamlanmamış olarak işaretlensin mi?", [
-            { text: "Vazgeç", style: "cancel" },
-            {
-                text: "Evet, Geri Al",
-                style: "destructive",
-                onPress: async () => {
-                    setIsProcessing(true);
-                    try {
-                        await fetch(
-                            `${API_URL}/results/${workout.result.id}/`,
-                            {
-                                method: "DELETE",
-                                headers: { Authorization: `Bearer ${token}` },
-                            }
-                        );
-                        await fetch(`${API_URL}/workouts/${workout.id}/`, {
-                            method: "PATCH",
-                            headers: {
-                                Authorization: `Bearer ${token}`,
-                                "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({
-                                status: "scheduled",
-                                is_completed: false,
-                            }),
-                        });
-                        await refreshUserData();
-                        setAllWorkouts((prev) =>
-                            prev.map((w) =>
+        Alert.alert(
+            "Geri Al",
+            "Bu antrenmanı tamamlanmamış olarak işaretlemek istiyor musun?",
+            [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                    text: "Evet, Geri Al",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsProcessing(true);
+                        try {
+                            // 1. Sonuç Kaydını Sil
+                            await fetch(
+                                `${API_URL}/results/${workout.result.id}/`,
+                                {
+                                    method: "DELETE",
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                    },
+                                }
+                            );
+
+                            // 2. Workout Statüsünü Güncelle
+                            // Backend zaten geçmiştekileri "missed" yapar ama
+                            // anlık UI güncellemesi için biz de kontrol edelim.
+                            const today = getLocalDateString();
+                            const isPast = workout.scheduled_date < today;
+                            const newStatus = isPast ? "missed" : "scheduled";
+
+                            // Backend'e yine "scheduled" gönderelim, o gerekirse düzeltir
+                            // Ama UI'da missed göstereceğiz.
+                            await fetch(`${API_URL}/workouts/${workout.id}/`, {
+                                method: "PATCH",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    status: "scheduled", // Backend bunu auto-missed yapacak
+                                    is_completed: false,
+                                }),
+                            });
+
+                            await refreshUserData();
+
+                            // 3. YEREL STATE GÜNCELLEMESİ (UI İÇİN KRİTİK)
+                            const updatedList = allWorkouts.map((w) =>
                                 w.id === workout.id
                                     ? {
                                           ...w,
-                                          status: "scheduled",
+                                          status: newStatus, // Eğer geçmişse direkt 'missed' yap
                                           result: null,
                                       }
                                     : w
-                            )
-                        );
-                        Alert.alert("Tamam", "Durum geri alındı.");
-                    } catch (error) {
-                        Alert.alert("Hata", "Geri alma başarısız.");
-                    } finally {
-                        setIsProcessing(false);
-                    }
+                            );
+                            setAllWorkouts(updatedList);
+
+                            // Ekstra Güvenlik: Arka planda tam veriyi tekrar çek
+                            // (Backend'in auto-missed logic'ini garantilemek için)
+                            // fetchData(); // Bu fonksiyonu useEffect dışına çıkarıp çağırabilirsin
+
+                            Alert.alert("Tamam", "Durum geri alındı.");
+                        } catch (error) {
+                            Alert.alert("Hata", "Geri alma başarısız.");
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    },
                 },
-            },
-        ]);
+            ]
+        );
     };
 
     if (loading) {

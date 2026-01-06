@@ -1,31 +1,125 @@
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import React, { useContext, useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
+    Dimensions,
+    KeyboardAvoidingView,
+    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
     View,
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
+import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
-const API_URL = "http://127.0.0.1:8000/api";
+const { width } = Dimensions.get("window");
+
+// --- HELPER: Date String (YYYY-MM-DD) ---
+const getLocalDateString = (date: Date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+// --- HELPER: Theme Colors ---
+const getWorkoutTypeStyle = (type: string) => {
+    switch (type) {
+        case "tempo":
+            return {
+                icon: "speedometer",
+                color: COLORS.danger,
+                name: "Tempo Koşusu",
+                bgGradient: [COLORS.danger + "CC", COLORS.card],
+            };
+        case "easy":
+            return {
+                icon: "leaf",
+                color: COLORS.success,
+                name: "Hafif Koşu",
+                bgGradient: [COLORS.success + "CC", COLORS.card],
+            };
+        case "interval":
+            return {
+                icon: "flash",
+                color: COLORS.warning,
+                name: "İnterval",
+                bgGradient: [COLORS.warning + "CC", COLORS.card],
+            };
+        case "long":
+            return {
+                icon: "infinite",
+                color: COLORS.info,
+                name: "Uzun Koşu",
+                bgGradient: [COLORS.info + "CC", COLORS.card],
+            };
+        case "rest":
+            return {
+                icon: "moon",
+                color: COLORS.textDim,
+                name: "Dinlenme",
+                bgGradient: [COLORS.cardVariant, COLORS.card],
+            };
+        default:
+            return {
+                icon: "fitness",
+                color: COLORS.secondary,
+                name: "Koşu",
+                bgGradient: [COLORS.secondary + "CC", COLORS.card],
+            };
+    }
+};
+
+const getFeelingIcon = (feeling: string) => {
+    switch (feeling) {
+        case "excellent":
+            return { icon: "star", color: "#FFD93D", text: "Mükemmel" };
+        case "good":
+            return { icon: "happy", color: COLORS.success, text: "İyi" };
+        case "okay":
+            return { icon: "thumbs-up", color: COLORS.secondary, text: "Orta" };
+        case "hard":
+            return { icon: "water", color: COLORS.danger, text: "Zor" };
+        case "very_hard":
+            return { icon: "skull", color: "#D32F2F", text: "Çok Zor" };
+        default:
+            return { icon: "remove-circle", color: COLORS.textDim, text: "-" };
+    }
+};
 
 const DetailModal = () => {
-    const { token } = useContext(AuthContext);
+    const { token, refreshUserData } = useContext(AuthContext);
     const params = useLocalSearchParams();
     const { workoutId } = params;
+
+    // BUGÜNÜN TARİHİ
+    const todayStr = getLocalDateString();
 
     const [workout, setWorkout] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // --- DETAY VERİSİNİ ÇEK ---
+    // --- EDIT STATE ---
+    const [isEditing, setIsEditing] = useState(false);
+    const [editValues, setEditValues] = useState({
+        title: "",
+        workout_type: "easy",
+        planned_duration: "",
+        planned_distance: "",
+        description: "",
+    });
+
+    const WORKOUT_TYPES = ["easy", "tempo", "interval", "long", "rest"];
+
+    // --- FETCH DATA ---
     const fetchWorkoutDetail = async () => {
         if (!token || !workoutId) return;
         try {
@@ -35,6 +129,14 @@ const DetailModal = () => {
             if (response.ok) {
                 const data = await response.json();
                 setWorkout(data);
+                // Initialize edit values
+                setEditValues({
+                    title: data.title,
+                    workout_type: data.workout_type,
+                    planned_duration: String(data.planned_duration || 0),
+                    planned_distance: String(data.planned_distance || 0),
+                    description: data.description || "",
+                });
             } else {
                 Alert.alert("Hata", "Antrenman detayları alınamadı.");
                 router.back();
@@ -50,11 +152,56 @@ const DetailModal = () => {
         fetchWorkoutDetail();
     }, [workoutId, token]);
 
-    // --- ANTREMANI TAMAMLA ---
+    // --- SAVE CHANGES (EDIT) ---
+    const handleSaveChanges = async () => {
+        setIsProcessing(true);
+        try {
+            const response = await fetch(`${API_URL}/workouts/${workoutId}/`, {
+                method: "PATCH",
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    title: editValues.title,
+                    workout_type: editValues.workout_type,
+                    planned_duration:
+                        parseInt(editValues.planned_duration) || 0,
+                    planned_distance:
+                        parseFloat(editValues.planned_distance) || 0,
+                    description: editValues.description,
+                }),
+            });
+
+            if (response.ok) {
+                const updatedData = await response.json();
+                setWorkout(updatedData);
+                setIsEditing(false);
+                Alert.alert("Başarılı", "Plan güncellendi.");
+            } else {
+                Alert.alert("Hata", "Güncelleme başarısız.");
+            }
+        } catch (error) {
+            Alert.alert("Hata", "Bağlantı hatası.");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // --- COMPLETE WORKOUT ---
     const handleCompleteWorkout = () => {
+        // 1. TARİH KONTROLÜ (Gelecek Tarih Engeli)
+        if (workout.scheduled_date > todayStr) {
+            Alert.alert(
+                "Henüz Erken ⏳",
+                "Gelecek tarihli bir antrenmanı şimdiden tamamlayamazsın. Günü geldiğinde tekrar dene."
+            );
+            return;
+        }
+
         Alert.alert(
             "Antrenmanı Tamamla",
-            "Tamamlandı olarak işaretlemek istiyor musunuz?",
+            "Tamamlandı olarak işaretlensin mi?",
             [
                 { text: "İptal", style: "cancel" },
                 {
@@ -62,7 +209,7 @@ const DetailModal = () => {
                     onPress: async () => {
                         setIsProcessing(true);
                         try {
-                            // 1. Status Güncelle
+                            // 1. Status Update
                             await fetch(`${API_URL}/workouts/${workoutId}/`, {
                                 method: "PATCH",
                                 headers: {
@@ -72,44 +219,28 @@ const DetailModal = () => {
                                 body: JSON.stringify({ status: "completed" }),
                             });
 
-                            // 2. Sonuç Oluştur (Otomatik veri ile)
+                            // 2. Create Result
                             const resultData = {
                                 workout: workoutId,
                                 actual_date: workout.scheduled_date,
-                                actual_start_time:
-                                    workout.scheduled_time || "08:00:00",
                                 actual_duration: workout.planned_duration || 30,
                                 actual_distance:
                                     workout.planned_distance || 5.0,
-                                actual_pace: workout.target_pace || "6:00",
-                                feeling: "good",
-                                difficulty_rating: 3,
-                                calories_burned: Math.round(
-                                    (workout.planned_distance || 5) * 70
-                                ),
+                                feeling: "normal",
                             };
 
-                            const resResponse = await fetch(
-                                `${API_URL}/results/`,
-                                {
-                                    method: "POST",
-                                    headers: {
-                                        Authorization: `Bearer ${token}`,
-                                        "Content-Type": "application/json",
-                                    },
-                                    body: JSON.stringify(resultData),
-                                }
-                            );
+                            await fetch(`${API_URL}/results/`, {
+                                method: "POST",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify(resultData),
+                            });
 
-                            if (resResponse.ok) {
-                                Alert.alert(
-                                    "Başarılı",
-                                    "Antrenman tamamlandı! 🎉"
-                                );
-                                router.back();
-                            } else {
-                                Alert.alert("Hata", "Sonuç kaydedilemedi.");
-                            }
+                            await refreshUserData();
+                            fetchWorkoutDetail();
+                            Alert.alert("Tebrikler!", "Antrenman tamamlandı.");
                         } catch (error) {
                             Alert.alert("Hata", "İşlem başarısız.");
                         } finally {
@@ -121,127 +252,87 @@ const DetailModal = () => {
         );
     };
 
-    // --- SİLME ---
+    // --- UNDO COMPLETION ---
+    const handleMarkIncomplete = () => {
+        if (!workout.result) {
+            Alert.alert("Hata", "Sonuç kaydı bulunamadı.");
+            return;
+        }
+
+        Alert.alert(
+            "Geri Al",
+            "Tamamlanmamış olarak işaretlensin mi? (Sonuç verisi silinecek)",
+            [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                    text: "Evet, Geri Al",
+                    style: "destructive",
+                    onPress: async () => {
+                        setIsProcessing(true);
+                        try {
+                            await fetch(
+                                `${API_URL}/results/${workout.result.id}/`,
+                                {
+                                    method: "DELETE",
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                    },
+                                }
+                            );
+
+                            await fetch(`${API_URL}/workouts/${workoutId}/`, {
+                                method: "PATCH",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({
+                                    status: "scheduled",
+                                    is_completed: false,
+                                }),
+                            });
+
+                            await refreshUserData();
+                            fetchWorkoutDetail();
+                            Alert.alert("Bilgi", "Durum geri alındı.");
+                        } catch (error) {
+                            Alert.alert("Hata", "Geri alma başarısız.");
+                        } finally {
+                            setIsProcessing(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    // --- DELETE WORKOUT ---
     const handleDeleteWorkout = () => {
-        Alert.alert("Antrenmanı Sil", "Emin misiniz?", [
+        Alert.alert("Sil", "Bu işlem geri alınamaz.", [
             { text: "İptal", style: "cancel" },
             {
                 text: "Sil",
                 style: "destructive",
                 onPress: async () => {
-                    setIsProcessing(true);
                     try {
-                        const response = await fetch(
-                            `${API_URL}/workouts/${workoutId}/`,
-                            {
-                                method: "DELETE",
-                                headers: { Authorization: `Bearer ${token}` },
-                            }
-                        );
-                        if (response.ok) {
-                            router.back();
-                        } else {
-                            Alert.alert("Hata", "Silinemedi.");
-                        }
+                        await fetch(`${API_URL}/workouts/${workoutId}/`, {
+                            method: "DELETE",
+                            headers: { Authorization: `Bearer ${token}` },
+                        });
+                        await refreshUserData();
+                        router.back();
                     } catch (error) {
-                        Alert.alert("Hata", "Sunucu hatası.");
-                    } finally {
-                        setIsProcessing(false);
+                        Alert.alert("Hata", "Silinemedi.");
                     }
                 },
             },
         ]);
     };
 
-    // --- HELPERLAR ---
-    const getWorkoutTypeInfo = (type: string) => {
-        switch (type) {
-            case "tempo":
-                return {
-                    icon: "speedometer-outline",
-                    color: "#FF6B6B",
-                    name: "Tempo Koşusu",
-                };
-            case "easy":
-                return {
-                    icon: "walk-outline",
-                    color: "#4ECDC4",
-                    name: "Kolay Koşu",
-                };
-            case "interval":
-                return {
-                    icon: "flash-outline",
-                    color: "#FFD93D",
-                    name: "Interval",
-                };
-            case "long":
-                return {
-                    icon: "trending-up-outline",
-                    color: "#A569BD",
-                    name: "Uzun Koşu",
-                };
-            case "rest":
-                return {
-                    icon: "moon-outline",
-                    color: "#95A5A6",
-                    name: "Dinlenme",
-                };
-            default:
-                return {
-                    icon: "fitness-outline",
-                    color: COLORS.accent,
-                    name: "Antrenman",
-                };
-        }
-    };
-
-    const getFeelingIcon = (feeling: string) => {
-        switch (feeling) {
-            case "excellent":
-                return {
-                    icon: "star-outline",
-                    color: "#FFD93D",
-                    text: "Mükemmel",
-                };
-            case "good":
-                return { icon: "happy-outline", color: "#4CAF50", text: "İyi" };
-            case "okay":
-                return {
-                    icon: "happy-outline",
-                    color: "#FFA726",
-                    text: "Orta",
-                };
-            case "hard":
-                return { icon: "sad-outline", color: "#FF6B6B", text: "Zor" };
-            case "very_hard":
-                return {
-                    icon: "thunderstorm-outline",
-                    color: "#D32F2F",
-                    text: "Çok Zor",
-                };
-            default:
-                return { icon: "remove-outline", color: "#B0B0B0", text: "-" };
-        }
-    };
-
-    const formatDate = (dateString: string) => {
-        if (!dateString) return "-";
-        const date = new Date(dateString);
-        return date.toLocaleDateString("tr-TR", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-        });
-    };
-
+    // --- RENDER ---
     if (isLoading) {
         return (
-            <View
-                style={[
-                    styles.container,
-                    { justifyContent: "center", alignItems: "center" },
-                ]}
-            >
+            <View style={[styles.container, styles.centered]}>
                 <ActivityIndicator size="large" color={COLORS.accent} />
             </View>
         );
@@ -249,197 +340,344 @@ const DetailModal = () => {
 
     if (!workout) return null;
 
-    const typeInfo = getWorkoutTypeInfo(workout.workout_type);
+    const currentType = isEditing
+        ? editValues.workout_type
+        : workout.workout_type;
+    const theme = getWorkoutTypeStyle(currentType);
+
+    const isCompleted = workout.status === "completed";
+    const isMissed = workout.status === "missed";
     const result = workout.result;
 
+    // Gelecek Tarih Kontrolü (UI için)
+    const isFuture = workout.scheduled_date > todayStr;
+
+    const dateObj = new Date(workout.scheduled_date);
+    const formattedDate = dateObj.toLocaleDateString("tr-TR", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+        weekday: "long",
+    });
+
     return (
-        <View style={styles.container}>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.container}
+        >
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Header */}
-                <View style={styles.headerCard}>
-                    <View
-                        style={[
-                            styles.typeIconLarge,
-                            { backgroundColor: `${typeInfo.color}20` },
-                        ]}
-                    >
-                        <Ionicons
-                            name={typeInfo.icon as any}
-                            size={40}
-                            color={typeInfo.color}
-                        />
-                    </View>
-                    <View style={styles.headerInfo}>
-                        <View style={styles.headerTop}>
-                            <View
+                {/* --- HEADER --- */}
+                <LinearGradient
+                    colors={theme.bgGradient as any}
+                    style={styles.headerCard}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                >
+                    <View style={styles.headerTopRow}>
+                        <View
+                            style={[
+                                styles.iconCircle,
+                                { backgroundColor: COLORS.background },
+                            ]}
+                        >
+                            <Ionicons
+                                name={theme.icon as any}
+                                size={28}
+                                color={theme.color}
+                            />
+                        </View>
+                        <View style={styles.headerRight}>
+                            <Text style={styles.dateText}>{formattedDate}</Text>
+                            <Text
                                 style={[
-                                    styles.typeBadge,
-                                    { backgroundColor: `${typeInfo.color}20` },
+                                    styles.typeText,
+                                    { color: theme.color },
                                 ]}
                             >
-                                <Text
-                                    style={[
-                                        styles.typeBadgeText,
-                                        { color: typeInfo.color },
-                                    ]}
-                                >
-                                    {typeInfo.name}
-                                </Text>
-                            </View>
-                            {workout.status === "completed" && (
-                                <View style={styles.completedBadge}>
+                                {theme.name}
+                            </Text>
+                        </View>
+
+                        {/* EDIT BUTTON */}
+                        {!isCompleted && !isMissed && (
+                            <Pressable
+                                onPress={() => setIsEditing(!isEditing)}
+                                style={styles.editButton}
+                            >
+                                <Ionicons
+                                    name={isEditing ? "close" : "pencil"}
+                                    size={20}
+                                    color={COLORS.text}
+                                />
+                            </Pressable>
+                        )}
+                    </View>
+
+                    {/* TITLE AREA */}
+                    {isEditing ? (
+                        <View style={styles.inputContainer}>
+                            <Text style={styles.inputLabel}>
+                                Antrenman Başlığı
+                            </Text>
+                            <TextInput
+                                value={editValues.title}
+                                onChangeText={(t) =>
+                                    setEditValues({ ...editValues, title: t })
+                                }
+                                style={styles.textInputTitle}
+                                placeholderTextColor={COLORS.textDim}
+                            />
+                        </View>
+                    ) : (
+                        <Text style={styles.workoutTitle}>{workout.title}</Text>
+                    )}
+
+                    {/* TYPE SELECTOR (Edit Mode) */}
+                    {isEditing && (
+                        <View style={styles.typeSelectorContainer}>
+                            <Text style={styles.inputLabel}>
+                                Antrenman Türü
+                            </Text>
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                contentContainerStyle={{ gap: 10 }}
+                            >
+                                {WORKOUT_TYPES.map((type) => {
+                                    const tStyle = getWorkoutTypeStyle(type);
+                                    const isSelected =
+                                        editValues.workout_type === type;
+                                    return (
+                                        <Pressable
+                                            key={type}
+                                            onPress={() =>
+                                                setEditValues({
+                                                    ...editValues,
+                                                    workout_type: type,
+                                                })
+                                            }
+                                            style={[
+                                                styles.typeOption,
+                                                {
+                                                    borderColor: tStyle.color,
+                                                    backgroundColor: isSelected
+                                                        ? tStyle.color
+                                                        : "transparent",
+                                                },
+                                            ]}
+                                        >
+                                            <Ionicons
+                                                name={tStyle.icon as any}
+                                                size={18}
+                                                color={
+                                                    isSelected
+                                                        ? "white"
+                                                        : tStyle.color
+                                                }
+                                            />
+                                            <Text
+                                                style={[
+                                                    styles.typeOptionText,
+                                                    {
+                                                        color: isSelected
+                                                            ? "white"
+                                                            : tStyle.color,
+                                                    },
+                                                ]}
+                                            >
+                                                {tStyle.name}
+                                            </Text>
+                                        </Pressable>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
+                    )}
+
+                    {/* STATUS BADGES (View Mode) */}
+                    {!isEditing && (
+                        <View style={styles.statusRow}>
+                            {isCompleted && (
+                                <View style={styles.statusBadge}>
                                     <Ionicons
                                         name="checkmark-circle"
-                                        size={18}
-                                        color="#4CAF50"
-                                    />
-                                    <Text style={styles.completedText}>
-                                        Tamamlandı
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-                        <Text style={styles.workoutTitle}>{workout.title}</Text>
-                        <View style={styles.dateTimeInfo}>
-                            <View style={styles.infoItem}>
-                                <Ionicons
-                                    name="calendar-outline"
-                                    size={16}
-                                    color="#B0B0B0"
-                                />
-                                <Text style={styles.infoText}>
-                                    {formatDate(workout.scheduled_date)}
-                                </Text>
-                            </View>
-                            {workout.scheduled_time && (
-                                <View style={styles.infoItem}>
-                                    <Ionicons
-                                        name="time-outline"
                                         size={16}
-                                        color="#B0B0B0"
+                                        color={COLORS.success}
                                     />
-                                    <Text style={styles.infoText}>
-                                        {workout.scheduled_time.slice(0, 5)}
+                                    <Text
+                                        style={[
+                                            styles.statusText,
+                                            { color: COLORS.success },
+                                        ]}
+                                    >
+                                        TAMAMLANDI
+                                    </Text>
+                                </View>
+                            )}
+                            {isMissed && (
+                                <View style={styles.statusBadge}>
+                                    <Ionicons
+                                        name="close-circle"
+                                        size={16}
+                                        color="#FF3B30"
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.statusText,
+                                            { color: "#FF3B30" },
+                                        ]}
+                                    >
+                                        KAÇIRILDI
+                                    </Text>
+                                </View>
+                            )}
+                            {!isCompleted && !isMissed && (
+                                <View style={styles.statusBadge}>
+                                    <Ionicons
+                                        name="time"
+                                        size={16}
+                                        color={COLORS.textDim}
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.statusText,
+                                            { color: COLORS.textDim },
+                                        ]}
+                                    >
+                                        PLANLANDI
                                     </Text>
                                 </View>
                             )}
                         </View>
-                    </View>
-                </View>
+                    )}
+                </LinearGradient>
 
-                {/* Plan Stats */}
+                {/* --- STATS --- */}
                 {workout.workout_type !== "rest" && (
-                    <View style={styles.statsGrid}>
-                        <View style={styles.statCard}>
+                    <View style={styles.statsRow}>
+                        <View
+                            style={[
+                                styles.statBox,
+                                isEditing && styles.statBoxEditing,
+                            ]}
+                        >
                             <Ionicons
                                 name="timer-outline"
-                                size={24}
-                                color={COLORS.accent}
+                                size={20}
+                                color={COLORS.textDim}
                             />
-                            <Text style={styles.statLabel}>Plan Süre</Text>
-                            <Text style={styles.statValue}>
-                                {workout.planned_duration} dk
-                            </Text>
+                            {isEditing ? (
+                                <TextInput
+                                    value={editValues.planned_duration}
+                                    onChangeText={(t) =>
+                                        setEditValues({
+                                            ...editValues,
+                                            planned_duration: t,
+                                        })
+                                    }
+                                    keyboardType="numeric"
+                                    style={styles.statInput}
+                                    placeholder="0"
+                                    placeholderTextColor={COLORS.textDim}
+                                />
+                            ) : (
+                                <Text style={styles.statValue}>
+                                    {workout.planned_duration}
+                                </Text>
+                            )}
+                            <Text style={styles.statLabel}>dk Plan</Text>
                         </View>
-                        <View style={styles.statCard}>
+
+                        <View
+                            style={[
+                                styles.statBox,
+                                isEditing && styles.statBoxEditing,
+                            ]}
+                        >
                             <Ionicons
-                                name="navigate-outline"
-                                size={24}
-                                color={COLORS.accent}
+                                name="location-outline"
+                                size={20}
+                                color={COLORS.textDim}
                             />
-                            <Text style={styles.statLabel}>Plan Mesafe</Text>
-                            <Text style={styles.statValue}>
-                                {workout.planned_distance} km
-                            </Text>
+                            {isEditing ? (
+                                <TextInput
+                                    value={editValues.planned_distance}
+                                    onChangeText={(t) =>
+                                        setEditValues({
+                                            ...editValues,
+                                            planned_distance: t,
+                                        })
+                                    }
+                                    keyboardType="numeric"
+                                    style={styles.statInput}
+                                    placeholder="0"
+                                    placeholderTextColor={COLORS.textDim}
+                                />
+                            ) : (
+                                <Text style={styles.statValue}>
+                                    {workout.planned_distance}
+                                </Text>
+                            )}
+                            <Text style={styles.statLabel}>km Plan</Text>
                         </View>
-                        <View style={styles.statCard}>
+
+                        <View style={styles.statBox}>
                             <Ionicons
                                 name="speedometer-outline"
-                                size={24}
-                                color={COLORS.accent}
+                                size={20}
+                                color={COLORS.textDim}
                             />
-                            <Text style={styles.statLabel}>Hedef Tempo</Text>
                             <Text style={styles.statValue}>
-                                {workout.target_pace || "-"}
+                                {isEditing ? "-" : workout.pace_display || "-"}
                             </Text>
+                            <Text style={styles.statLabel}>Tempo</Text>
                         </View>
                     </View>
                 )}
 
-                {/* Actual Data */}
-                {result && (
-                    <View style={styles.section}>
+                {/* --- ACTUAL RESULTS --- */}
+                {isCompleted && result && !isEditing && (
+                    <View style={styles.sectionContainer}>
                         <Text style={styles.sectionTitle}>
-                            Gerçekleşen Veriler
+                            Performans Raporu
                         </Text>
-                        <View style={styles.actualDataCard}>
-                            <View style={styles.actualDataRow}>
-                                <View style={styles.actualDataItem}>
-                                    <Ionicons
-                                        name="navigate"
-                                        size={20}
-                                        color="#4CAF50"
-                                    />
-                                    <Text style={styles.actualDataLabel}>
-                                        Mesafe
+                        <View style={styles.resultCard}>
+                            <View style={styles.resultRow}>
+                                <View style={styles.resultItem}>
+                                    <Text style={styles.resultLabel}>
+                                        Gerçekleşen
                                     </Text>
-                                    <Text style={styles.actualDataValue}>
+                                    <Text style={styles.resultValueHighlight}>
                                         {result.actual_distance} km
                                     </Text>
                                 </View>
-                                <View style={styles.actualDataItem}>
-                                    <Ionicons
-                                        name="speedometer"
-                                        size={20}
-                                        color="#4CAF50"
-                                    />
-                                    <Text style={styles.actualDataLabel}>
-                                        Tempo
-                                    </Text>
-                                    <Text style={styles.actualDataValue}>
-                                        {result.actual_pace}
+                                <View style={styles.verticalLine} />
+                                <View style={styles.resultItem}>
+                                    <Text style={styles.resultLabel}>Süre</Text>
+                                    <Text style={styles.resultValue}>
+                                        {result.actual_duration} dk
                                     </Text>
                                 </View>
-                            </View>
-                            <View style={styles.divider} />
-                            <View style={styles.actualDataRow}>
-                                <View style={styles.actualDataItem}>
-                                    <Ionicons
-                                        name="heart"
-                                        size={20}
-                                        color="#FF6B6B"
-                                    />
-                                    <Text style={styles.actualDataLabel}>
-                                        Nabız
-                                    </Text>
-                                    <Text style={styles.actualDataValue}>
-                                        {result.avg_heart_rate || "-"} bpm
-                                    </Text>
-                                </View>
-                                <View style={styles.actualDataItem}>
-                                    <Ionicons
-                                        name="flame"
-                                        size={20}
-                                        color="#FFA726"
-                                    />
-                                    <Text style={styles.actualDataLabel}>
+                                <View style={styles.verticalLine} />
+                                <View style={styles.resultItem}>
+                                    <Text style={styles.resultLabel}>
                                         Kalori
                                     </Text>
-                                    <Text style={styles.actualDataValue}>
-                                        {result.calories_burned || "-"} kcal
+                                    <Text style={styles.resultValue}>
+                                        {result.calories_burned}
                                     </Text>
                                 </View>
                             </View>
                             {result.feeling && (
                                 <>
                                     <View style={styles.divider} />
-                                    <View style={styles.feelingSection}>
+                                    <View style={styles.feelingRow}>
                                         <Text style={styles.feelingLabel}>
-                                            Nasıl Hissettim?
+                                            Hissiyat:
                                         </Text>
                                         <View style={styles.feelingBadge}>
                                             <Ionicons
@@ -448,7 +686,7 @@ const DetailModal = () => {
                                                         result.feeling
                                                     ).icon as any
                                                 }
-                                                size={20}
+                                                size={16}
                                                 color={
                                                     getFeelingIcon(
                                                         result.feeling
@@ -479,111 +717,152 @@ const DetailModal = () => {
                     </View>
                 )}
 
-                {/* Plan Details */}
-                {workout.workout_type !== "rest" && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Antrenman Planı</Text>
-                        <View style={styles.planCard}>
-                            <View style={styles.planItem}>
-                                <View style={styles.planBullet}>
-                                    <Text style={styles.planNumber}>1</Text>
-                                </View>
-                                <View style={styles.planContent}>
-                                    <Text style={styles.planTitle}>Isınma</Text>
-                                    <Text style={styles.planText}>
-                                        {workout.warmup || "Hafif tempo koşu"}
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.planItem}>
-                                <View style={styles.planBullet}>
-                                    <Text style={styles.planNumber}>2</Text>
-                                </View>
-                                <View style={styles.planContent}>
-                                    <Text style={styles.planTitle}>
-                                        Ana Antrenman
-                                    </Text>
-                                    <Text style={styles.planText}>
-                                        {workout.main_workout ||
-                                            workout.description}
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.planItem}>
-                                <View style={styles.planBullet}>
-                                    <Text style={styles.planNumber}>3</Text>
-                                </View>
-                                <View style={styles.planContent}>
-                                    <Text style={styles.planTitle}>Soğuma</Text>
-                                    <Text style={styles.planText}>
-                                        {workout.cooldown || "Yürüyüş ve germe"}
-                                    </Text>
-                                </View>
-                            </View>
-                        </View>
+                {/* --- DESCRIPTION --- */}
+                <View style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Açıklama / Notlar</Text>
+                    <View style={styles.descriptionCard}>
+                        {isEditing ? (
+                            <TextInput
+                                value={editValues.description}
+                                onChangeText={(t) =>
+                                    setEditValues({
+                                        ...editValues,
+                                        description: t,
+                                    })
+                                }
+                                style={styles.textInputDesc}
+                                multiline
+                                placeholderTextColor={COLORS.textDim}
+                                placeholder="Notlarınızı buraya yazın..."
+                            />
+                        ) : (
+                            <Text style={styles.descText}>
+                                {workout.description || "Özel bir not yok."}
+                            </Text>
+                        )}
                     </View>
-                )}
+                </View>
 
-                {/* Action Buttons */}
-                <View style={styles.actionSection}>
-                    {workout.status !== "completed" ? (
-                        <>
+                {/* --- ACTION BUTTONS --- */}
+                <View style={styles.actionContainer}>
+                    {isEditing ? (
+                        // EDIT MODE BUTTONS
+                        <View style={styles.editButtonsRow}>
                             <Pressable
                                 style={[
-                                    styles.primaryButton,
-                                    isProcessing && { opacity: 0.7 },
+                                    styles.secondaryButton,
+                                    { borderColor: COLORS.textDim },
                                 ]}
-                                onPress={handleCompleteWorkout}
+                                onPress={() => setIsEditing(false)}
+                            >
+                                <Text
+                                    style={[
+                                        styles.secondaryButtonText,
+                                        { color: COLORS.textDim },
+                                    ]}
+                                >
+                                    İptal
+                                </Text>
+                            </Pressable>
+
+                            <Pressable
+                                style={styles.saveButton}
+                                onPress={handleSaveChanges}
                                 disabled={isProcessing}
                             >
                                 {isProcessing ? (
                                     <ActivityIndicator color="white" />
                                 ) : (
-                                    <>
-                                        <Ionicons
-                                            name="checkmark-circle-outline"
-                                            size={22}
-                                            color="white"
-                                        />
-                                        <Text style={styles.primaryButtonText}>
-                                            Tamamlandı Olarak İşaretle
-                                        </Text>
-                                    </>
+                                    <Text style={styles.saveButtonText}>
+                                        Kaydet
+                                    </Text>
                                 )}
                             </Pressable>
-                            <View style={styles.secondaryButtons}>
+                        </View>
+                    ) : (
+                        // VIEW MODE BUTTONS
+                        <>
+                            {/* COMPLETE BUTTON (Sadece tamamlanmamışsa) */}
+                            {!isCompleted && (
                                 <Pressable
-                                    style={styles.deleteButton}
-                                    onPress={handleDeleteWorkout}
+                                    style={styles.shadowButton}
+                                    onPress={handleCompleteWorkout}
+                                    disabled={isProcessing} // Gelecek tarihli ise logic içinde kontrol var, ama buton aktif. İstersen disabled={isProcessing || isFuture} yapabilirsin ama alert vermek daha iyi.
+                                >
+                                    <LinearGradient
+                                        // Eğer gelecek tarihli ise Gri, değilse Turuncu
+                                        colors={
+                                            isFuture
+                                                ? [
+                                                      COLORS.cardBorder,
+                                                      COLORS.cardBorder,
+                                                  ]
+                                                : [
+                                                      COLORS.accent,
+                                                      COLORS.secondary,
+                                                  ]
+                                        }
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={styles.gradientButton}
+                                    >
+                                        <Text style={styles.gradientButtonText}>
+                                            {isFuture
+                                                ? "Günü Bekleniyor"
+                                                : "Antrenmanı Tamamla"}
+                                        </Text>
+                                        <Ionicons
+                                            name={
+                                                isFuture
+                                                    ? "time-outline"
+                                                    : "checkmark-circle-outline"
+                                            }
+                                            size={24}
+                                            color="white"
+                                        />
+                                    </LinearGradient>
+                                </Pressable>
+                            )}
+
+                            {/* UNDO BUTTON (Sadece tamamlandıysa) */}
+                            {isCompleted && (
+                                <Pressable
+                                    style={styles.undoButton}
+                                    onPress={handleMarkIncomplete}
+                                    disabled={isProcessing}
                                 >
                                     <Ionicons
-                                        name="trash-outline"
-                                        size={20}
-                                        color="#FF6B6B"
+                                        name="refresh-circle-outline"
+                                        size={24}
+                                        color={COLORS.success}
                                     />
-                                    <Text style={styles.deleteButtonText}>
-                                        Sil
+                                    <Text style={styles.undoButtonText}>
+                                        Tamamlandı ✓ (Geri Al)
                                     </Text>
                                 </Pressable>
-                            </View>
+                            )}
+
+                            <Pressable
+                                style={styles.deleteButton}
+                                onPress={handleDeleteWorkout}
+                                disabled={isProcessing}
+                            >
+                                <Ionicons
+                                    name="trash-outline"
+                                    size={20}
+                                    color="#FF4D4D"
+                                />
+                                <Text style={styles.deleteButtonText}>
+                                    Antrenmanı Sil
+                                </Text>
+                            </Pressable>
                         </>
-                    ) : (
-                        <Pressable
-                            style={styles.deleteButton}
-                            onPress={handleDeleteWorkout}
-                        >
-                            <Ionicons
-                                name="trash-outline"
-                                size={20}
-                                color="#FF6B6B"
-                            />
-                            <Text style={styles.deleteButtonText}>Sil</Text>
-                        </Pressable>
                     )}
                 </View>
-                <View style={{ height: 30 }} />
+
+                <View style={{ height: 40 }} />
             </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
     );
 };
 
@@ -591,227 +870,263 @@ export default DetailModal;
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.background },
+    centered: { justifyContent: "center", alignItems: "center" },
     scrollView: { flex: 1 },
-    scrollContent: { padding: 20 },
+    scrollContent: { padding: 20, paddingTop: 10 },
+
+    // HEADER
     headerCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 20,
-        padding: 20,
+        borderRadius: 24,
+        padding: 24,
         marginBottom: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 8,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    typeIconLarge: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+    headerTopRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginBottom: 16,
+    },
+    iconCircle: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        alignItems: "center",
         justifyContent: "center",
-        alignItems: "center",
-        alignSelf: "center",
-        marginBottom: 15,
+        marginRight: 15,
     },
-    headerInfo: { alignItems: "center" },
-    headerTop: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-        marginBottom: 10,
+    headerRight: { flex: 1 },
+    dateText: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        textTransform: "uppercase",
+        fontWeight: "600",
+        marginBottom: 4,
     },
-    typeBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-    typeBadgeText: { fontSize: 12, fontWeight: "600" },
-    completedBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "rgba(76, 175, 80, 0.15)",
-        paddingHorizontal: 10,
-        paddingVertical: 6,
+    typeText: { fontSize: 14, fontWeight: "bold", textTransform: "uppercase" },
+    editButton: {
+        padding: 8,
+        backgroundColor: "rgba(0,0,0,0.2)",
         borderRadius: 12,
-        gap: 4,
     },
-    completedText: { color: "#4CAF50", fontSize: 12, fontWeight: "600" },
+
     workoutTitle: {
         color: COLORS.text,
-        fontSize: 24,
-        fontWeight: "bold",
-        textAlign: "center",
-        marginBottom: 15,
+        fontSize: 26,
+        fontWeight: "800",
+        marginBottom: 16,
     },
-    dateTimeInfo: { flexDirection: "row", gap: 20 },
-    infoItem: { flexDirection: "row", alignItems: "center", gap: 6 },
-    infoText: { color: "#B0B0B0", fontSize: 14 },
-    statsGrid: { flexDirection: "row", gap: 12, marginBottom: 20 },
-    statCard: {
+
+    // INPUTS
+    inputContainer: { marginBottom: 15 },
+    inputLabel: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        marginBottom: 5,
+        fontWeight: "bold",
+    },
+    textInputTitle: {
+        fontSize: 22,
+        fontWeight: "bold",
+        color: COLORS.white,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.white,
+        paddingVertical: 5,
+    },
+    textInputDesc: {
+        color: COLORS.text,
+        fontSize: 14,
+        minHeight: 60,
+        textAlignVertical: "top",
+    },
+
+    // TYPE SELECTOR
+    typeSelectorContainer: { marginBottom: 20 },
+    typeOption: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        marginRight: 8,
+        gap: 6,
+    },
+    typeOptionText: { fontSize: 12, fontWeight: "700" },
+
+    statusRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+    statusBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "rgba(0,0,0,0.2)",
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        gap: 6,
+    },
+    statusText: { fontSize: 11, fontWeight: "700" },
+
+    // STATS
+    statsRow: { flexDirection: "row", gap: 12, marginBottom: 25 },
+    statBox: {
         flex: 1,
         backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 15,
+        borderRadius: 16,
+        padding: 16,
         alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    statLabel: {
-        color: "#B0B0B0",
-        fontSize: 11,
-        marginTop: 8,
-        marginBottom: 4,
-        textAlign: "center",
+    statBoxEditing: {
+        borderColor: COLORS.accent,
+        backgroundColor: COLORS.cardVariant,
     },
     statValue: {
         color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "bold",
-        textAlign: "center",
-    },
-    section: { marginBottom: 20 },
-    sectionTitle: {
-        color: COLORS.text,
         fontSize: 18,
-        fontWeight: "600",
+        fontWeight: "800",
+        marginTop: 8,
+    },
+    statLabel: { color: COLORS.textDim, fontSize: 12, fontWeight: "600" },
+    statInput: {
+        color: COLORS.white,
+        fontSize: 18,
+        fontWeight: "800",
+        marginTop: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.textDim,
+        textAlign: "center",
+        width: "80%",
+    },
+
+    // RESULT
+    sectionContainer: { marginBottom: 25 },
+    sectionTitle: {
+        color: COLORS.textDim,
+        fontSize: 14,
+        fontWeight: "700",
+        textTransform: "uppercase",
         marginBottom: 12,
+        marginLeft: 4,
     },
-    actualDataCard: {
+    resultCard: {
         backgroundColor: COLORS.card,
-        borderRadius: 15,
+        borderRadius: 20,
         padding: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
+        borderWidth: 1,
+        borderColor: COLORS.success,
     },
-    actualDataRow: { flexDirection: "row", justifyContent: "space-around" },
-    actualDataItem: { flex: 1, alignItems: "center" },
-    actualDataLabel: {
-        color: "#B0B0B0",
-        fontSize: 12,
-        marginTop: 6,
-        marginBottom: 4,
+    resultRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
     },
-    actualDataValue: { color: COLORS.text, fontSize: 16, fontWeight: "bold" },
-    feelingSection: { alignItems: "center" },
-    feelingLabel: { color: "#B0B0B0", fontSize: 13, marginBottom: 10 },
+    resultItem: { flex: 1, alignItems: "center" },
+    verticalLine: { width: 1, height: 30, backgroundColor: COLORS.cardBorder },
+    resultLabel: { color: COLORS.textDim, fontSize: 12, marginBottom: 6 },
+    resultValue: { color: COLORS.text, fontSize: 16, fontWeight: "700" },
+    resultValueHighlight: {
+        color: COLORS.success,
+        fontSize: 18,
+        fontWeight: "800",
+    },
+    divider: {
+        height: 1,
+        backgroundColor: COLORS.cardBorder,
+        marginVertical: 15,
+    },
+    feelingRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+    },
+    feelingLabel: { color: COLORS.textDim, fontSize: 14 },
     feelingBadge: {
         flexDirection: "row",
         alignItems: "center",
+        gap: 6,
         backgroundColor: COLORS.background,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         borderRadius: 12,
-        gap: 8,
     },
-    feelingText: { fontSize: 14, fontWeight: "600" },
-    planCard: {
+    feelingText: { fontSize: 14, fontWeight: "700" },
+
+    // DESCRIPTION
+    descriptionCard: {
         backgroundColor: COLORS.card,
-        borderRadius: 15,
+        borderRadius: 20,
         padding: 20,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
     },
-    planItem: { flexDirection: "row", marginBottom: 20 },
-    planBullet: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        backgroundColor: COLORS.accent,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 12,
+    descText: { color: COLORS.textDim, fontSize: 14, lineHeight: 20 },
+
+    // ACTIONS
+    actionContainer: { marginTop: 10, gap: 15 },
+    shadowButton: {
+        shadowColor: COLORS.accent,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
     },
-    planNumber: { color: "white", fontSize: 14, fontWeight: "bold" },
-    planContent: { flex: 1 },
-    planTitle: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: "600",
-        marginBottom: 4,
-    },
-    planText: { color: "#B0B0B0", fontSize: 14, lineHeight: 20 },
-    notesCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 18,
+    gradientButton: {
         flexDirection: "row",
-        gap: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: 18,
+        borderRadius: 16,
+        gap: 10,
     },
-    notesText: { flex: 1, color: COLORS.text, fontSize: 14, lineHeight: 22 },
-    infoCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 15,
-        padding: 18,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 3,
-        elevation: 4,
-    },
-    infoRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-    infoLabel: { color: "#B0B0B0", fontSize: 14, flex: 1 },
-    infoValue: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-    divider: {
-        height: 1,
-        backgroundColor: "rgba(255, 255, 255, 0.1)",
-        marginVertical: 15,
-    },
-    actionSection: { marginTop: 10 },
-    primaryButton: {
-        backgroundColor: COLORS.accent,
+    gradientButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
+
+    // UNDO BUTTON
+    undoButton: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
         paddingVertical: 16,
-        borderRadius: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: COLORS.success,
         gap: 8,
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 6,
+        backgroundColor: COLORS.card,
     },
-    primaryButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
-    secondaryButtons: { flexDirection: "row", gap: 12 },
+    undoButtonText: { color: COLORS.success, fontSize: 16, fontWeight: "bold" },
+
+    deleteButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: 16,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: "#FF4D4D",
+        gap: 8,
+        backgroundColor: "transparent",
+    },
+    deleteButtonText: { color: "#FF4D4D", fontSize: 14, fontWeight: "600" },
+
+    // EDIT BUTTONS
+    editButtonsRow: { flexDirection: "row", gap: 15 },
     secondaryButton: {
         flex: 1,
-        backgroundColor: COLORS.background,
-        flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        paddingVertical: 14,
-        borderRadius: 12,
+        paddingVertical: 16,
+        borderRadius: 16,
         borderWidth: 1,
-        borderColor: COLORS.accent,
-        gap: 6,
     },
-    secondaryButtonText: {
-        color: COLORS.accent,
-        fontSize: 14,
-        fontWeight: "bold",
-    },
-    deleteButton: {
+    secondaryButtonText: { fontSize: 16, fontWeight: "bold" },
+    saveButton: {
         flex: 1,
-        backgroundColor: COLORS.background,
-        flexDirection: "row",
+        backgroundColor: COLORS.accent,
         alignItems: "center",
         justifyContent: "center",
-        paddingVertical: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#FF6B6B",
-        gap: 6,
+        paddingVertical: 16,
+        borderRadius: 16,
     },
-    deleteButtonText: { color: "#FF6B6B", fontSize: 14, fontWeight: "bold" },
+    saveButtonText: { color: "white", fontSize: 16, fontWeight: "bold" },
 });
