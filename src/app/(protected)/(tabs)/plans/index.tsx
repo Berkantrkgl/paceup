@@ -14,7 +14,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
-import { API_URL } from "@/constants/Config"; // Ensure correct import
+import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
 const PlansScreen = () => {
@@ -23,7 +23,7 @@ const PlansScreen = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // --- FETCH DATA ---
+    // --- 1. VERİ ÇEKME ---
     const fetchPlans = async () => {
         if (!token) return;
         try {
@@ -53,11 +53,13 @@ const PlansScreen = () => {
         setRefreshing(false);
     };
 
-    // --- ACTIONS ---
+    // --- 2. AKSİYONLAR ---
+
+    // A) Plan Silme
     const handleDeletePlan = (planId: string) => {
         Alert.alert(
             "Planı Sil",
-            "Bu planı ve tüm antrenman geçmişini silmek istediğinize emin misiniz?",
+            "Bu planı kalıcı olarak silmek istediğinize emin misiniz?",
             [
                 { text: "İptal", style: "cancel" },
                 {
@@ -90,33 +92,91 @@ const PlansScreen = () => {
         );
     };
 
-    const handleTogglePause = async (plan: any) => {
-        const newStatus = plan.status === "active" ? "paused" : "active";
-        const oldPlans = [...userPlans];
+    // B) Plan Aktifleştirme (Arşiv -> Aktif)
+    const handleActivatePlan = (plan: any) => {
+        Alert.alert(
+            "Planı Seç",
+            `"${plan.title}" planını aktif duruma getirmek istiyor musun? Şu anki aktif planın arşive (inactive) kaldırılacak.`,
+            [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                    text: "Evet, Seç",
+                    onPress: async () => {
+                        setIsLoading(true);
+                        try {
+                            const response = await fetch(
+                                `${API_URL}/programs/${plan.id}/activate/`,
+                                {
+                                    method: "POST",
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        "Content-Type": "application/json",
+                                    },
+                                }
+                            );
 
-        // Optimistic update
-        setUserPlans((prev) =>
-            prev.map((p) =>
-                p.id === plan.id ? { ...p, status: newStatus } : p
-            )
-        );
-
-        try {
-            const response = await fetch(`${API_URL}/programs/${plan.id}/`, {
-                method: "PATCH",
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                    "Content-Type": "application/json",
+                            if (response.ok) {
+                                await fetchPlans();
+                                Alert.alert("Başarılı", "Plan aktif edildi.");
+                            } else {
+                                Alert.alert("Hata", "Plan değiştirilemedi.");
+                            }
+                        } catch (error) {
+                            Alert.alert("Hata", "Sunucu hatası.");
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    },
                 },
-                body: JSON.stringify({ status: newStatus }),
-            });
-            if (!response.ok) throw new Error("Update failed");
-        } catch (error) {
-            setUserPlans(oldPlans); // Revert on error
-            Alert.alert("Hata", "Durum güncellenemedi.");
-        }
+            ]
+        );
     };
 
+    // C) Plan Pasife Alma (Aktif -> Arşiv) -- YENİ EKLENDİ
+    const handleDeactivatePlan = (plan: any) => {
+        Alert.alert(
+            "Planı Durdur",
+            `"${plan.title}" planını arşive kaldırmak istiyor musun? Şu an aktif bir planın olmayacak.`,
+            [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                    text: "Evet, Arşivle",
+                    onPress: async () => {
+                        setIsLoading(true);
+                        try {
+                            // Standart PATCH isteği ile status: inactive yapıyoruz
+                            const response = await fetch(
+                                `${API_URL}/programs/${plan.id}/`,
+                                {
+                                    method: "PATCH",
+                                    headers: {
+                                        Authorization: `Bearer ${token}`,
+                                        "Content-Type": "application/json",
+                                    },
+                                    body: JSON.stringify({
+                                        status: "inactive",
+                                    }),
+                                }
+                            );
+
+                            if (response.ok) {
+                                await fetchPlans();
+                                Alert.alert("Bilgi", "Plan arşive kaldırıldı.");
+                            } else {
+                                Alert.alert("Hata", "Plan güncellenemedi.");
+                            }
+                        } catch (error) {
+                            Alert.alert("Hata", "Sunucu hatası.");
+                        } finally {
+                            setIsLoading(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    // D) Navigasyonlar
     const handleEditPlan = (plan: any) => {
         router.push({
             pathname: "/(protected)/(tabs)/plans/chatbot_modal",
@@ -128,7 +188,7 @@ const PlansScreen = () => {
         router.push("/(protected)/(tabs)/plans/chatbot");
     };
 
-    // --- HELPERS ---
+    // --- 3. UI YARDIMCILARI ---
     const getStatusInfo = (status: string) => {
         switch (status) {
             case "active":
@@ -139,23 +199,17 @@ const PlansScreen = () => {
                     text: "Tamamlandı",
                     icon: "checkmark-circle",
                 };
-            case "paused":
+            case "inactive":
                 return {
-                    color: "#FFA726",
-                    text: "Duraklatıldı",
-                    icon: "pause-circle",
-                };
-            case "cancelled":
-                return {
-                    color: COLORS.danger,
-                    text: "İptal Edildi",
-                    icon: "close-circle",
+                    color: COLORS.textDim,
+                    text: "Pasif / Arşiv",
+                    icon: "archive",
                 };
             default:
                 return {
                     color: COLORS.textDim,
-                    text: status,
-                    icon: "help-circle",
+                    text: "Pasif",
+                    icon: "archive",
                 };
         }
     };
@@ -185,12 +239,15 @@ const PlansScreen = () => {
         }
     };
 
-    // --- RENDER HELPERS ---
+    // --- 4. KART RENDER ---
     const renderPlanCard = (plan: any) => {
         const statusInfo = getStatusInfo(plan.status);
         const difficultyInfo = getDifficultyInfo(plan.difficulty);
+        const isActive = plan.status === "active";
+        const isInactive =
+            plan.status === "inactive" || plan.status === "cancelled";
 
-        // Use the backend-calculated progress_percent if available, fallback to manual calc
+        // İlerleme Hesabı
         const progress =
             plan.progress_percent !== undefined
                 ? plan.progress_percent
@@ -205,12 +262,9 @@ const PlansScreen = () => {
         return (
             <View
                 key={plan.id}
-                style={[
-                    styles.planCard,
-                    plan.status === "paused" && styles.pausedCard,
-                ]}
+                style={[styles.planCard, isInactive && styles.inactiveCard]}
             >
-                {/* Header Row */}
+                {/* Header: Badge'ler ve Silme Butonu */}
                 <View style={styles.cardHeader}>
                     <View style={styles.badgesRow}>
                         <View
@@ -249,35 +303,36 @@ const PlansScreen = () => {
                             </Text>
                         </View>
                     </View>
-                    <Pressable
-                        onPress={() => handleDeletePlan(plan.id)}
-                        style={styles.deleteIcon}
-                    >
-                        <Ionicons
-                            name="trash-outline"
-                            size={20}
-                            color={COLORS.textDim}
-                        />
-                    </Pressable>
+
+                    {/* Sadece aktif olmayan planlar silinebilsin */}
+                    {!isActive && (
+                        <Pressable
+                            onPress={() => handleDeletePlan(plan.id)}
+                            style={styles.deleteIcon}
+                        >
+                            <Ionicons
+                                name="trash-outline"
+                                size={20}
+                                color={COLORS.textDim}
+                            />
+                        </Pressable>
+                    )}
                 </View>
 
-                {/* Title & Desc */}
-                <Text style={styles.planTitle}>{plan.title}</Text>
+                {/* Başlık ve Açıklama */}
+                <Text
+                    style={[
+                        styles.planTitle,
+                        isInactive && { color: COLORS.textDim },
+                    ]}
+                >
+                    {plan.title}
+                </Text>
                 <Text style={styles.planDesc} numberOfLines={2}>
                     {plan.description}
                 </Text>
 
-                {/* Goal */}
-                <View style={styles.goalRow}>
-                    <Ionicons
-                        name="flag-outline"
-                        size={16}
-                        color={COLORS.textDim}
-                    />
-                    <Text style={styles.goalText}>{plan.goal}</Text>
-                </View>
-
-                {/* Stats Row (Duration & Frequency) */}
+                {/* İstatistikler */}
                 <View style={styles.statsGrid}>
                     <View style={styles.statItem}>
                         <Ionicons
@@ -301,7 +356,7 @@ const PlansScreen = () => {
                     </View>
                 </View>
 
-                {/* Progress Bar */}
+                {/* İlerleme Çubuğu */}
                 <View style={styles.progressContainer}>
                     <View style={styles.progressLabelRow}>
                         <Text style={styles.progressLabel}>İlerleme</Text>
@@ -320,49 +375,92 @@ const PlansScreen = () => {
                     </View>
                     <Text style={styles.progressSubtext}>
                         {plan.completed_workouts_count} /{" "}
-                        {plan.total_workouts_count} antrenman •{" "}
-                        {plan.current_week_calculated
-                            ? `${plan.current_week_calculated}. Hafta`
-                            : "Planlanıyor"}
+                        {plan.total_workouts_count} antrenman
                     </Text>
                 </View>
 
-                {/* Actions (Only for Active/Paused) */}
-                {plan.status !== "completed" && plan.status !== "cancelled" && (
-                    <View style={styles.actionRow}>
+                {/* Butonlar */}
+                <View style={styles.actionRow}>
+                    {/* Detay Butonu */}
+                    <Pressable
+                        style={styles.actionButton}
+                        onPress={() => handleEditPlan(plan)}
+                    >
+                        <Ionicons
+                            name="create-outline"
+                            size={18}
+                            color={isInactive ? COLORS.textDim : COLORS.text}
+                        />
+                        <Text
+                            style={[
+                                styles.actionButtonText,
+                                isInactive && { color: COLORS.textDim },
+                            ]}
+                        >
+                            Detay / Sohbet
+                        </Text>
+                    </Pressable>
+
+                    <View style={styles.verticalDivider} />
+
+                    {/* Durum Butonları */}
+                    {isActive ? (
+                        // YENİ: Aktif planı Pasife çekme butonu
                         <Pressable
                             style={styles.actionButton}
-                            onPress={() => handleEditPlan(plan)}
+                            onPress={() => handleDeactivatePlan(plan)}
                         >
                             <Ionicons
-                                name="create-outline"
+                                name="pause-circle-outline"
                                 size={18}
-                                color={COLORS.text}
+                                color="#FFA726"
                             />
-                            <Text style={styles.actionButtonText}>Düzenle</Text>
-                        </Pressable>
-                        <View style={styles.verticalDivider} />
-                        <Pressable
-                            style={styles.actionButton}
-                            onPress={() => handleTogglePause(plan)}
-                        >
-                            <Ionicons
-                                name={
-                                    plan.status === "active"
-                                        ? "pause-outline"
-                                        : "play-outline"
-                                }
-                                size={18}
-                                color={COLORS.text}
-                            />
-                            <Text style={styles.actionButtonText}>
-                                {plan.status === "active"
-                                    ? "Duraklat"
-                                    : "Devam Et"}
+                            <Text
+                                style={[
+                                    styles.actionButtonText,
+                                    { color: "#FFA726" },
+                                ]}
+                            >
+                                Pasife Al
                             </Text>
                         </Pressable>
-                    </View>
-                )}
+                    ) : plan.status === "completed" ? (
+                        <View style={styles.actionButton}>
+                            <Ionicons
+                                name="trophy-outline"
+                                size={18}
+                                color="#2196F3"
+                            />
+                            <Text
+                                style={[
+                                    styles.actionButtonText,
+                                    { color: "#2196F3" },
+                                ]}
+                            >
+                                Tamamlandı
+                            </Text>
+                        </View>
+                    ) : (
+                        <Pressable
+                            style={styles.actionButton}
+                            onPress={() => handleActivatePlan(plan)}
+                        >
+                            <Ionicons
+                                name="play-circle-outline"
+                                size={18}
+                                color={COLORS.accent}
+                            />
+                            <Text
+                                style={[
+                                    styles.actionButtonText,
+                                    { color: COLORS.accent },
+                                ]}
+                            >
+                                Bu Planı Seç
+                            </Text>
+                        </Pressable>
+                    )}
+                </View>
             </View>
         );
     };
@@ -376,8 +474,10 @@ const PlansScreen = () => {
     }
 
     const activePlans = userPlans.filter((p) => p.status === "active");
-    const pausedPlans = userPlans.filter((p) => p.status === "paused");
     const completedPlans = userPlans.filter((p) => p.status === "completed");
+    const inactivePlans = userPlans.filter(
+        (p) => p.status === "inactive" || p.status === "cancelled"
+    );
 
     return (
         <View style={styles.container}>
@@ -393,7 +493,7 @@ const PlansScreen = () => {
                     />
                 }
             >
-                {/* CREATE NEW BUTTON */}
+                {/* Create Button */}
                 <Pressable onPress={handleCreatePlan}>
                     <LinearGradient
                         colors={[COLORS.accent, COLORS.secondary]}
@@ -424,31 +524,31 @@ const PlansScreen = () => {
                     </LinearGradient>
                 </Pressable>
 
-                {/* ACTIVE PLANS */}
+                {/* 1. AKTİF PLAN */}
                 {activePlans.length > 0 && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Aktif Planlar</Text>
+                        <Text style={styles.sectionTitle}>Aktif Plan</Text>
                         {activePlans.map(renderPlanCard)}
                     </View>
                 )}
 
-                {/* PAUSED PLANS */}
-                {pausedPlans.length > 0 && (
+                {/* 2. TAMAMLANANLAR */}
+                {completedPlans.length > 0 && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>
-                            Duraklatılan Planlar
-                        </Text>
-                        {pausedPlans.map(renderPlanCard)}
+                        <Text style={styles.sectionTitle}>Tamamlananlar</Text>
+                        {completedPlans.map(renderPlanCard)}
                     </View>
                 )}
 
-                {/* COMPLETED PLANS */}
-                {completedPlans.length > 0 && (
+                {/* 3. GEÇMİŞ / ARŞİV */}
+                {inactivePlans.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>
-                            Tamamlanan Geçmiş
+                            Arşiv / Pasif Planlar
                         </Text>
-                        {completedPlans.map(renderPlanCard)}
+                        <View style={{ opacity: 0.8 }}>
+                            {inactivePlans.map(renderPlanCard)}
+                        </View>
                     </View>
                 )}
 
@@ -483,7 +583,11 @@ const styles = StyleSheet.create({
     scrollView: { flex: 1 },
     scrollContent: { padding: 20 },
 
-    // CREATE BUTTON
+    inactiveCard: {
+        backgroundColor: "#1E1E1E",
+        borderColor: "#333",
+    },
+
     createButton: {
         flexDirection: "row",
         alignItems: "center",
@@ -514,7 +618,6 @@ const styles = StyleSheet.create({
     },
     createSubtitle: { color: "rgba(255,255,255,0.8)", fontSize: 13 },
 
-    // SECTIONS
     section: { marginBottom: 25 },
     sectionTitle: {
         color: COLORS.text,
@@ -524,7 +627,6 @@ const styles = StyleSheet.create({
         paddingLeft: 5,
     },
 
-    // PLAN CARD
     planCard: {
         backgroundColor: COLORS.card,
         borderRadius: 20,
@@ -533,7 +635,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
-    pausedCard: { opacity: 0.7 },
     cardHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -572,20 +673,11 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
 
-    goalRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-        marginBottom: 10,
-    },
-    goalText: { color: COLORS.textDim, fontSize: 13, fontStyle: "italic" },
-
     statsGrid: { flexDirection: "row", gap: 15, marginBottom: 15 },
     statItem: { flexDirection: "row", alignItems: "center", gap: 6 },
     statText: { color: COLORS.textDim, fontSize: 12 },
 
-    // PROGRESS
-    progressContainer: { marginBottom: 20 },
+    progressContainer: { marginBottom: 15 },
     progressLabelRow: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -602,11 +694,10 @@ const styles = StyleSheet.create({
     progressBarFill: { height: "100%", borderRadius: 3 },
     progressSubtext: { color: COLORS.textDim, fontSize: 11 },
 
-    // ACTIONS
     actionRow: {
         flexDirection: "row",
         borderTopWidth: 1,
-        borderTopColor: COLORS.cardBorder,
+        borderTopColor: "rgba(255,255,255,0.1)",
         paddingTop: 15,
         justifyContent: "space-evenly",
         alignItems: "center",
@@ -621,10 +712,9 @@ const styles = StyleSheet.create({
     verticalDivider: {
         width: 1,
         height: 20,
-        backgroundColor: COLORS.cardBorder,
+        backgroundColor: "rgba(255,255,255,0.1)",
     },
 
-    // EMPTY STATE
     emptyState: { alignItems: "center", marginTop: 50, padding: 20 },
     emptyTitle: {
         color: COLORS.text,

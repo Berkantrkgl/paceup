@@ -179,11 +179,20 @@ const CalendarScreen = () => {
     const fetchWorkouts = async () => {
         if (!token) return;
         try {
-            const response = await fetch(`${API_URL}/workouts/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            // DEĞİŞİKLİK BURADA: URL sonuna parametre ekledik
+            const response = await fetch(
+                `${API_URL}/workouts/?only_active=true`,
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                }
+            );
+
             if (response.ok) {
-                const data = await response.json();
+                const json = await response.json();
+
+                // Pagination kontrolü (Daha önce konuştuğumuz düzeltme)
+                const data = Array.isArray(json) ? json : json.results || [];
+
                 setAllWorkouts(data);
                 const map: any = {};
                 data.forEach((w: any) => {
@@ -350,7 +359,7 @@ const CalendarScreen = () => {
                         color={COLORS.accent}
                     />
                     <Text style={styles.headerStatsText}>
-                        {allWorkouts.length} Plan
+                        {allWorkouts.length} Antreman
                     </Text>
                 </View>
             </View>
