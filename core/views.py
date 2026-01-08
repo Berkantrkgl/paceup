@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
+import datetime
 
 from django.db.models import Sum, Count
 from django.utils import timezone
@@ -12,6 +13,7 @@ from .serializers import (
     UserSerializer, ProgramSerializer, WorkoutSerializer, 
     WorkoutResultSerializer, AchievementSerializer, NotificationSerializer
 )
+from django.db import transaction
 
 # -------------------------------------------------------------------------
 # 1. VIEWSETS (CRUD İŞLEMLERİ)
@@ -67,18 +69,114 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save()
             return Response(serializer.data)
 
+
+
+
+
 class ProgramViewSet(viewsets.ModelViewSet):
     serializer_class = ProgramSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        # Sadece bu kullanıcının programları
         return Program.objects.filter(user=self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+        
+    @action(detail=True, methods=['post'])
+    def activate(self, request, pk=None):
+        """
+        Seçilen bir 'Inactive' planı 'Active' yapar.
+        Bunu yaparken diğer tüm 'Active' planları otomatik olarak 'Inactive' moda çeker.
+        """
+        program_to_activate = self.get_object()
+        user = request.user
 
-# core/views.py
+        try:
+            with transaction.atomic():
+                # 1. Şu anki Aktif olanları bul ve İndir (Tahttan İndir)
+                # exclude(id=pk) dememize gerek yok, update sorgusu hepsini kapsasa da sorun olmaz
+                # ama mantıken kendisi dışındakileri kapatmak daha temiz.
+                Program.objects.filter(user=user, status='active').exclude(id=program_to_activate.id).update(status='inactive')
 
+                # 2. Seçilen planı Aktif Yap (Tahta Çıkar)
+                program_to_activate.status = 'active'
+                program_to_activate.save()
+
+            return Response({"status": "success", "message": f"'{program_to_activate.title}' aktif edildi."}, status=200)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+    @action(detail=False, methods=['post'], url_path='create_ai_plan')
+    def create_ai_plan(self, request):
+        """
+        Yeni bir program oluşturur ve ESKİ AKTİF programları 'INACTIVE' yapar.
+        """
+        data = request.data
+        user = request.user
+        
+        try:
+            with transaction.atomic():
+                # 1. ESKİLERİ PASİFE ÇEK (YENİ MANTIK)
+                # 'active' olanları bulup 'inactive' yapıyoruz.
+                Program.objects.filter(user=user, status='active').update(status='inactive')
+
+                # 2. TARİH PARSE
+                try:
+                    start_date_obj = datetime.datetime.strptime(data['start_date'], "%Y-%m-%d").date()
+                except ValueError:
+                    return Response({"error": "Start date format error (YYYY-MM-DD)"}, status=400)
+
+                end_date_obj = start_date_obj + timedelta(weeks=int(data['duration_weeks']))
+
+                # 3. YENİ PROGRAM OLUŞTUR
+                program = Program.objects.create(
+                    user=user,
+                    title=data['title'],
+                    description=data.get('description', ''),
+                    start_date=start_date_obj,
+                    end_date=end_date_obj,
+                    duration_weeks=int(data['duration_weeks']),
+                    status='active', # <--- YENİ KRAL
+                    workouts_per_week=int(data.get('workouts_per_week', 3)), 
+                    difficulty='beginner',
+                    total_workouts_count=len(data['workouts'])
+                )
+
+                # 4. WORKOUTLARI OLUŞTUR
+                workout_objects = []
+                for w_data in data['workouts']:
+                    real_date = start_date_obj + timedelta(days=int(w_data['day_offset']))
+                    
+                    w = Workout(
+                        program=program,
+                        title=w_data['title'],
+                        workout_type=w_data['workout_type'],
+                        scheduled_date=real_date,
+                        planned_distance=float(w_data['distance_km']),
+                        planned_duration=int(w_data.get('duration_minutes', 0)),
+                        target_pace_seconds=int(w_data.get('target_pace_seconds', 0))
+                    )
+                    workout_objects.append(w)
+                
+                # Tek tek kaydet (model.save() içindeki day_of_week logic için)
+                for w in workout_objects:
+                    w.save()
+
+            return Response({
+                "status": "success", 
+                "program_id": str(program.id),
+                "message": f"Yeni plan aktif edildi."
+            }, status=201)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response({"error": str(e)}, status=500)
+
+# WORKOUT VIEWSET (FİLTRELEME GÜNCELLENDİ)
 class WorkoutViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -86,24 +184,41 @@ class WorkoutViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         today = timezone.now().date()
-        
-        # --- GÜNCELLENMİŞ AUTO-MISSING MANTIĞI ---
-        # Artık 'status' alanının ne yazdığına bakmıyoruz.
-        # Kural: Tarihi geçmişse (< today) VE tamamlanmamışsa (is_completed=False), Missed yap.
-        
-        # Önce güncelle (Update)
-        # Not: Zaten 'missed' olanları tekrar güncellememek için exclude ekledik.
+
+        # 1. OTOMATİK MISSED GÜNCELLEMESİ
         Workout.objects.filter(
             program__user=user,
-            scheduled_date__lt=today, # Bugünden öncekiler
-            is_completed=False        # Tamamlanmamış olanlar (Status ne olursa olsun)
+            scheduled_date__lt=today,
+            is_completed=False
         ).exclude(
-            status=Workout.Status.MISSED # Zaten missed olanları atla
+            status=Workout.Status.MISSED
         ).update(status=Workout.Status.MISSED)
 
-        # Sonra listeyi dön
-        return Workout.objects.filter(program__user=user)
+        # 2. QUERYSET OLUŞTURMA
+        queryset = Workout.objects.filter(program__user=user)
 
+        # 3. FİLTRELER
+        # Sadece aktif programın antrenmanlarını getir
+        if self.request.query_params.get('only_active') == 'true':
+            queryset = queryset.filter(program__status='active')
+
+        # Tarih Aralığı
+        start_date = self.request.query_params.get('start_date')
+        end_date = self.request.query_params.get('end_date')
+        
+        if start_date:
+            queryset = queryset.filter(scheduled_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(scheduled_date__lte=end_date)
+
+        return queryset.order_by('scheduled_date')
+    
+    
+    
+    
+###########################################
+######### WORKOUT RESULT VIEWSETS #########
+###########################################    
 class WorkoutResultViewSet(viewsets.ModelViewSet):
     serializer_class = WorkoutResultSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -117,6 +232,10 @@ class WorkoutResultViewSet(viewsets.ModelViewSet):
         # Kaydederken user'ı request'ten alıp atıyoruz
         serializer.save(user=self.request.user)
 
+
+########################################
+######### ACHIEVEMENT VIEWSETS #########
+########################################    
 class AchievementViewSet(viewsets.ModelViewSet):
     serializer_class = AchievementSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -124,6 +243,10 @@ class AchievementViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Achievement.objects.filter(user=self.request.user)
 
+
+#########################################
+######### NOTIFICATION VIEWSETS #########
+#########################################  
 class NotificationViewSet(viewsets.ModelViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
