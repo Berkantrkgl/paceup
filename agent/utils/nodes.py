@@ -39,47 +39,67 @@ def initialize_llm() -> ChatBedrock:
 
 try:
     llm = initialize_llm()
-    tool_list = [get_user_profile, get_workout_stats, create_comprehensive_plan]
+    tool_list = [get_runner_context, create_workout_plan, request_program_setup, request_availability_preferences, request_runner_profile] 
     llm_with_tools = llm.bind_tools(tool_list)
 except Exception as e:
     logger.critical(f"Araç veya LLM konfigürasyon hatası: {e}")
     raise
 
 
-
 def summarizer(state: State):
     messages = state.get('messages', [])
     if not messages:
         return {"messages": []}
+    
+    # Eşik kontrolü (Örn: 12 mesaj)
     if len(messages) >= MAX_MESSAGES_BEFORE_SUMMARY:
-        print("Mesaj sayısı fazla, özet alınıyor...")
+        print(f"\n🧹 [Summarizer] Mesaj sayısı ({len(messages)}) sınırı aştı, özetleniyor...")
+        
+        # 1. Özeti oluştur (Mevcut helper fonksiyonunu kullan)
+        # Dönüş: [SystemMessage, Summary(Human), LastMessage]
         summarized_messages = summarize_message_field(messages, timeout_seconds=15)
-        print("Summarized messages: ", summarized_messages)
-        return {"messages": summarized_messages}
-    return {"messages": messages}
-
+        
+        if summarized_messages:
+            # 2. KRİTİK HAMLE: Listeye "Ben geçmişi silerim" damgası vuruyoruz.
+            # İlk mesaj genelde SystemMessage'dır. Onun meta verisine ekliyoruz.
+            first_msg = summarized_messages[0]
+            
+            # additional_kwargs sözlüğünü güncelle (yoksa oluştur)
+            if not first_msg.additional_kwargs:
+                first_msg.additional_kwargs = {}
+            
+            first_msg.additional_kwargs["replace_history"] = True
+            
+            # Damgalanmış listeyi döndür
+            return {"messages": summarized_messages}
+            
+    return {"messages": []} # Değişiklik yok
 
 async def agent(state: State, config, writer: StreamWriter):
     messages = state.get("messages", [])
-    last_message = messages[-1]
-    if isinstance(last_message, ToolMessage): 
-        print("Tool Message: ", last_message)
-        
-    response = await llm_with_tools.ainvoke(messages, config)
+    
+    response = await llm_with_tools.ainvoke(messages, config) 
     if response.tool_calls:
-        print("\n","-"*20)
-        print("Tool Call: ", response.tool_calls)
-        writer({"new_line": "\n\n"})
-        print("-"*20)
+        print("\n\n" + "-"*60)
+        print(f"Tool Call: {json.dumps(response.tool_calls[0], ensure_ascii=False)}")
+        print("-"*60)
+        usage_message = "\nSana yardımcı olmak için elimdeki araçları kullanıyorum..."
+        if response.tool_calls[0]['name'] == 'get_runner_context':
+            usage_message = "Bilgilerini alıyorum... Bir sn lütfen...\n"
+        elif response.tool_calls[0]['name'] == "create_workout_plan":
+            usage_message = "Antreman programınız oluşlturuyorum. Biraz sürebilir ama değecek emin ol!\n"
+        elif response.tool_calls[0]['name'] == "reschedule_program":
+            usage_message = "Programını güncelleiyorum. Biraz sürebilir, sabır pls :)\n"    
+        # Notebook ortamında writer şart değil ama yapıyı bozmuyoruz
+        writer({"tool_usage_info": usage_message})
+        
     return {"messages": [response]}
 
-
-
-# 🔥 DÜZELTME: Conditional function
+# Conditional Edge Mantığı
 def tool_usage_condition(state: State) -> Literal["END", "tools"]:
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError(f"Expected AIMessage, got {type(last_message).__name__}")
     if not last_message.tool_calls:
-        return "END"  # "__end__" yerine "END"
+        return "END"
     return "tools"

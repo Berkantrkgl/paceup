@@ -3,6 +3,7 @@ from agent.utils.state import State
 from langgraph.prebuilt import ToolNode
 from agent.utils.nodes import *
 from agent.utils.helper_functions import setup_postgres_connection
+from langgraph.checkpoint.memory import MemorySaver # Fallback için
 
 async def create_workflow():
     workflow = StateGraph(State)
@@ -16,14 +17,27 @@ async def create_workflow():
     workflow.add_conditional_edges(
         "agent", 
         tool_usage_condition,
-        {"END": END, "tools": "tools"}  # Mapping ekle
+        {"END": END, "tools": "tools"}
     )
     workflow.add_edge("tools", "agent")
-    
+
+    pool = None
     try:
+        # DB Bağlantısı
         memory, pool = await setup_postgres_connection()
-        graph = workflow.compile(checkpointer=memory)
-        return graph, pool
+        print("✅ PostgreSQL Bağlantısı Başarılı")
+            
+        # Graph Derleme
+        # interrupt_before=["tools"] -> HITL için şart!
+        graph = workflow.compile(
+            checkpointer=memory,
+            interrupt_before=["tools"] 
+        )
+        
+        return graph, pool  # <-- MUTLAKA DÖNMELİ
+
     except Exception as e:
-        print(f"Bağlantı kurulurken hata oluştu: {e}")
-        return None, None
+        print(f"❌ Graph Oluşturma Hatası: {e}")
+        if pool:
+            await pool.close() # Hata varsa pool'u temizle
+        raise e  # <-- MUTLAKA HATAYI FIRLATMALI (Main.py bunu yakalayacak)

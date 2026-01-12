@@ -1,215 +1,127 @@
+from typing import List, Optional, Literal
 from langchain_core.tools import tool
 from langchain_core.runnables import RunnableConfig
-import requests
-import json
+from pydantic import BaseModel, Field, field_validator, model_validator
 import datetime
+import json
+from agent.utils.helper_functions import call_api, fetch_user_context_data
 
-# Django Backend Adresi
-API_BASE_URL = "http://localhost:8000/api"
 
-def get_headers(config: RunnableConfig):
-    """
-    LangGraph config içinden 'user_token'ı çeker.
-    """
-    configuration = config.get("configurable", {})
-    token = configuration.get("user_token")
-    
-    if not token:
-        raise ValueError("Authentication token is missing in configuration.")
-        
-    return {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json"
-    }
+# ============================================================
+# 🏗️ BACKEND TOOLS (GERÇEK İŞLEM YAPANLAR)
+# ============================================================
 
-# --- TARİH HESAPLAMA YARDIMCISI ---
-def calculate_date_from_week_day(start_date: datetime.date, week_num: int, day_name: str) -> datetime.date:
-    """
-    Belirtilen başlangıç tarihine göre, '1. Hafta Cuma' gibi ifadeleri gerçek tarihe çevirir.
-    Mantık: Plan her zaman 'start_date'in bulunduğu haftanın Pazartesi günü başlar gibi hesaplanır
-    ancak geçmiş tarihler backend'de 'Missed' olarak işaretlenir.
-    """
-    # 1. Gün isimlerini indekse çevir
-    days_map = {
-        "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, 
-        "friday": 4, "saturday": 5, "sunday": 6
-    }
-    
-    target_day_idx = days_map.get(day_name.lower())
-    if target_day_idx is None:
-        return start_date # Fallback: Bugün
-    
-    # 2. Bu haftanın Pazartesi gününü bul
-    # (start_date.weekday(): Pzt=0 ... Paz=6)
-    monday_of_start_week = start_date - datetime.timedelta(days=start_date.weekday())
-    
-    # 3. Hedef haftanın Pazartesisini bul (week_num 1'den başlar varsayıyoruz)
-    # week_num=1 -> 0 hafta ekle, week_num=2 -> 1 hafta ekle
-    target_week_monday = monday_of_start_week + datetime.timedelta(weeks=(week_num - 1))
-    
-    # 4. O haftadaki hedef günü bul
-    target_date = target_week_monday + datetime.timedelta(days=target_day_idx)
-    
-    return target_date
-
-# --- TOOLS ---
-
+# Agent manuel yenilemek isterse diye wrapper tool
 @tool
-def get_user_profile(config: RunnableConfig) -> str:
-    """
-    Fetches the user's profile. 
-    CRITICAL: Also provides the CURRENT DATE and DAY NAME to help you schedule workouts.
-    """
-    try:
-        headers = get_headers(config)
-        response = requests.get(f"{API_BASE_URL}/users/me/", headers=headers)
-        
-        # Bugünün tarihi ve günü (LLM'in takvim bilinci olması için)
-        today = datetime.date.today()
-        day_name = today.strftime("%A") # "Monday", "Tuesday" etc.
-        
-        if response.status_code == 200:
-            data = response.json()
-            summary = {
-                "current_date": str(today), # ÖNEMLİ: LLM'e bugünü söylüyoruz
-                "current_day_name": day_name, # ÖNEMLİ: Bugünün ismini söylüyoruz
-                "name": f"{data.get('first_name', '')} {data.get('last_name', '')}",
-                "experience": data.get('experience_level'),
-                "current_pace": data.get('pace_display'),
-                "weekly_goal": data.get('weekly_goal')
-            }
-            return json.dumps(summary, ensure_ascii=False)
-        else:
-            return f"Error: {response.status_code}"
-    except Exception as e:
-        return f"Connection error: {str(e)}"
+def get_runner_context(config: RunnableConfig) -> dict:
+    """Refreshes user data manually."""
+    return fetch_user_context_data(config)
 
-@tool
-def get_workout_stats(config: RunnableConfig) -> str:
-    """
-    Retrieves the user's aggregate running statistics.
-    """
-    try:
-        headers = get_headers(config)
-        response = requests.get(f"{API_BASE_URL}/stats/summary/", headers=headers)
-        if response.status_code == 200:
-            return json.dumps(response.json(), ensure_ascii=False)
-        else:
-            return f"Error: {response.status_code}"
-    except Exception as e:
-        return f"Connection error: {str(e)}"
+# --- Create Plan Input Models ---
+class WorkoutItemInput(BaseModel):
+    day_offset: int = Field(..., description="Başlangıçtan kaç gün sonra? (0=İlk gün)")
+    title: str = Field(..., description="Antrenman başlığı")
+    workout_type: Literal['tempo', 'easy', 'interval', 'long']
+    distance_km: float = Field(..., description="Mesafe (km). Rest ise 0.")
+    target_pace_seconds: int = Field(default=0, description="Hedef tempo (sn/km)")
 
-@tool
-def create_comprehensive_plan(
-    title: str,
-    goal: str,
-    duration_weeks: int,
-    difficulty: str,
-    description: str,
-    workouts: list[dict],
-    config: RunnableConfig
+    @field_validator('distance_km')
+    def check_distance(cls, v):
+        if v < 0: raise ValueError("Mesafe negatif olamaz.")
+        return v
+
+class CreatePlanInput(BaseModel):
+    title: str = Field(..., description="Program Başlığı")
+    start_date: str = Field(..., description="YYYY-MM-DD formatında başlangıç tarihi")
+    duration_weeks: int = Field(..., description="Program süresi (hafta)")
+    workouts_per_week: int = Field(default=3, description="Haftalık antrenman sayısı")
+    description: Optional[str] = Field(default="", description="Program açıklaması")
+    workouts: List[WorkoutItemInput]
+
+    @field_validator('start_date')
+    def validate_date_format(cls, v):
+        try:
+            datetime.datetime.strptime(v, '%Y-%m-%d')
+            return v
+        except ValueError:
+            raise ValueError("Tarih formatı YANLIŞ. 'YYYY-MM-DD' olmalı.")
+
+    @model_validator(mode='after')
+    def check_schedule_logic(self):
+        max_days = self.duration_weeks * 7
+        for w in self.workouts:
+            if w.day_offset >= max_days:
+                raise ValueError(f"Hata: {w.day_offset}. gün, {self.duration_weeks} haftalık süreyi aşıyor.")
+        if not self.workouts:
+             raise ValueError("Hata: Program boş olamaz.")
+        return self
+
+@tool(args_schema=CreatePlanInput)
+def create_workout_plan(
+    title: str, start_date: str, duration_weeks: int, 
+    workouts: List[WorkoutItemInput], workouts_per_week: int, 
+    description: str, config: RunnableConfig
 ) -> str:
     """
-    Creates a FULL running program.
-    
-    'workouts' list items can define the date in TWO ways:
-    
-    OPTION 1 (Preferred for specific days):
-    {
-      "week": 1,              # Which week of the plan (1, 2, 3...)
-      "day_name": "Friday",   # "Monday", "Wednesday", etc.
-      "title": "Tempo Run",
-      "workout_type": "tempo",
-      "planned_distance": 5.0,
-      "planned_duration": 30
-    }
-    
-    OPTION 2 (Manual offset):
-    {
-      "day_offset": 0,        # 0 = Start Date, 1 = Tomorrow...
-      "title": "Easy Run",
-      ...
-    }
+    Creates a new workout program. 
+    Duration is calculated automatically by Python (Distance * Pace).
     """
-    try:
-        headers = get_headers(config)
-        start_date = datetime.date.today()
-        end_date = start_date + datetime.timedelta(weeks=duration_weeks)
+    workouts_data = []
+    for w in workouts:
+        w_dict = w.dict()
+        dist = w_dict.get('distance_km', 0)
+        pace = w_dict.get('target_pace_seconds', 0)
         
-        # 1. Programı Oluştur
-        program_payload = {
-            "title": title,
-            "goal": goal,
-            "description": description,
-            "duration_weeks": duration_weeks,
-            "difficulty": difficulty,
-            "start_date": str(start_date),
-            "end_date": str(end_date),
-            "status": "active",
-            "workouts_per_week": 3,
-            "ai_generated": True
-        }
-        
-        prog_response = requests.post(f"{API_BASE_URL}/programs/", json=program_payload, headers=headers)
-        
-        if prog_response.status_code != 201:
-            return f"Error creating program: {prog_response.text}"
-            
-        program_id = prog_response.json().get("id")
-        created_count = 0
-        errors = []
-        
-        # 2. Antrenmanları Oluştur
-        for w in workouts:
-            try:
-                # --- TARİH BELİRLEME MANTIĞI ---
-                scheduled_date = None
-                
-                # A) LLM "Hafta 1, Cuma" dediyse:
-                if "week" in w and "day_name" in w:
-                    scheduled_date = calculate_date_from_week_day(
-                        start_date, 
-                        int(w["week"]), 
-                        str(w["day_name"])
-                    )
-                
-                # B) LLM "Bugünden 2 gün sonra" (Offset) dediyse:
-                elif "day_offset" in w:
-                    scheduled_date = start_date + datetime.timedelta(days=int(w["day_offset"]))
-                
-                # C) Fallback (Bugün)
-                else:
-                    scheduled_date = start_date
+        if dist > 0 and pace > 0:
+            total_seconds = dist * pace
+            w_dict['duration_minutes'] = int(total_seconds / 60)
+        else:
+            w_dict['duration_minutes'] = 0
+        workouts_data.append(w_dict)
+    
+    payload = {
+        "title": title, "start_date": start_date, "duration_weeks": duration_weeks, 
+        "workouts_per_week": workouts_per_week, "description": description, 
+        "workouts": workouts_data
+    }
 
-                # Payload hazırla
-                workout_payload = {
-                    "program": program_id,
-                    "title": w.get("title", "Run"),
-                    "workout_type": w.get("workout_type", "easy"),
-                    "scheduled_date": str(scheduled_date),
-                    "planned_distance": w.get("planned_distance", 0.0),
-                    "planned_duration": w.get("planned_duration", 0),
-                    "target_pace_seconds": w.get("target_pace_seconds", 0),
-                    "status": "scheduled"
-                }
-                
-                # İsteği Gönder
-                w_res = requests.post(f"{API_BASE_URL}/workouts/", json=workout_payload, headers=headers)
-                
-                if w_res.status_code == 201:
-                    created_count += 1
-                else:
-                    errors.append(f"Workout failed: {w_res.text}")
-                    
-            except Exception as e:
-                errors.append(f"Error processing workout: {str(e)}")
+    response = call_api("POST", "/programs/create_ai_plan/", config, data=payload)
+    if "error" in response:
+        return f"HATA (Backend): {response['error']}"
 
-        return json.dumps({
-            "status": "success",
-            "program_id": program_id,
-            "message": f"Program created with {created_count} workouts.",
-            "errors": errors if errors else None
-        }, ensure_ascii=False)
+    return f"BAŞARILI: '{title}' programı oluşturuldu (ID: {response.get('program_id')}). Takvime işlendi."
 
-    except Exception as e:
-        return f"Connection error: {str(e)}"
+
+# ============================================================
+# 📱 DUMMY UI TOOLS (FRONTEND TETİKLEYİCİLER)
+# ============================================================
+
+@tool
+def request_program_setup():
+    """
+    Call this tool to define the PROGRAM FUNDAMENTALS.
+    Triggers a Modal that asks for:
+    1. The GOAL (e.g., 5K, Marathon, Custom Text).
+    2. The TIMING (e.g., '12 Weeks' OR 'Specific Race Date').
+    """
+    return "UI_TRIGGER: PROGRAM_SETUP_MODAL"
+
+@tool
+def request_availability_preferences():
+    """
+    Call this tool to set the WEEKLY SCHEDULE.
+    Triggers a Modal that asks for:
+    1. Which days to run (Mon-Sun checkboxes).
+    2. Which day is preferred for the 'Long Run'.
+    """
+    return "UI_TRIGGER: AVAILABILITY_MODAL"
+
+@tool
+def request_runner_profile():
+    """
+    Call this tool FIRST when starting a new plan flow.
+    It triggers the 'Profile Confirmation Modal' on the Frontend.
+    Used to verify: Weight, Current Pace, Experience Level.
+    No arguments needed (Frontend pre-fills data).
+    """
+    return "UI_TRIGGER: PROFILE_UPDATE_MODAL"
