@@ -1,231 +1,161 @@
 import logging
 import jwt 
-from typing import List, Optional
+import asyncio
+import json
+import os
+import uvicorn
+from typing import List, Any
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
-from sse_starlette.sse import EventSourceResponse # pip install sse-starlette
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from sse_starlette.sse import EventSourceResponse
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-import uuid
-import os
-import uvicorn
-import json
 
-# --- PROJE İMPORTLARI ---
-# Prompt şablonunu alıyoruz
 from agent.utils.prompts import AGENT_SYSTEM_PROMPT_TEMPLATE
-# Helper fonksiyonları alıyoruz
-from agent.utils.helper_functions import check_thread_exists, fetch_user_context_data
+from agent.utils.helper_functions import fetch_user_context_data
 from agent.agent import create_workflow
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- CONFIG ---
 DJANGO_SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-xxxx")
-ALGORITHM = "HS256"
-
 security = HTTPBearer()
 
-# --- Auth Dependency ---
-async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    token = credentials.credentials
-    try:
-        # verify_signature=False sadece debug içindir, prod'da True olmalı veya secret key ile decode edilmeli
-        payload = jwt.decode(token, DJANGO_SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("user_id")
-        
-        if user_id is None:
-            raise HTTPException(status_code=401, detail="Token payload geçersiz: user_id eksik")
-            
-        return {
-            "user_id": user_id,
-            "token": token 
-        }
-        
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Oturum süresi dolmuş.")
-    except jwt.PyJWTError as e:
-        logger.error(f"JWT Verification Error: {e}")
-        raise HTTPException(status_code=401, detail="Geçersiz token.")
+ALLOWED_UI_TOOLS = [
+    "request_runner_profile",
+    "request_program_setup",
+    "request_availability_preferences"
+]
 
-# --- Pydantic Models ---
+async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(credentials.credentials, DJANGO_SECRET_KEY, algorithms=["HS256"])
+        return {"user_id": payload.get("user_id"), "token": credentials.credentials}
+    except:
+        raise HTTPException(status_code=401, detail="Invalid Token")
+
 class StreamChatInput(BaseModel):
     thread_id: str
     messages: List[dict]
 
-# --- Application Lifecycle ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global graph, pool
-    pool = None
-    try:
-        print("🚀 Başlatılıyor: Workflow ve DB Bağlantısı...")
-        # create_workflow artık hata fırlatıyor, None dönmüyor
-        result = await create_workflow()
-        
-        if result is None:
-             raise RuntimeError("Workflow oluşturulamadı (None döndü). agent.py'yi kontrol et.")
-             
-        graph, pool = result
-        print("✅ Workflow ve DB Bağlantısı Başarılı!")
-        yield
-    except Exception as e:
-        print(f"💀 CRITICAL STARTUP ERROR: {e}")
-        raise e
-    finally:
-        if pool:
-            print("🛑 Kapatılıyor: DB Bağlantı Havuzu...")
-            await pool.close()
+    graph, pool = await create_workflow()
+    yield
+    if pool: await pool.close()
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# --- GÜVENLİ İÇERİK AYIKLAMA ---
+def extract_text_content(content: Any) -> str:
+    if isinstance(content, str): return content
+    elif isinstance(content, list):
+        return "".join([c.get("text", "") for c in content if isinstance(c, dict) and c.get("type") == "text"])
+    return str(content)
 
-# --- API Endpoints ---
+# --- GÜVENLİ TOOL AYIKLAMA ---
+def extract_tool_calls_safe(output: Any) -> List[dict]:
+    try:
+        if hasattr(output, "tool_calls") and output.tool_calls: return output.tool_calls
+        if isinstance(output, dict):
+            if "tool_calls" in output: return output["tool_calls"]
+            # Bedrock Raw Output Handling
+            if "generations" in output:
+                gen = output["generations"][0]
+                if isinstance(gen, list): gen = gen[0]
+                if isinstance(gen, dict) and "message" in gen:
+                    msg = gen["message"]
+                    if hasattr(msg, "tool_calls"): return msg.tool_calls
+        return []
+    except: return []
+
 @app.post("/chat-stream")
-async def stream_chat(
-    request: Request,
-    chat_input: StreamChatInput,
-    user_data: dict = Depends(verify_token)
-):
-    global graph, pool
-    thread_id = chat_input.thread_id
-    input_data = chat_input.messages
-    
-    access_token = user_data["token"]
-    user_id = user_data["user_id"]
-    
-    # LangGraph Config (Helper fonksiyonlar token'ı buradan alacak)
-    config = {
-        "configurable": {
-            "thread_id": thread_id,
-            "user_token": access_token,
-            "user_id": user_id
-        }
-    }
+async def stream_chat(req: Request, inp: StreamChatInput, user: dict = Depends(verify_token)):
+    global graph
+    config = {"configurable": {"thread_id": inp.thread_id, "user_token": user["token"], "user_id": user["user_id"]}}
     
     async def event_generator():
         try:
-            # 1. Thread Kontrolü
-            # (Pool lifespan'den geldiği için global kullanıyoruz)
-            if not pool:
-                yield {"event": "error", "data": json.dumps({"content": "DB Bağlantısı yok"})}
-                return
-
-            # check_thread_exists fonksiyonu helper_functions.py'den geliyor
-            # thread_exists = await check_thread_exists(pool, thread_id) 
-            # Not: Context Injection kullandığımız için 'thread_exists' kontrolü kritik değil,
-            # LangGraph zaten thread yoksa oluşturur.
-            
-            # 2. Mesaj Tipi Analizi
-            last_msg_data = input_data[-1]
-            role = last_msg_data.get("role", "user")
-            
+            last_msg = inp.messages[-1]
+            role = last_msg.get("role", "user")
             inputs = None
 
-            # ====================================================
-            # SENARYO A: TOOL RESPONSE (FRONTEND MODAL CEVABI)
-            # ====================================================
+            # --- 1. TOOL CEVABI GELDİYSE (RESUME) ---
             if role == "tool":
-                logger.info(f"🛠️ Tool Response -> Thread: {thread_id}")
+                logger.info(f"🛠️ Tool Response: {inp.thread_id}")
                 
-                # Frontend'den gelen cevabı ToolMessage objesine çevir
-                tool_msg = ToolMessage(
-                    content=last_msg_data["content"],          # JSON string
-                    tool_call_id=last_msg_data["tool_call_id"] # ID Eşleşmesi Şart!
-                )
+                content_raw = last_msg["content"]
+                content_str = json.dumps(content_raw) if not isinstance(content_raw, str) else content_raw
                 
-                # Hafızayı güncelle (Sanki tool çalışmış gibi)
-                # as_node="tools" diyerek ToolNode'un çıktısıymış gibi davranıyoruz
-                await graph.aupdate_state(config, {"messages": [tool_msg]}, as_node="tools")
+                state = await graph.aget_state(config)
+                tid = last_msg.get("tool_call_id")
                 
-                # Resume moduna geç (Input yok, sadece kaldığı yerden devam et)
-                inputs = None 
+                # Duplicate Check
+                msgs = state.values.get("messages", [])
+                if not any(isinstance(m, ToolMessage) and m.tool_call_id == tid for m in msgs):
+                    msg = ToolMessage(content=content_str, tool_call_id=tid)
+                    await graph.aupdate_state(config, {"messages": [msg]}, as_node="ui_tools")
+                
+                inputs = None # Resume logic (None input means proceed from current state)
 
-            # ====================================================
-            # SENARYO B: NORMAL USER MESAJI (CONTEXT INJECTION)
-            # ====================================================
+            # --- 2. KULLANICI MESAJI GELDİYSE ---
             else:
-                logger.info(f"👤 User Message -> Thread: {thread_id}")
+                logger.info(f"👤 User Message: {inp.thread_id}")
+                user_ctx = fetch_user_context_data(config)
+                sys_prompt = f"{AGENT_SYSTEM_PROMPT_TEMPLATE}\n### DATA ###\n{json.dumps(user_ctx)}"
                 
-                # 1. Context Injection (Kullanıcı Verisini Çek)
-                # fetch_user_context_data, config içindeki token'ı kullanarak API'ye gider.
-                user_context = fetch_user_context_data(config)
-                
-                # 2. System Prompt'u Hazırla
-                filled_system_prompt = f"""{AGENT_SYSTEM_PROMPT_TEMPLATE}
-                
-                ### GÜNCEL KULLANICI VERİSİ ###
-                {json.dumps(user_context, indent=2, ensure_ascii=False)}
-                ##############################
-                """
-                
-                # 3. Mesaj İçeriğini Al
-                content_text = ""
-                content_obj = last_msg_data.get("content", "")
-                if isinstance(content_obj, list):
-                    content_text = content_obj[0].get("text", "") if content_obj else ""
-                else:
-                    content_text = str(content_obj)
-                
-                # 4. Input Listesi (Taze System Prompt + Yeni Mesaj)
-                inputs = {
-                    "messages": [
-                        SystemMessage(content=filled_system_prompt),
-                        HumanMessage(content=content_text, id=str(uuid.uuid4()))
-                    ]
-                }
+                user_text = extract_text_content(last_msg["content"])
+                inputs = {"messages": [SystemMessage(content=sys_prompt), HumanMessage(content=user_text)]}
 
-            # ====================================================
-            # 3. STREAMING LOOP
-            # ====================================================
-            async for chunk in graph.astream_events(
-                inputs,
-                config=config,
-                version="v1" # astream_events v1 API
-            ):
-                # Client koptu mu?
-                if await request.is_disconnected():
-                    logger.warning("Client disconnected.")
-                    break
-
+            # --- STREAMING ---
+            async for chunk in graph.astream_events(inputs, config=config, version="v1"):
+                if await req.is_disconnected(): break
+                
                 kind = chunk["event"]
                 
-                # --- A. METİN AKIŞI (TOKEN) ---
+                # A) TEXT AKIŞI -> Event: "token"
                 if kind == "on_chat_model_stream":
-                    content = chunk["data"]["chunk"].content
-                    if content:
-                        yield {
-                            "event": "token", 
-                            "data": json.dumps({"content": content}, ensure_ascii=False)
-                        }
+                    data_chunk = chunk["data"]["chunk"]
+                    content = ""
+                    if hasattr(data_chunk, "content"): content = data_chunk.content
+                    elif isinstance(data_chunk, dict): content = data_chunk.get("content", "")
+                    
+                    if isinstance(content, list):
+                        content = "".join([c.get("text", "") for c in content if isinstance(c, dict)])
 
-                # --- B. TOOL CALL TESPİTİ (MODAL SİNYALİ) ---
+                    if content:
+                        yield {"event": "token", "data": json.dumps({"content": content}, ensure_ascii=False)}
+                        await asyncio.sleep(0.01)
+
+                # B) TOOL CALL -> Event: "tool_use" (DEĞİŞİKLİK BURADA)
                 elif kind == "on_chat_model_end":
                     output = chunk["data"]["output"]
-                    if hasattr(output, "tool_calls") and output.tool_calls:
-                        for tc in output.tool_calls:
-                            logger.info(f"Tool Call Triggered: {tc['name']}")
-                            
-                            # Frontend'e "Modal Aç" sinyali
-                            yield {
-                                "event": "tool_call",
-                                "data": json.dumps({
-                                    "tool_name": tc["name"],
-                                    "tool_id": tc["id"],
-                                    "args": tc.get("args", {})
-                                }, ensure_ascii=False)
-                            }
+                    tool_calls = extract_tool_calls_safe(output)
 
-            # Bitiş Sinyali
+                    if tool_calls:
+                        for tc in tool_calls:
+                            raw_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
+                            t_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", "")
+                            t_args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", {})
+                            
+                            t_name_lower = raw_name.lower()
+                            
+                            if t_name_lower in ALLOWED_UI_TOOLS:
+                                logger.info(f"🚀 LLM YENİ UI TOOL ÇAĞIRDI: {t_name_lower}")
+                                payload = {
+                                    "type": "tool_use",
+                                    "name": t_name_lower, 
+                                    "id": t_id,
+                                    "input": t_args
+                                }
+                                # BURASI ARTIK 'token' DEĞİL 'tool_use' OLARAK GİDİYOR
+                                yield {"event": "tool_use", "data": json.dumps(payload)}
+                                await asyncio.sleep(0.1)
+
             yield {"event": "status", "data": json.dumps({"status": "finished"})}
 
         except Exception as e:

@@ -1,43 +1,46 @@
+# agent/agent.py
 from langgraph.graph import StateGraph, START, END
 from agent.utils.state import State
 from langgraph.prebuilt import ToolNode
-from agent.utils.nodes import *
 from agent.utils.helper_functions import setup_postgres_connection
-from langgraph.checkpoint.memory import MemorySaver # Fallback için
+from agent.utils.nodes import (
+    agent, summarizer, route_tools, 
+    ui_tool_list, backend_tool_list
+)
 
 async def create_workflow():
     workflow = StateGraph(State)
 
     workflow.add_node("summarizer", summarizer)
     workflow.add_node("agent", agent)
-    workflow.add_node("tools", ToolNode(tool_list))
+    
+    # İki Ayrı Node
+    workflow.add_node("ui_tools", ToolNode(ui_tool_list))
+    workflow.add_node("backend_tools", ToolNode(backend_tool_list))
 
     workflow.add_edge(START, "summarizer")
     workflow.add_edge("summarizer", "agent")
+
     workflow.add_conditional_edges(
         "agent", 
-        tool_usage_condition,
-        {"END": END, "tools": "tools"}
+        route_tools,
+        {"END": END, "ui_tools": "ui_tools", "backend_tools": "backend_tools"}
     )
-    workflow.add_edge("tools", "agent")
+
+    workflow.add_edge("backend_tools", "agent")
+    workflow.add_edge("ui_tools", "agent")
 
     pool = None
     try:
-        # DB Bağlantısı
         memory, pool = await setup_postgres_connection()
-        print("✅ PostgreSQL Bağlantısı Başarılı")
-            
-        # Graph Derleme
-        # interrupt_before=["tools"] -> HITL için şart!
+        print("✅ DB Bağlantısı OK")
+        
+        # SADECE UI TOOLS için durakla
         graph = workflow.compile(
             checkpointer=memory,
-            interrupt_before=["tools"] 
+            interrupt_before=["ui_tools"] 
         )
-        
-        return graph, pool  # <-- MUTLAKA DÖNMELİ
-
+        return graph, pool
     except Exception as e:
-        print(f"❌ Graph Oluşturma Hatası: {e}")
-        if pool:
-            await pool.close() # Hata varsa pool'u temizle
-        raise e  # <-- MUTLAKA HATAYI FIRLATMALI (Main.py bunu yakalayacak)
+        if pool: await pool.close()
+        raise e

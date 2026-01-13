@@ -1,290 +1,263 @@
 {
-	"info": {
-		"_postman_id": "c1d2e3f4-5678-90ab-cdef-1234567890ab",
-		"name": "Pacer Full Stack (Auth + Chat + Scenarios)",
-		"description": "Backend Login, Chat başlatma ve her Tool için özel hazırlanmış cevap senaryoları.",
-		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-	},
-	"item": [
-		{
-			"name": "🔐 Auth (Backend)",
-			"item": [
-				{
-					"name": "1. Login (Get Token)",
-					"event": [
-						{
-							"listen": "test",
-							"script": {
-								"exec": [
-									"if (pm.response.code === 200) {",
-									"    var jsonData = pm.response.json();",
-									"    if (jsonData.access) {",
-									"        pm.collectionVariables.set(\"access_token\", jsonData.access);",
-									"        console.log(\"Token güncellendi.\");",
-									"    }",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [
-							{
-								"key": "Content-Type",
-								"value": "application/json"
-							}
-						],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n    \"email\": \"test@example.com\",\n    \"password\": \"password123\"\n}"
-						},
-						"url": {
-							"raw": "{{backend_url}}/api/token/",
-							"host": [
-								"{{backend_url}}"
-							],
-							"path": [
-								"api",
-								"token",
-								""
-							]
-						}
-					},
-					"response": []
-				}
-			]
-		},
-		{
-			"name": "🤖 AI Chat (FastAPI)",
-			"item": [
-				{
-					"name": "2. Start/Continue Chat",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"if (!pm.collectionVariables.get(\"thread_id\")) {",
-									"    const uuid = require('uuid');",
-									"    pm.collectionVariables.set(\"thread_id\", uuid.v4());",
-									"    console.log(\"Yeni Thread ID:\", pm.collectionVariables.get(\"thread_id\"));",
-									"}"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Selam, maraton programı istiyorum.\"\n    }\n  ]\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{chat_api_url}}/chat-stream",
-							"host": [
-								"{{chat_api_url}}"
-							],
-							"path": [
-								"chat-stream"
-							]
-						}
-					},
-					"response": []
-				},
-				{
-					"name": "3. Tool Responses (Scenarios)",
-					"item": [
-						{
-							"name": "3a. Profile: Confirmed (Aynen Devam)",
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"status\\\": \\\"confirmed\\\"}\"\n    }\n  ]\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{chat_api_url}}/chat-stream",
-									"host": [
-										"{{chat_api_url}}"
-									],
-									"path": [
-										"chat-stream"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "3b. Profile: Updated (Veri Güncelle)",
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"weight\\\": 78, \\\"current_pace\\\": \\\"5:15\\\", \\\"experience\\\": \\\"intermediate\\\"}\"\n    }\n  ]\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{chat_api_url}}/chat-stream",
-									"host": [
-										"{{chat_api_url}}"
-									],
-									"path": [
-										"chat-stream"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "3c. Program Setup (Hedef Belirle)",
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"goal\\\": \\\"Marathon\\\", \\\"race_date\\\": \\\"2026-05-15\\\"}\"\n    }\n  ]\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{chat_api_url}}/chat-stream",
-									"host": [
-										"{{chat_api_url}}"
-									],
-									"path": [
-										"chat-stream"
-									]
-								}
-							},
-							"response": []
-						},
-						{
-							"name": "3d. Availability (Günleri Seç)",
-							"request": {
-								"method": "POST",
-								"header": [],
-								"body": {
-									"mode": "raw",
-									"raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"days\\\": [\\\"Tue\\\", \\\"Thu\\\", \\\"Sat\\\", \\\"Sun\\\"], \\\"long_run\\\": \\\"Sun\\\"}\"\n    }\n  ]\n}",
-									"options": {
-										"raw": {
-											"language": "json"
-										}
-									}
-								},
-								"url": {
-									"raw": "{{chat_api_url}}/chat-stream",
-									"host": [
-										"{{chat_api_url}}"
-									],
-									"path": [
-										"chat-stream"
-									]
-								}
-							},
-							"response": []
-						}
-					]
-				},
-				{
-					"name": "4. Reset Thread (New Chat)",
-					"event": [
-						{
-							"listen": "prerequest",
-							"script": {
-								"exec": [
-									"pm.collectionVariables.set(\"thread_id\", \"\");",
-									"console.log(\"Thread ID temizlendi.\");"
-								],
-								"type": "text/javascript"
-							}
-						}
-					],
-					"request": {
-						"method": "POST",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "{\n  \"thread_id\": \"\",\n  \"messages\": [\n    {\n        \"role\": \"user\",\n        \"content\": \"Selam!\"\n    }\n  ]\n}",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{chat_api_url}}/chat-stream",
-							"host": [
-								"{{chat_api_url}}"
-							],
-							"path": [
-								"chat-stream"
-							]
-						}
-					},
-					"response": []
-				}
-			],
-			"auth": {
-				"type": "bearer",
-				"bearer": [
-					{
-						"key": "token",
-						"value": "{{access_token}}",
-						"type": "string"
-					}
-				]
-			}
-		}
-	],
-	"variable": [
-		{
-			"key": "backend_url",
-			"value": "http://localhost:8000",
-			"type": "string"
-		},
-		{
-			"key": "chat_api_url",
-			"value": "http://localhost:8001",
-			"type": "string"
-		},
-		{
-			"key": "access_token",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "thread_id",
-			"value": "",
-			"type": "string"
-		},
-		{
-			"key": "tool_call_id",
-			"value": "",
-			"type": "string"
-		}
-	]
+  "info": {
+    "_postman_id": "c1d2e3f4-5678-90ab-cdef-1234567890ab",
+    "name": "Pacer AI - Full Stack Test",
+    "description": "Backend Login, Chat başlatma ve Tool senaryoları. SSE akışı olduğu için Tool ID'yi manuel kopyalaman gerekebilir.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "🔐 1. Auth Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    var jsonData = pm.response.json();",
+              "    if (jsonData.access) {",
+              "        pm.collectionVariables.set(\"access_token\", jsonData.access);",
+              "        console.log(\"✅ Token alındı:\", jsonData.access);",
+              "    }",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"email\": \"test@example.com\",\n    \"password\": \"password123\"\n}"
+        },
+        "url": {
+          "raw": "{{backend_url}}/api/token/",
+          "host": ["{{backend_url}}"],
+          "path": ["api", "token", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "🤖 2. Start Chat (User Message)",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "// Eğer thread_id boşsa yeni oluştur",
+              "if (!pm.collectionVariables.get(\"thread_id\") || pm.collectionVariables.get(\"thread_id\") === \"\") {",
+              "    const uuid = require('uuid');",
+              "    pm.collectionVariables.set(\"thread_id\", uuid.v4());",
+              "    console.log(\"🆕 Yeni Thread ID:\", pm.collectionVariables.get(\"thread_id\"));",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "// SSE yanıtından Tool ID yakalamaya çalışıyoruz (Regex ile)",
+              "// Stream olduğu için Postman bunu her zaman yakalayamayabilir.",
+              "// EĞER ÇALIŞMAZSA MANUEL KOPYALA.",
+              "",
+              "var responseText = pm.response.text();",
+              "// \"id\": \"tooluse_...\" yapısını arıyoruz",
+              "var match = responseText.match(/\"id\":\\s*\"(tooluse_[^\"]+)\"/);",
+              "",
+              "if (match && match[1]) {",
+              "    pm.collectionVariables.set(\"tool_call_id\", match[1]);",
+              "    console.log(\"🔥 Tool Call ID Yakalandı:\", match[1]);",
+              "} else {",
+              "    console.log(\"⚠️ Tool ID otomatik yakalanamadı. Lütfen response body'den kopyalayıp değişkene yapıştırın.\");",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Selam, bana bir koşu programı hazırla.\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{chat_api_url}}/chat-stream",
+          "host": ["{{chat_api_url}}"],
+          "path": ["chat-stream"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "🛠️ 3a. Respond: Profile (Confirmed)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"status\\\": \\\"confirmed\\\"}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{chat_api_url}}/chat-stream",
+          "host": ["{{chat_api_url}}"],
+          "path": ["chat-stream"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "🛠️ 3b. Respond: Program Setup",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"goal\\\": \\\"5K Koşusu\\\", \\\"difficulty\\\": \\\"beginner\\\", \\\"mode\\\": \\\"duration\\\", \\\"value\\\": \\\"8\\\"}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{chat_api_url}}/chat-stream",
+          "host": ["{{chat_api_url}}"],
+          "path": ["chat-stream"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "🛠️ 3c. Respond: Availability",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"thread_id\": \"{{thread_id}}\",\n  \"messages\": [\n    {\n      \"role\": \"tool\",\n      \"tool_call_id\": \"{{tool_call_id}}\",\n      \"content\": \"{\\\"days\\\": [\\\"Mon\\\", \\\"Wed\\\", \\\"Fri\\\"], \\\"long_run\\\": \\\"Fri\\\", \\\"start_date\\\": \\\"2024-01-01\\\"}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{chat_api_url}}/chat-stream",
+          "host": ["{{chat_api_url}}"],
+          "path": ["chat-stream"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "🔄 4. Reset Thread (New Chat)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.collectionVariables.set(\"thread_id\", \"\");",
+              "pm.collectionVariables.set(\"tool_call_id\", \"\");",
+              "console.log(\"Thread ve Tool ID temizlendi.\");"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"thread_id\": \"\",\n  \"messages\": [\n    {\n        \"role\": \"user\",\n        \"content\": \"Reset\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{chat_api_url}}/chat-stream",
+          "host": ["{{chat_api_url}}"],
+          "path": ["chat-stream"]
+        }
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [""]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "backend_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "chat_api_url",
+      "value": "http://localhost:8001",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "thread_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tool_call_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
 }
