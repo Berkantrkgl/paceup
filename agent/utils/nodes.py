@@ -11,6 +11,15 @@ from agent.utils.tools import * # create_workout_plan vb. buradan geliyor
 from agent.utils.state import State
 from agent.utils.helper_agents import summarize_message_field
 
+class Colors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 load_dotenv(".env", override=True)
@@ -57,6 +66,34 @@ def summarizer(state: State):
 
 async def agent(state: State, config, writer: StreamWriter):
     messages = state.get("messages", [])
+    
+    # --- 🔍 DEBUG LOG: KONUŞMA GEÇMİŞİ BAŞLANGIÇ ---
+    print(f"\n{Colors.HEADER}{'='*60}")
+    print(f"🔄 LANGGRAPH DÖNGÜSÜ (Mesaj Sayısı: {len(messages)})")
+    print(f"{'='*60}{Colors.ENDC}")
+
+    for msg in messages:
+        if msg.type == "system":
+            # System prompt çok uzunsa sadece başını gösterelim
+            content_preview = msg.content[:100] + "..." if len(msg.content) > 100 else msg.content
+            print(f"{Colors.RED}⚙️  SYSTEM:{Colors.ENDC} {content_preview}")
+            
+        elif msg.type == "human":
+            print(f"{Colors.BLUE}👤 USER:{Colors.ENDC} {msg.content}")
+            
+        elif msg.type == "ai":
+            # Eğer tool çağrısı varsa onu göster, yoksa metni göster
+            if hasattr(msg, 'tool_calls') and msg.tool_calls:
+                print(f"{Colors.YELLOW}🤖 AI (TOOL CALL):{Colors.ENDC} {msg.content} -- {msg.tool_calls}")
+            else:
+                print(f"{Colors.GREEN}🤖 AI (TEXT):{Colors.ENDC} {msg.content}")
+                
+        elif msg.type == "tool":
+            print(f"{Colors.YELLOW}🛠️  TOOL RESULT ({msg.name}):{Colors.ENDC} {msg.content}")
+
+    print(f"{Colors.HEADER}{'='*60}{Colors.ENDC}\n")
+    # --- 🔍 DEBUG LOG BİTİŞ ---
+
     response = await llm_with_tools.ainvoke(messages, config)
     return {"messages": [response]}
 
@@ -69,7 +106,9 @@ def route_tools(state: State) -> Literal["backend_tools", "ui_tools", "END"]:
         return "END"
     
     tool_name = last_message.tool_calls[0]["name"]
-    
+    args = last_message.tool_calls[0]["args"]
+    print(f'Tool Args: {args}')
+
     logger.info(f"{tool_name} çağrıldı!!")
     # İsim UI Listesinde varsa oraya git
     if any(t.name == tool_name for t in ui_tool_list):

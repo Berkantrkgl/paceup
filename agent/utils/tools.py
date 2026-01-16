@@ -95,27 +95,6 @@ def create_workout_plan(
 # ============================================================
 # 📱 DUMMY UI TOOLS (FRONTEND TETİKLEYİCİLER)
 # ============================================================
-
-@tool
-def request_program_setup():
-    """
-    Call this tool to define the PROGRAM FUNDAMENTALS.
-    Triggers a Modal that asks for:
-    1. The GOAL (e.g., 5K, Marathon, Custom Text).
-    2. The TIMING (e.g., '12 Weeks' OR 'Specific Race Date').
-    """
-    return "UI_TRIGGER: PROGRAM_SETUP_MODAL"
-
-@tool
-def request_availability_preferences():
-    """
-    Call this tool to set the WEEKLY SCHEDULE.
-    Triggers a Modal that asks for:
-    1. Which days to run (Mon-Sun checkboxes).
-    2. Which day is preferred for the 'Long Run'.
-    """
-    return "UI_TRIGGER: AVAILABILITY_MODAL"
-
 @tool
 def request_runner_profile():
     """
@@ -125,3 +104,29 @@ def request_runner_profile():
     No arguments needed (Frontend pre-fills data).
     """
     return "UI_TRIGGER: PROFILE_UPDATE_MODAL"
+
+
+@tool
+def request_program_setup():
+    """
+    CONDITIONAL STEP 2: Call this ONLY IF the user hasn't specified ALL FOUR essential program details:
+    1. A Goal (e.g., 'Marathon', '5K').
+    2. Difficulty Level (e.g., 'Beginner', 'Advanced').
+    3. Start Date (e.g., 'Tomorrow', 'Next Monday').
+    4. Duration/End Date (e.g., '12 weeks', 'Until April').
+    
+    Triggers the Comprehensive Setup Modal.
+    """
+    return "UI_TRIGGER: PROGRAM_SETUP_MODAL"
+
+@tool
+def request_availability_preferences():
+    """
+    CONDITIONAL STEP 3: Call this tool to set the WEEKLY SCHEDULE logic.
+    Triggers a Modal that asks for:
+    1. Frequency: How many days per week the user wants to run.
+    2. Availability: Which specific days they are available (Must be >= Frequency).
+    3. Long Run: Preferred day for the long run (Optional, selected from available days).
+    """
+    return "UI_TRIGGER: AVAILABILITY_MODAL"
+
