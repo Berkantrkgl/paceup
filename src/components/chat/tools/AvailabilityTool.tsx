@@ -1,11 +1,8 @@
 import { COLORS } from "@/constants/Colors";
 import { Ionicons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useState } from "react";
 import {
   Alert,
-  Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,9 +12,9 @@ import {
 
 // --- TYPES ---
 export interface AvailabilityData {
+  frequency: number; // Haftada kaç gün
   days: string[]; // ["Mon", "Wed", "Fri"]
-  long_run: string; // "Sun"
-  start_date: string; // "2024-12-15"
+  long_run: string | null; // "Sun" veya null
 }
 
 interface AvailabilityToolProps {
@@ -36,130 +33,135 @@ const ALL_DAYS = [
   { id: "Sun", label: "Paz" },
 ];
 
-// Başlangıç Tarihi Limiti (Gün)
-const MAX_START_DAYS = 14;
-
 export const AvailabilityTool = ({
   onSubmit,
   submitted,
 }: AvailabilityToolProps) => {
   const [isEditing, setIsEditing] = useState(true);
 
-  // State
+  // --- STATE ---
+  const [frequency, setFrequency] = useState(3); // Varsayılan 3 gün
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [longRunDay, setLongRunDay] = useState<string | null>(null);
 
-  // Date State (Varsayılan Bugün)
-  const [startDate, setStartDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  // Frequency değiştiğinde validation uyarısı vermemek için,
+  // submit butonunu disable edeceğiz, ekstra bir side-effect gerekmez.
 
-  // --- LOGIC ---
+  // --- HANDLERS ---
 
-  // Maksimum Tarihi Hesapla (Bugün + 14 gün)
-  const getMaxDate = () => {
-    const d = new Date();
-    d.setDate(d.getDate() + MAX_START_DAYS);
-    return d;
-  };
-
-  // Tarih Validasyonu
-  const validateAndSetDate = (date: Date) => {
-    const maxDate = getMaxDate();
-
-    // Sadece gün bazlı karşılaştırma için saatleri sıfırlayalım (Opsiyonel ama temiz olur)
-    const dTime = new Date(date).setHours(0, 0, 0, 0);
-    const maxTime = new Date(maxDate).setHours(0, 0, 0, 0);
-
-    if (dTime > maxTime) {
-      Alert.alert(
-        "Başlangıç Tarihi",
-        "Programa başlamak için en fazla 2 hafta sonrasını seçebilirsin. Motivasyonunu kaybetmeden hemen başlayalım! 🚀"
-      );
-      setStartDate(maxDate);
-    } else {
-      setStartDate(date);
-    }
-  };
+  const incrementFreq = () => setFrequency((prev) => Math.min(prev + 1, 7));
+  const decrementFreq = () => setFrequency((prev) => Math.max(prev - 1, 1));
 
   const toggleDay = (dayId: string) => {
     if (selectedDays.includes(dayId)) {
+      // Çıkarıyorsa
       setSelectedDays((prev) => prev.filter((d) => d !== dayId));
+      // Eğer çıkardığı gün, seçili uzun koşu günüyse, uzun koşuyu sıfırla
       if (longRunDay === dayId) setLongRunDay(null);
     } else {
+      // Ekliyorsa
       setSelectedDays((prev) => [...prev, dayId]);
     }
   };
 
-  const setDateToTomorrow = () => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    validateAndSetDate(d);
-  };
-
-  const setDateToNextMonday = () => {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const nextMonday = new Date(d.setDate(diff + 7));
-    validateAndSetDate(nextMonday);
-  };
-
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-    }
-    if (selectedDate) {
-      validateAndSetDate(selectedDate);
+  const toggleLongRun = (dayId: string) => {
+    // Zaten seçiliyse kaldır (toggle), değilse seç
+    if (longRunDay === dayId) {
+      setLongRunDay(null);
+    } else {
+      setLongRunDay(dayId);
     }
   };
 
   const handleSubmit = () => {
-    if (selectedDays.length === 0 || !longRunDay) return;
-
-    const formattedDate = startDate.toISOString().split("T")[0];
+    // VALIDASYON: Seçilen gün sayısı, istenen sıklıktan az olamaz.
+    if (selectedDays.length < frequency) {
+      Alert.alert(
+        "Eksik Gün Seçimi",
+        `Haftada ${frequency} gün koşmak istiyorsun, ancak sadece ${selectedDays.length} gün seçtin. Lütfen ${frequency - selectedDays.length} gün daha işaretle.`,
+      );
+      return;
+    }
 
     const payload: AvailabilityData = {
+      frequency: frequency,
       days: selectedDays,
       long_run: longRunDay,
-      start_date: formattedDate,
     };
 
     setIsEditing(false);
     onSubmit(payload);
   };
 
+  // --- HELPERS ---
   const getLongRunLabel = () =>
-    ALL_DAYS.find((d) => d.id === longRunDay)?.label;
+    longRunDay
+      ? ALL_DAYS.find((d) => d.id === longRunDay)?.label
+      : "Fark Etmez";
 
   // --- 1. SUBMITTED VIEW ---
   if (submitted || !isEditing) {
-    const dateDisplay = startDate.toLocaleDateString("tr-TR", {
-      day: "numeric",
-      month: "short",
-    });
+    // Günleri sıralı göstermek için (Pzt, Sal...)
+    const sortedDays = ALL_DAYS.filter((d) => selectedDays.includes(d.id)).map(
+      (d) => d.label,
+    );
+    const daySummary =
+      sortedDays.length === 7 ? "Her Gün" : sortedDays.join(", ");
+
     return (
       <View style={styles.submittedContainer}>
         <View style={styles.submittedIcon}>
           <Ionicons name="calendar" size={16} color={COLORS.background} />
         </View>
-        <Text style={styles.submittedText}>
-          {selectedDays.length} Gün/Hafta • Uzun: {getLongRunLabel()} •
-          Başlangıç: {dateDisplay}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.submittedText}>
+            {frequency} Gün/Hafta • Uzun: {getLongRunLabel()}
+          </Text>
+          <Text style={styles.submittedSubText} numberOfLines={1}>
+            Müsait: {daySummary}
+          </Text>
+        </View>
       </View>
     );
   }
 
   // --- 2. EDIT VIEW ---
+
+  // Submit butonu ne zaman aktif?
+  const isValid = selectedDays.length >= frequency;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Zamanlama ve Müsaitlik</Text>
+        <Text style={styles.title}>Haftalık Program</Text>
         <Ionicons name="time-outline" size={16} color={COLORS.accent} />
       </View>
 
-      {/* A. GÜN SEÇİMİ */}
-      <Text style={styles.label}>1. Hangi günler koşabilirsin?</Text>
+      {/* A. SIKLIK (FREQUENCY) */}
+      <Text style={styles.label}>1. Haftada kaç gün koşmak istersin?</Text>
+      <View style={styles.freqContainer}>
+        <TouchableOpacity style={styles.circleBtn} onPress={decrementFreq}>
+          <Ionicons name="remove" size={20} color="#CCC" />
+        </TouchableOpacity>
+
+        <View style={styles.freqValueBox}>
+          <Text style={styles.bigValue}>{frequency}</Text>
+          <Text style={styles.smallLabel}>GÜN</Text>
+        </View>
+
+        <TouchableOpacity style={styles.circleBtn} onPress={incrementFreq}>
+          <Ionicons name="add" size={20} color="white" />
+        </TouchableOpacity>
+      </View>
+
+      {/* B. MÜSAİT GÜNLER */}
+      <View style={styles.labelRow}>
+        <Text style={styles.label}>2. Koşu için hangi günler müsaitsin?</Text>
+        <Text style={[styles.hint, !isValid && { color: COLORS.accent }]}>
+          (En az {frequency} gün)
+        </Text>
+      </View>
+
       <View style={styles.daysWrap}>
         {ALL_DAYS.map((d) => {
           const isSelected = selectedDays.includes(d.id);
@@ -179,15 +181,19 @@ export const AvailabilityTool = ({
         })}
       </View>
 
-      {/* B. UZUN KOŞU */}
+      {/* C. UZUN KOŞU (OPSİYONEL - SADECE SEÇİLEN GÜNLERDEN) */}
       {selectedDays.length > 0 && (
         <View style={styles.sectionFade}>
-          <Text style={styles.label}>2. Uzun koşu günü hangisi olsun?</Text>
+          <Text style={styles.label}>
+            3. Uzun koşu için tercih ettiğin gün?
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={styles.longRunScroll}
+            contentContainerStyle={{ paddingRight: 20 }}
           >
+            {/* "Fark Etmez" Seçeneği gibi davranması için seçim iptal edilebilir */}
             {selectedDays.map((dayId) => {
               const dayLabel = ALL_DAYS.find((d) => d.id === dayId)?.label;
               const isLongRun = longRunDay === dayId;
@@ -195,7 +201,7 @@ export const AvailabilityTool = ({
                 <TouchableOpacity
                   key={dayId}
                   style={[styles.chip, isLongRun && styles.chipActive]}
-                  onPress={() => setLongRunDay(dayId)}
+                  onPress={() => toggleLongRun(dayId)}
                 >
                   <Ionicons
                     name={isLongRun ? "flame" : "radio-button-off"}
@@ -215,102 +221,23 @@ export const AvailabilityTool = ({
               );
             })}
           </ScrollView>
+          <Text style={styles.hintSmall}>
+            * İsteğe bağlıdır. Seçmezsen AI en uygun günü belirler.
+          </Text>
         </View>
       )}
 
-      {/* C. BAŞLANGIÇ TARİHİ */}
-      <Text style={[styles.label, { marginTop: 10 }]}>
-        3. Ne zaman başlayalım?
-      </Text>
-      <View style={styles.dateContainer}>
-        <View style={styles.quickDateRow}>
-          <TouchableOpacity
-            style={styles.quickDateBtn}
-            onPress={setDateToTomorrow}
-          >
-            <Text style={styles.quickDateText}>Yarın</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickDateBtn}
-            onPress={setDateToNextMonday}
-          >
-            <Text style={styles.quickDateText}>Haftaya Pzt</Text>
-          </TouchableOpacity>
-        </View>
-
-        <TouchableOpacity
-          style={styles.datePickerBtn}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons
-              name="calendar-outline"
-              size={18}
-              color={COLORS.accent}
-              style={{ marginRight: 8 }}
-            />
-            <Text style={styles.dateValue}>
-              {startDate.toLocaleDateString("tr-TR", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </Text>
-          </View>
-          <Ionicons name="chevron-down" size={16} color="#666" />
-        </TouchableOpacity>
-
-        {/* --- DATE PICKER MODAL --- */}
-        {Platform.OS === "ios" ? (
-          <Modal
-            transparent={true}
-            animationType="slide"
-            visible={showDatePicker}
-            onRequestClose={() => setShowDatePicker(false)}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                    <Text style={styles.modalDoneBtn}>Tamam</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={startDate}
-                  mode="date"
-                  display="spinner"
-                  onChange={onDateChange}
-                  minimumDate={new Date()}
-                  maximumDate={getMaxDate()} // LİMİT EKLENDİ (14 Gün)
-                  themeVariant="dark"
-                  textColor="white"
-                />
-              </View>
-            </View>
-          </Modal>
-        ) : (
-          showDatePicker && (
-            <DateTimePicker
-              value={startDate}
-              mode="date"
-              display="default"
-              onChange={onDateChange}
-              minimumDate={new Date()}
-              maximumDate={getMaxDate()} // LİMİT EKLENDİ (14 Gün)
-            />
-          )
-        )}
-      </View>
-
+      {/* SUBMIT BUTTON */}
       <TouchableOpacity
-        style={[
-          styles.btn,
-          (!longRunDay || selectedDays.length === 0) && styles.btnDisabled,
-        ]}
-        disabled={!longRunDay || selectedDays.length === 0}
+        style={[styles.btn, !isValid && styles.btnDisabled]}
+        disabled={!isValid}
         onPress={handleSubmit}
       >
-        <Text style={styles.btnText}>Programı Oluştur 🚀</Text>
+        <Text style={styles.btnText}>
+          {isValid
+            ? "Programı Tamamla 🏁"
+            : `Lütfen ${frequency - selectedDays.length} gün daha seç`}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -322,7 +249,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 15,
+    marginBottom: 10,
   },
   title: { color: "white", fontWeight: "700", fontSize: 14 },
   label: {
@@ -332,8 +259,47 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     marginTop: 5,
   },
+  labelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+    marginTop: 10,
+  },
+  hint: { color: "#666", fontSize: 11, fontWeight: "500" },
+  hintSmall: { color: "#555", fontSize: 10, marginTop: 8, fontStyle: "italic" },
 
-  // A. Days
+  // A. Frequency
+  freqContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#252525",
+    borderRadius: 12,
+    paddingVertical: 15,
+    borderWidth: 1,
+    borderColor: "#333",
+    gap: 20,
+    marginBottom: 10,
+  },
+  freqValueBox: { alignItems: "center", width: 60 },
+  bigValue: { color: "white", fontSize: 28, fontWeight: "700" },
+  smallLabel: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  circleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#333",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // B. Days
   daysWrap: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -356,8 +322,8 @@ const styles = StyleSheet.create({
   dayText: { color: "#AAA", fontSize: 11, fontWeight: "600" },
   dayTextActive: { color: "#000", fontWeight: "700" },
 
-  // B. Long Run Chips
-  sectionFade: { marginBottom: 15 },
+  // C. Long Run Chips
+  sectionFade: { marginTop: 5, marginBottom: 15 },
   longRunScroll: { flexDirection: "row" },
   chip: {
     flexDirection: "row",
@@ -373,62 +339,6 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
   chipText: { color: "#AAA", fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: "#000", fontWeight: "700" },
-
-  // C. Date Section
-  dateContainer: {
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#333",
-    marginBottom: 15,
-  },
-
-  // Quick Actions
-  quickDateRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
-  quickDateBtn: {
-    backgroundColor: "#333",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#444",
-  },
-  quickDateText: { color: COLORS.accent, fontSize: 11, fontWeight: "600" },
-
-  // Manual Picker
-  datePickerBtn: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#1F1F1F",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  dateValue: { color: "white", fontSize: 14, fontWeight: "600" },
-
-  // Modal (iOS)
-  modalOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    backgroundColor: "#1F1F1F",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 30,
-    paddingHorizontal: 10,
-  },
-  modalHeader: {
-    alignItems: "flex-end",
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: "#333",
-  },
-  modalDoneBtn: { color: COLORS.accent, fontSize: 16, fontWeight: "bold" },
 
   // Main Button
   btn: {
@@ -460,5 +370,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500", flex: 1 },
+  submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500" },
+  submittedSubText: {
+    color: "#888",
+    fontSize: 11,
+    fontWeight: "400",
+    marginTop: 2,
+  },
 });

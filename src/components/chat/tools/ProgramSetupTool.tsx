@@ -18,7 +18,8 @@ export interface ProgramSetupData {
   goal: string;
   difficulty: "beginner" | "intermediate" | "advanced";
   mode: "duration" | "race_date";
-  value: string;
+  value: string; // Süre (hafta) veya Tarih (YYYY-MM-DD)
+  start_date: string; // YENİ: Başlangıç Tarihi (YYYY-MM-DD)
 }
 
 interface ProgramSetupToolProps {
@@ -33,7 +34,6 @@ const GOAL_OPTIONS = [
   { id: "half_marathon", label: "Yarı Maraton", icon: "trophy" },
   { id: "marathon", label: "Maraton", icon: "medal" },
   { id: "weight_loss", label: "Kilo Verme", icon: "nutrition" },
-  // "Form Tutma" yerine "Kendin Yaz" geldi
   { id: "custom", label: "Kendin Yaz", icon: "create-outline" },
 ];
 
@@ -46,6 +46,7 @@ const DIFFICULTY_OPTIONS = [
 // Limitler
 const MAX_WEEKS = 32;
 const MAX_MONTHS_AHEAD = 8;
+const MAX_START_DAYS = 14;
 
 export const ProgramSetupTool = ({
   onSubmit,
@@ -53,42 +54,48 @@ export const ProgramSetupTool = ({
 }: ProgramSetupToolProps) => {
   const [isEditing, setIsEditing] = useState(true);
 
-  // State
+  // --- STATE ---
+
+  // 1. Hedef
   const [goalChip, setGoalChip] = useState<string | null>(null);
   const [customGoal, setCustomGoal] = useState("");
 
+  // 2. Zorluk
   const [difficulty, setDifficulty] = useState<string>("intermediate");
+
+  // 3. Süre / Bitiş (Target Date)
   const [timingMode, setTimingMode] = useState<"duration" | "race_date">(
-    "duration"
+    "duration",
   );
   const [weeks, setWeeks] = useState(8);
 
-  // Date Logic
   const defaultTargetDate = new Date();
-  defaultTargetDate.setDate(defaultTargetDate.getDate() + 84); // +12 hafta default
+  defaultTargetDate.setDate(defaultTargetDate.getDate() + 84);
   const [targetDate, setTargetDate] = useState(defaultTargetDate);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTargetDatePicker, setShowTargetDatePicker] = useState(false);
 
-  // Input Ref (Otomatik odaklanma için)
+  // 4. Başlangıç Tarihi
+  const [startDate, setStartDate] = useState(new Date());
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+
+  // Input Ref
   const inputRef = useRef<TextInput>(null);
 
-  // "Kendin Yaz" seçilince input'a odaklan
   useEffect(() => {
     if (goalChip === "custom" && inputRef.current) {
-      // Ufak bir gecikme ile klavye açılması daha stabil olur
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [goalChip]);
 
   // --- HANDLERS ---
+
   const handleChipSelect = (id: string) => {
     setGoalChip(id);
-    if (id !== "custom") {
-      setCustomGoal(""); // Başka bir şey seçilirse manual yazıyı temizle
-    }
+    if (id !== "custom") setCustomGoal("");
   };
 
-  const validateAndSetDate = (date: Date) => {
+  // TARGET DATE VALIDATION
+  const validateTargetDate = (date: Date) => {
     const today = new Date();
     const maxDate = new Date();
     maxDate.setMonth(today.getMonth() + MAX_MONTHS_AHEAD);
@@ -96,7 +103,7 @@ export const ProgramSetupTool = ({
     if (date > maxDate) {
       Alert.alert(
         "Süre Sınırı",
-        "En fazla 8 aylık bir program oluşturabiliriz."
+        "En fazla 8 aylık bir program oluşturabiliriz.",
       );
       setTargetDate(maxDate);
     } else {
@@ -104,19 +111,61 @@ export const ProgramSetupTool = ({
     }
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") {
-      setShowDatePicker(false);
-    }
-    if (selectedDate) {
-      validateAndSetDate(selectedDate);
+  // START DATE VALIDATION
+  const getMaxStartDate = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + MAX_START_DAYS);
+    return d;
+  };
+
+  const validateStartDate = (date: Date) => {
+    const maxDate = getMaxStartDate();
+    const dTime = new Date(date).setHours(0, 0, 0, 0);
+    const maxTime = new Date(maxDate).setHours(0, 0, 0, 0);
+
+    if (dTime > maxTime) {
+      Alert.alert(
+        "Başlangıç Tarihi",
+        "En fazla 2 hafta sonrasını seçebilirsin. Hemen başlayalım! 🚀",
+      );
+      setStartDate(maxDate);
+    } else {
+      setStartDate(date);
     }
   };
 
-  const handleSubmit = () => {
-    // Eğer custom seçiliyse input'u al, değilse chip label'ını al
-    let finalGoal = "";
+  const setStartDateToTomorrow = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    validateStartDate(d);
+  };
 
+  const setStartDateToNextMonday = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const nextMonday = new Date(d.setDate(diff + 7));
+    validateStartDate(nextMonday);
+  };
+
+  // DATE CHANGE HANDLERS
+  const onTargetDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") setShowTargetDatePicker(false);
+    if (selectedDate) validateTargetDate(selectedDate);
+  };
+
+  const onStartDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") setShowStartDatePicker(false);
+    if (selectedDate) validateStartDate(selectedDate);
+  };
+
+  const incrementWeeks = () =>
+    setWeeks((prev) => Math.min(prev + 1, MAX_WEEKS));
+  const decrementWeeks = () => setWeeks((prev) => Math.max(prev - 1, 4));
+
+  // SUBMIT
+  const handleSubmit = () => {
+    let finalGoal = "";
     if (goalChip === "custom") {
       finalGoal = customGoal.trim();
     } else {
@@ -126,48 +175,61 @@ export const ProgramSetupTool = ({
 
     if (!finalGoal) return;
 
-    const formattedDate = targetDate.toISOString().split("T")[0];
+    const formattedTargetDate = targetDate.toISOString().split("T")[0];
+    const formattedStartDate = startDate.toISOString().split("T")[0];
 
     const payload: ProgramSetupData = {
       goal: finalGoal,
       difficulty: difficulty as any,
       mode: timingMode,
-      value: timingMode === "duration" ? String(weeks) : formattedDate,
+      value: timingMode === "duration" ? String(weeks) : formattedTargetDate,
+      start_date: formattedStartDate,
     };
 
     setIsEditing(false);
     onSubmit(payload);
   };
 
-  const incrementWeeks = () =>
-    setWeeks((prev) => Math.min(prev + 1, MAX_WEEKS));
-  const decrementWeeks = () => setWeeks((prev) => Math.max(prev - 1, 4));
-
   const getDisplayGoal = () => {
     if (goalChip === "custom") return customGoal || "Özel Hedef";
     return GOAL_OPTIONS.find((g) => g.id === goalChip)?.label;
   };
 
-  // --- 1. SUBMITTED VIEW ---
+  // --- 1. SUBMITTED VIEW (ÖZET GÖRÜNÜM - GÜNCELLENDİ) ---
   if (submitted || !isEditing) {
     const diffLabel = DIFFICULTY_OPTIONS.find(
-      (d) => d.id === difficulty
+      (d) => d.id === difficulty,
     )?.label;
-    const dateDisplay = targetDate.toLocaleDateString("tr-TR", {
+
+    // Tarih Formatları
+    const targetDateDisplay = targetDate.toLocaleDateString("tr-TR", {
       day: "numeric",
-      month: "long",
-      year: "numeric",
+      month: "short",
     });
+    const startDateDisplay = startDate.toLocaleDateString("tr-TR", {
+      day: "numeric",
+      month: "short",
+    });
+
+    // Mod'a göre metin belirleme
+    const timingText =
+      timingMode === "duration"
+        ? `Süre: ${weeks} Haf`
+        : `Bitiş: ${targetDateDisplay}`;
 
     return (
       <View style={styles.submittedContainer}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="flag" size={16} color={COLORS.background} />
+          <Ionicons name="rocket" size={16} color={COLORS.background} />
         </View>
-        <Text style={styles.submittedText}>
-          Hedef: {getDisplayGoal()} ({diffLabel}) •{" "}
-          {timingMode === "duration" ? `${weeks} Hafta` : dateDisplay}
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.submittedText}>
+            {getDisplayGoal()} ({diffLabel})
+          </Text>
+          <Text style={styles.submittedSubText}>
+            Başlangıç: {startDateDisplay} • {timingText}
+          </Text>
+        </View>
       </View>
     );
   }
@@ -207,7 +269,6 @@ export const ProgramSetupTool = ({
         })}
       </View>
 
-      {/* Manual Input (Sadece 'Kendin Yaz' seçiliyse açılır) */}
       {goalChip === "custom" && (
         <View style={styles.customInputContainer}>
           <Ionicons
@@ -221,7 +282,7 @@ export const ProgramSetupTool = ({
             style={styles.customInput}
             value={customGoal}
             onChangeText={setCustomGoal}
-            placeholder="Hedefini buraya yaz (Örn: 50dk Altı 10K)..."
+            placeholder="Hedefini buraya yaz..."
             placeholderTextColor="#666"
           />
         </View>
@@ -257,8 +318,92 @@ export const ProgramSetupTool = ({
         })}
       </View>
 
-      {/* C. ZAMANLAMA */}
-      <Text style={styles.label}>3. Programın Süresi/Bitiş Tarihi</Text>
+      {/* C. BAŞLANGIÇ TARİHİ */}
+      <Text style={styles.label}>3. Ne zaman başlayalım?</Text>
+      <View style={styles.dateContainer}>
+        <View style={styles.quickDateRow}>
+          <TouchableOpacity
+            style={styles.quickDateBtn}
+            onPress={setStartDateToTomorrow}
+          >
+            <Text style={styles.quickDateText}>Yarın</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.quickDateBtn}
+            onPress={setStartDateToNextMonday}
+          >
+            <Text style={styles.quickDateText}>Haftaya Pzt</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={styles.datePickerBtn}
+          onPress={() => setShowStartDatePicker(true)}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Ionicons
+              name="calendar-outline"
+              size={18}
+              color={COLORS.accent}
+              style={{ marginRight: 8 }}
+            />
+            <Text style={styles.dateValue}>
+              {startDate.toLocaleDateString("tr-TR", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+            </Text>
+          </View>
+          <Ionicons name="chevron-down" size={16} color="#666" />
+        </TouchableOpacity>
+
+        {/* Start Date Modal */}
+        {Platform.OS === "ios" ? (
+          <Modal
+            transparent={true}
+            animationType="slide"
+            visible={showStartDatePicker}
+            onRequestClose={() => setShowStartDatePicker(false)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <TouchableOpacity
+                    onPress={() => setShowStartDatePicker(false)}
+                  >
+                    <Text style={styles.modalDoneBtn}>Tamam</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={startDate}
+                  mode="date"
+                  display="spinner"
+                  onChange={onStartDateChange}
+                  minimumDate={new Date()}
+                  maximumDate={getMaxStartDate()}
+                  themeVariant="dark"
+                  textColor="white"
+                />
+              </View>
+            </View>
+          </Modal>
+        ) : (
+          showStartDatePicker && (
+            <DateTimePicker
+              value={startDate}
+              mode="date"
+              display="default"
+              onChange={onStartDateChange}
+              minimumDate={new Date()}
+              maximumDate={getMaxStartDate()}
+            />
+          )
+        )}
+      </View>
+
+      {/* D. SÜRE / BİTİŞ */}
+      <Text style={styles.label}>4. Program Süresi</Text>
       <View style={styles.timingBox}>
         <View style={styles.toggleRow}>
           <TouchableOpacity
@@ -306,7 +451,6 @@ export const ProgramSetupTool = ({
               </TouchableOpacity>
               <View style={{ alignItems: "center", width: 90 }}>
                 <Text style={styles.bigValue}>{weeks}</Text>
-                {/* HAFTA YAZISI BÜYÜTÜLDÜ */}
                 <Text style={styles.smallLabel}>HAFTA</Text>
               </View>
               <TouchableOpacity
@@ -320,12 +464,12 @@ export const ProgramSetupTool = ({
             <View style={{ width: "100%" }}>
               <TouchableOpacity
                 style={styles.datePickerBtn}
-                onPress={() => setShowDatePicker(true)}
+                onPress={() => setShowTargetDatePicker(true)}
               >
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Ionicons
-                    name="calendar"
-                    size={20}
+                    name="flag-outline"
+                    size={18}
                     color={COLORS.accent}
                     style={{ marginRight: 10 }}
                   />
@@ -340,18 +484,19 @@ export const ProgramSetupTool = ({
                 <Ionicons name="chevron-down" size={16} color="#666" />
               </TouchableOpacity>
 
+              {/* Target Date Modal */}
               {Platform.OS === "ios" ? (
                 <Modal
                   transparent={true}
                   animationType="slide"
-                  visible={showDatePicker}
-                  onRequestClose={() => setShowDatePicker(false)}
+                  visible={showTargetDatePicker}
+                  onRequestClose={() => setShowTargetDatePicker(false)}
                 >
                   <View style={styles.modalOverlay}>
                     <View style={styles.modalContent}>
                       <View style={styles.modalHeader}>
                         <TouchableOpacity
-                          onPress={() => setShowDatePicker(false)}
+                          onPress={() => setShowTargetDatePicker(false)}
                         >
                           <Text style={styles.modalDoneBtn}>Tamam</Text>
                         </TouchableOpacity>
@@ -360,13 +505,13 @@ export const ProgramSetupTool = ({
                         value={targetDate}
                         mode="date"
                         display="spinner"
-                        onChange={onDateChange}
+                        onChange={onTargetDateChange}
                         minimumDate={new Date()}
                         maximumDate={
                           new Date(
                             new Date().setMonth(
-                              new Date().getMonth() + MAX_MONTHS_AHEAD
-                            )
+                              new Date().getMonth() + MAX_MONTHS_AHEAD,
+                            ),
                           )
                         }
                         themeVariant="dark"
@@ -376,18 +521,18 @@ export const ProgramSetupTool = ({
                   </View>
                 </Modal>
               ) : (
-                showDatePicker && (
+                showTargetDatePicker && (
                   <DateTimePicker
                     value={targetDate}
                     mode="date"
                     display="default"
-                    onChange={onDateChange}
+                    onChange={onTargetDateChange}
                     minimumDate={new Date()}
                     maximumDate={
                       new Date(
                         new Date().setMonth(
-                          new Date().getMonth() + MAX_MONTHS_AHEAD
-                        )
+                          new Date().getMonth() + MAX_MONTHS_AHEAD,
+                        ),
                       )
                     }
                   />
@@ -491,6 +636,38 @@ const styles = StyleSheet.create({
   },
   diffText: { color: "#AAA", fontSize: 12 },
 
+  // New Date Section (Start Date)
+  dateContainer: {
+    backgroundColor: "#252525",
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#333",
+    marginBottom: 15,
+  },
+  quickDateRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  quickDateBtn: {
+    backgroundColor: "#333",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#444",
+  },
+  quickDateText: { color: COLORS.accent, fontSize: 11, fontWeight: "600" },
+  datePickerBtn: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#1F1F1F",
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#333",
+  },
+  dateValue: { color: "white", fontSize: 14, fontWeight: "600" },
+  datePickerText: { color: "white", fontSize: 15, fontWeight: "600" },
+
   // Timing
   timingBox: {
     backgroundColor: "#252525",
@@ -510,7 +687,6 @@ const styles = StyleSheet.create({
   toggleBtnActive: { backgroundColor: "#2C2C2C" },
   toggleText: { color: "#666", fontSize: 12, fontWeight: "600" },
   toggleTextActive: { color: "white" },
-
   timingContent: { padding: 15, alignItems: "center" },
   durationControl: { flexDirection: "row", alignItems: "center", gap: 15 },
   circleBtn: {
@@ -522,27 +698,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   bigValue: { color: "white", fontSize: 28, fontWeight: "700" },
-
-  // HAFTA yazısı için yeni stil
   smallLabel: {
     color: COLORS.accent,
     fontSize: 14,
     fontWeight: "700",
     marginTop: 2,
-  }, // Font büyütüldü
-
-  datePickerBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1F1F1F",
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#333",
-    justifyContent: "space-between",
   },
-  datePickerText: { color: "white", fontSize: 15, fontWeight: "600" },
 
   // Modal
   modalOverlay: {
@@ -578,7 +739,7 @@ const styles = StyleSheet.create({
   btnDisabled: { backgroundColor: "#333", opacity: 0.7 },
   btnText: { color: "#000", fontWeight: "700", fontSize: 14 },
 
-  // Submitted (Tamamlandı Durumu)
+  // Submitted
   submittedContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -587,7 +748,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     gap: 10,
     alignSelf: "flex-start",
-    maxWidth: "100%", // 1. Ekleme: Genişliğin taşmasını önler
+    maxWidth: "100%",
   },
   submittedIcon: {
     width: 24,
@@ -597,10 +758,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  submittedText: {
-    color: "#CCC",
-    fontSize: 13,
-    fontWeight: "500",
-    flex: 1, // 2. Ekleme: Metnin alt satıra kaymasını sağlar (Text Wrapping)
+  submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500" },
+  submittedSubText: {
+    color: "#888",
+    fontSize: 11,
+    fontWeight: "400",
+    marginTop: 2,
   },
 });
