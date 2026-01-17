@@ -10,33 +10,26 @@ from langgraph.types import StreamWriter
 from agent.utils.tools import * # create_workout_plan vb. buradan geliyor
 from agent.utils.state import State
 from agent.utils.helper_agents import summarize_message_field
+from agent.utils.config import Colors, HAIKU_35
 
-class Colors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 load_dotenv(".env", override=True)
 
-SONNET_37 = "us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-NOVA_LITE_2 = "eu.amazon.nova-2-lite-v1:0"
 
-MAX_MESSAGES_BEFORE_SUMMARY = 12
+
+MAX_MESSAGES_BEFORE_SUMMARY = 20
 
 # 1. TOOL LİSTELERİ (Kesin Ayrım)
 ui_tool_list = [request_program_setup, request_availability_preferences, request_runner_profile]
-backend_tool_list = [get_runner_context, create_workout_plan]
+backend_tool_list = [create_workout_plan]
 
 def initialize_llm():
     try:
         return ChatBedrockConverse(
-            model=SONNET_37,
+            model=HAIKU_35,
             region_name="us-east-1",
             temperature=0.5,
             max_tokens=4096,

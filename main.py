@@ -29,6 +29,10 @@ ALLOWED_UI_TOOLS = [
     "request_availability_preferences"
 ]
 
+NOTIFIABLE_BACKEND_TOOLS = [
+    "create_workout_plan"
+]
+
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
         payload = jwt.decode(credentials.credentials, DJANGO_SECRET_KEY, algorithms=["HS256"])
@@ -144,16 +148,28 @@ async def stream_chat(req: Request, inp: StreamChatInput, user: dict = Depends(v
                             
                             t_name_lower = raw_name.lower()
                             
+                            # DURUM 1: UI WIDGET (Form açtırır)
                             if t_name_lower in ALLOWED_UI_TOOLS:
-                                logger.info(f"🚀 LLM YENİ UI TOOL ÇAĞIRDI: {t_name_lower}")
+                                logger.info(f"🚀 LLM UI TOOL ÇAĞIRDI: {t_name_lower}")
                                 payload = {
                                     "type": "tool_use",
                                     "name": t_name_lower, 
                                     "id": t_id,
                                     "input": t_args
                                 }
-                                # BURASI ARTIK 'token' DEĞİL 'tool_use' OLARAK GİDİYOR
                                 yield {"event": "tool_use", "data": json.dumps(payload)}
+                                await asyncio.sleep(0.1)
+
+                            # DURUM 2: BACKEND TOOL BİLDİRİMİ (Sadece bilgi verir)
+                            elif t_name_lower in NOTIFIABLE_BACKEND_TOOLS:
+                                logger.info(f"⚙️ BACKEND TOOL ÇALIŞIYOR: {t_name_lower}")
+                                payload = {
+                                    "type": "tool_notification", # Yeni event tipi
+                                    "name": t_name_lower,
+                                    "message": "Antrenman programın oluşturuluyor...", # Frontend'de göstereceğin mesaj
+                                    "id": t_id
+                                }
+                                yield {"event": "tool_notification", "data": json.dumps(payload)}
                                 await asyncio.sleep(0.1)
 
             yield {"event": "status", "data": json.dumps({"status": "finished"})}
