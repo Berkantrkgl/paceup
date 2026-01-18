@@ -9,6 +9,9 @@ import datetime
 from typing import List, Optional, Literal, Dict, Any
 from langchain_core.runnables import RunnableConfig # <-- KRİTİK IMPORT
 import jwt  # pip install PyJWT
+import logging
+
+logger = logging.getLogger(__name__)
 
 load_dotenv(".env", override=True)
 
@@ -238,3 +241,49 @@ def fetch_user_context_data(config: RunnableConfig) -> dict:
         context["active_program"] = prog_info
 
     return context
+
+
+def fetch_user_info_for_program_creation(config: RunnableConfig) -> dict:
+    """
+    ÖZEL FONKSİYON: Program oluşturulurken LLM'e zengin kullanıcı profili sunar.
+    Backend'deki UserSerializer ve StatsSummaryView verilerini birleştirir.
+    """
+    logger.info("🔍 DATA FETCH: Program oluşturma için kullanıcı verisi çekiliyor...")
+    
+    # 1. USER PROFILE (/users/me/)
+    # Backend Serializer: height, weight, gender, current_max_distance, total_workouts vb. döner.
+    user_res = call_api("GET", "/users/me/", config)
+    
+    if "error" in user_res:
+        logger.error(f"❌ API ERROR (/users/me/): {user_res}")
+        return {"error": "User data fetch failed"}
+
+    # 2. STATS SUMMARY (/stats/summary/)
+    # Hesaplanan güncel toplamları (total_distance, weekly_progress) buradan alırız.
+    stats_res = call_api("GET", "/stats/summary/", config)
+    
+    # Veriyi Güvenli Çekme (None gelirse varsayılan değer ata)
+    profile = {
+        "name": user_res.get("first_name") or user_res.get("email", "Runner"),
+        "weight": user_res.get("weight", "Unknown"),
+        "height": user_res.get("height", "Unknown"),
+        "gender": user_res.get("gender", "Unknown"), # male/female
+        "experience_level": user_res.get("experience_level", "beginner"),
+        "current_pace": user_res.get("current_pace", 360), # saniye/km
+        "max_distance": user_res.get("current_max_distance", 0.0), # km
+    }
+
+    # İstatistikler (Stats endpointi daha güncel hesaplama yapar)
+    history = {
+        "total_workouts": stats_res.get("total_workouts", 0),
+        "total_distance": stats_res.get("total_distance", 0.0),
+        "current_streak": stats_res.get("current_streak", 0)
+    }
+
+    final_context = {
+        "user_profile": profile,
+        "history": history
+    }
+    
+    logger.info(f"✅ USER DATA READY: Gender={profile['gender']}, Height={profile['height']}, MaxDist={profile['max_distance']}")
+    return final_context

@@ -29,10 +29,10 @@ backend_tool_list = [create_workout_plan]
 def initialize_llm():
     try:
         return ChatBedrockConverse(
-            model=HAIKU_35,
+            model=SONNET_37,
             region_name="us-east-1",
-            temperature=0.5,
-            max_tokens=4096,
+            temperature=0.7,
+            max_tokens=15000,
         )
     except Exception as e:
         logger.error(f"LLM Error: {e}")

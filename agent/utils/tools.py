@@ -10,7 +10,7 @@ import logging
 import math
 
 # Helper fonksiyonlar
-from agent.utils.helper_functions import call_api, fetch_user_context_data
+from agent.utils.helper_functions import call_api, fetch_user_info_for_program_creation
 from agent.utils.config import *
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ class WorkoutItemInput(BaseModel):
         return round(v, 2)
 
 class PlannerOutput(BaseModel):
-    workouts: List[WorkoutItemInput] = Field(..., description="List of workouts.")
+    workouts: List[WorkoutItemInput] = Field(..., description="List of selected workouts.")
 
 class CreatePlanInput(BaseModel):
     title: str = Field(..., description="Program Title")
@@ -57,21 +57,21 @@ def map_day_name_to_int(day_name: str) -> int:
     cleaned = str(day_name).lower().strip()[:3]
     return mapping.get(cleaned, 0)
 
-def generate_schedule_skeleton(start_date_str: str, duration_weeks: int, selected_days: List[str]) -> List[Dict]:
+def generate_available_slots(start_date_str: str, duration_weeks: int, selected_days: List[str]) -> List[Dict]:
     """
-    Tarihleri Python hesaplar. Seçilen günleri (selected_days) baz alır.
+    Kullanıcının 'Müsaitim' dediği TÜM günleri listeler.
+    Filtreleme yapmaz (Onu LLM yapacak).
     """
     try:
         start_date = datetime.datetime.strptime(start_date_str, "%Y-%m-%d").date()
     except:
         start_date = datetime.date.today() + datetime.timedelta(days=1)
 
-    # Seçilen günleri sayısal değere çevir (Set içinde tutarız hızlı arama için)
     target_weekdays = {map_day_name_to_int(d) for d in selected_days}
     
-    skeleton = []
-    # Garanti olsun diye biraz fazla gün tarayalım
-    scan_limit = (duration_weeks * 7) + 14 
+    slots = []
+    # Tarama limiti (Hafta sayısı * 7 gün + tampon)
+    scan_limit = (duration_weeks * 7) + 7 
     current_date = start_date
     
     for _ in range(scan_limit):
@@ -81,9 +81,9 @@ def generate_schedule_skeleton(start_date_str: str, duration_weeks: int, selecte
         if week_num > duration_weeks:
             break
 
-        # Eğer o gün kullanıcının seçtiği günlerden biriyse listeye ekle
+        # Sadece kullanıcının müsait olduğu günleri havuza ekle
         if current_date.weekday() in target_weekdays:
-            skeleton.append({
+            slots.append({
                 "offset": days_diff,
                 "date": current_date.strftime("%Y-%m-%d"),
                 "day_name": current_date.strftime("%A"),
@@ -92,26 +92,20 @@ def generate_schedule_skeleton(start_date_str: str, duration_weeks: int, selecte
             
         current_date += datetime.timedelta(days=1)
 
-    return skeleton
+    return slots
 
 def calculate_pace_and_duration(base_pace: int, w_type: str, distance: float) -> dict:
     """
-    Süre hesabını Python yapar (Deterministik).
+    Süre hesabını Python yapar.
     """
-    if not base_pace or base_pace < 180: 
-        base_pace = 360  # Default 6:00 pace
+    if not base_pace or base_pace < 180: base_pace = 360 
 
     # Pace Ayarı (Mantıklı çarpanlar)
-    if w_type == 'easy': 
-        pace = int(base_pace * 1.20)     # %20 Yavaş
-    elif w_type == 'long': 
-        pace = int(base_pace * 1.15)     # %15 Yavaş
-    elif w_type == 'tempo': 
-        pace = int(base_pace * 0.95)     # %5 Hızlı
-    elif w_type == 'interval': 
-        pace = int(base_pace * 0.85)     # %15 Hızlı
-    else: 
-        pace = base_pace
+    if w_type == 'easy': pace = int(base_pace * 1.20)
+    elif w_type == 'long': pace = int(base_pace * 1.15)
+    elif w_type == 'tempo': pace = int(base_pace * 0.95)
+    elif w_type == 'interval': pace = int(base_pace * 0.85)
+    else: pace = base_pace
 
     # Süre Ayarı (dk)
     duration = int(math.ceil((distance * pace) / 60)) if distance > 0 else 0
@@ -133,261 +127,272 @@ def create_workout_plan(
     state: Annotated[dict, InjectedState] 
 ) -> str:
     """
-    Creates a workout plan with AI-generated exercises.
-    Robustly extracts user schedule preferences from chat history.
+    Bir antreman planı oluşturmak için kullanılır.
+
+    Args:
+        title (str): Programın adı/başlığı.
+        start_date (str): Programın başlangıç tarihi (Format: YYYY-AA-GG).
+        duration_weeks (int): Programın kaç hafta süreceği.
+        workouts_per_week (int): Haftalık antrenman sayısı.
+        description (str): Programın amacı veya kısa açıklaması.
+
+    Returns:
+        str: Programın oluşturulduğuna dair onay mesajı.
     """
     
     logger.info("="*60)
     logger.info(f"🚀 CREATE_WORKOUT_PLAN BAŞLADI")
-    logger.info(f"📋 Parametreler: {workouts_per_week} gün/hafta, Başlangıç: {start_date}")
 
-    # 1. KULLANICI VERİSİ
+    # --- 1. YENİ FONKSİYON İLE VERİ ÇEKME ---
     try:
-        user_context = fetch_user_context_data(config)
-        current_pace = user_context.get("current_pace", 360)
-        experience_level = user_context.get("experience_level", "intermediate")
-    except Exception as e:
-        logger.error(f"❌ Kullanıcı verisi alınamadı: {e}")
-        return "HATA: Kullanıcı bilgileri alınamadı."
+        # Yeni yazdığımız özelleştirilmiş fonksiyonu çağırıyoruz
+        full_context = fetch_user_info_for_program_creation(config)
+        
+        if "error" in full_context:
+            return f"HATA: {full_context['error']}"
 
-    # 2. CHAT GEÇMİŞİNDEN GÜNLERİ BUL (DAHA GÜÇLÜ YÖNTEM)
-    logger.info("🔍 Chat geçmişinden tercihler aranıyor...")
+        # Verileri Ayrıştır
+        profile = full_context.get("user_profile", {})
+        history = full_context.get("history", {})
+
+        # Profil Verileri
+        current_pace = profile.get("current_pace", 360)
+        experience_level = profile.get("experience_level", "beginner")
+        weight = profile.get("weight", "Unknown")
+        height = profile.get("height", "Unknown")
+        gender = profile.get("gender", "Unknown")
+        max_dist = profile.get("max_distance", 0)
+        
+        # Geçmiş Verileri
+        total_workouts = history.get("total_workouts", 0)
+        total_distance = history.get("total_distance", 0)
+
+        logger.info(f"👤 USER CONTEXT LOADED: {gender}, {height}cm, {weight}kg, MaxDist: {max_dist}km")
+
+    except Exception as e:
+        logger.error(f"❌ Veri işleme hatası: {e}", exc_info=True)
+        return "HATA: Kullanıcı verileri işlenirken sorun oluştu."
+
+    # --- 2. CHAT GEÇMİŞİNDEN TERCİHLERİ VE HEDEFİ BUL ---
+    logger.info("🔍 Chat geçmişinden detaylı tercihler aranıyor...")
     messages = state.get("messages", [])
     
+    # Hedef Değişkenler
     selected_days = []
-    frequency = workouts_per_week
     long_run_day = None
-    found_preferences = False
     
-    # Mesajları tersten tara (en güncel tercihleri bulmak için)
+    goal_from_chat = None
+    difficulty_from_chat = None
+    
+    # Mesajları tersten tara (en güncelden eskiye)
     for msg in reversed(messages):
         if msg.type == "tool":
             try:
-                # İçeriği parse etmeye çalış
                 content = msg.content
-                if isinstance(content, str):
-                    try:
-                        data = json.loads(content)
-                    except:
-                        continue # JSON değilse atla
-                elif isinstance(content, dict):
-                    data = content
-                else:
-                    continue
+                data = json.loads(content) if isinstance(content, str) else content
+                if not isinstance(data, dict): continue
 
-                # KONTROL 1: İsimle kontrol (Varsa)
-                is_target_tool = hasattr(msg, 'name') and msg.name == "request_availability_preferences"
+                # A) SETUP BİLGİLERİ (Goal, Difficulty)
+                # Tool ismi 'request_program_setup' ise VEYA 'goal'/'difficulty' keyleri varsa
+                is_setup_tool = hasattr(msg, 'name') and msg.name == "request_program_setup"
+                has_setup_keys = "goal" in data or "difficulty" in data
                 
-                # KONTROL 2: İçerik yapısıyla kontrol (İsim None gelse bile kurtarır)
-                has_target_keys = isinstance(data, dict) and "days" in data and "frequency" in data
+                if (is_setup_tool or has_setup_keys) and goal_from_chat is None:
+                    goal_from_chat = data.get("goal")
+                    difficulty_from_chat = data.get("difficulty")
+                    logger.info(f"🎯 Hedef Bulundu: {goal_from_chat} ({difficulty_from_chat})")
 
-                if is_target_tool or has_target_keys:
-                    frequency = data.get("frequency", workouts_per_week)
+                # B) AVAILABILITY BİLGİLERİ (Günler)
+                # Tool ismi 'request_availability_preferences' ise VEYA 'days' keyi varsa
+                is_pref_tool = hasattr(msg, 'name') and msg.name == "request_availability_preferences"
+                has_days_key = "days" in data
+                
+                if (is_pref_tool or has_days_key) and not selected_days:
                     selected_days = data.get("days", [])
                     long_run_day = data.get("long_run")
+                    logger.info(f"📅 Günler Bulundu: {selected_days}")
                     
-                    found_preferences = True
-                    logger.info(f"✅ TERCİHLER BULUNDU: {frequency} gün/hafta, Günler={selected_days}, Uzun={long_run_day}")
-                    break # Bulunca döngüden çık
+                # C) ÇIKIŞ KOŞULU
+                # Hem günleri hem hedefi bulduysak döngüyü bitir.
+                if selected_days and goal_from_chat:
+                    logger.info("✅ Gerekli tüm context verileri toplandı.")
+                    break
+                    
             except Exception as e:
-                logger.warning(f"⚠️ Mesaj işlenirken hata: {e}")
                 continue
-    
-    # Hâlâ gün bulunamadıysa Fallback (Ama artık loglardan görüyoruz ki JSON doğru geliyor, yukarıdaki kod yakalayacak)
+
+    # --- FALLBACK (Eksik veri varsa tamamla) ---
     if not selected_days:
-        logger.warning("⚠️ Tercihler bulunamadı, varsayılanlar kullanılıyor.")
-        if frequency >= 4:
-            selected_days = ["Tue", "Thu", "Sat", "Sun"]
-        elif frequency == 3:
-            selected_days = ["Mon", "Wed", "Fri"] # Senin istediğin default bu olabilir
-        else:
-            selected_days = ["Tue", "Fri"]
-        logger.info(f"📅 Fallback Günler: {selected_days}")
+        selected_days = ["Mon", "Wed", "Fri", "Sun"] # Varsayılan
+        
+    if not goal_from_chat:
+        goal_from_chat = description # Tool argümanından gelen
+        
+    if not difficulty_from_chat:
+        difficulty_from_chat = experience_level # Kullanıcı profilinden gelen
 
-    # 3. TAKVİM OLUŞTURMA (PYTHON - KESİN TARİHLER)
-    
-    # Tarihi parse et
-    try:
-        start_date_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d").date()
-    except:
-        start_date_obj = datetime.date.today() + datetime.timedelta(days=1)
-        start_date = start_date_obj.strftime("%Y-%m-%d")
-
-    # Takvim iskeletini oluştur
-    workout_slots = generate_schedule_skeleton(start_date, duration_weeks, selected_days)
+    # --- 3. SLOT HAVUZU OLUŞTUR (FİLTRESİZ) ---
+    # Python burada karar vermiyor, sadece seçenekleri sunuyor.
+    available_slots = generate_available_slots(start_date, duration_weeks, selected_days)
     
     # Uzun koşu gününü işaretle
-    if long_run_day:
-        long_run_weekday = map_day_name_to_int(long_run_day)
-        for slot in workout_slots:
-            slot_date = datetime.datetime.strptime(slot["date"], "%Y-%m-%d").date()
-            slot["is_long_run"] = (slot_date.weekday() == long_run_weekday)
-    else:
-        # Uzun koşu günü seçilmediyse, haftanın son antrenmanını uzun yap
-        pass # AI aşağıda halleder veya default bırakırız
-
-    # Frekans Limiti (Eğer seçilen gün sayısı frekanstan fazlaysa kırp)
-    # Örn: Kullanıcı 4 gün seçti ama haftada 3 dedi -> Önceliklendirme yap
-    final_slots = []
+    long_run_weekday = map_day_name_to_int(long_run_day) if long_run_day else -1
     
-    for week in range(1, duration_weeks + 1):
-        week_slots = [s for s in workout_slots if s["week_num"] == week]
-        
-        # Eğer o hafta için bulunan gün sayısı, hedeflenen frekanstan fazlaysa
-        if len(week_slots) > frequency:
-            # 1. Uzun koşu gününü kesin al
-            long_runs = [s for s in week_slots if s.get("is_long_run", False)]
-            other_runs = [s for s in week_slots if not s.get("is_long_run", False)]
-            
-            week_final = []
-            if long_runs:
-                week_final.extend(long_runs[:1]) # Max 1 uzun
-                remaining_needed = frequency - 1
-                week_final.extend(other_runs[:remaining_needed])
-            else:
-                week_final.extend(week_slots[:frequency])
-            
-            # Tarih sırasına göre dizip ekle
-            week_final.sort(key=lambda x: x['offset'])
-            final_slots.extend(week_final)
+    for slot in available_slots:
+        slot_date = datetime.datetime.strptime(slot["date"], "%Y-%m-%d").date()
+        if slot_date.weekday() == long_run_weekday:
+            slot["is_long_run"] = True
         else:
-            final_slots.extend(week_slots)
+            slot["is_long_run"] = False
 
-    workout_slots = final_slots
-    logger.info(f"✅ Takvim Hazır: {len(workout_slots)} antrenman slotu oluşturuldu.")
+    logger.info(f"✅ Müsait Gün Havuzu: {len(available_slots)} adet slot sunuluyor.")
 
-    # 4. AI ANTRENMAN İÇERİĞİ OLUŞTURMA
-    
-    # Prompt için slotları metne dök
+    # --- 4. SYSTEM PROMPT (VERİLERİ EKSİKSİZ VERİYORUZ) ---
     slots_text = ""
-    for i, slot in enumerate(workout_slots):
+    for i, slot in enumerate(available_slots):
         day_name = slot.get("day_name", "Unknown")[:3]
         long_tag = " [LONG_RUN_DAY]" if slot.get("is_long_run") else ""
         slots_text += f"Slot {i}: day_offset={slot['offset']}, date={slot['date']}, day={day_name}, week={slot['week_num']}{long_tag}\n"
 
-    system_prompt = f"""You are a professional running coach creating a {duration_weeks}-week training program.
+    system_prompt = f"""
+You are an expert Running Coach named 'Spark'. create a {duration_weeks}-week training program.
 
 USER PROFILE:
-- Goal: {description}
-- Experience: {experience_level}
-- Current pace: {current_pace//60}:{current_pace%60:02d}/km
-- Weekly Schedule: {selected_days}
+- **Physical:** Weight: {weight}kg, Height: {height}cm, Gender: {gender}
+- **Performance:** Current Pace: {current_pace//60}:{current_pace%60:02d}/km, Max Distance Run: {max_dist}km
+- **History:** Total Workouts: {total_workouts}, Total Distance: {total_distance}km
+- **Level:** {experience_level}
 
-WORKOUT SLOTS (Fill EXACTLY these slots):
-{slots_text}
+PROGRAM REQUIREMENTS:
+- **Goal:** {goal_from_chat}
+- **Program Difficulty:** {difficulty_from_chat} 
+- **Target Frequency:** {workouts_per_week} workouts per week.
+- **Weekly Schedule:** User is available on {selected_days}.
+
+AVAILABLE WORKOUT SLOTS (Pool of options):
+{slots_text}    
 
 INSTRUCTIONS:
-1. Create exactly one workout for each slot above using the `day_offset`.
-2. **Day Matching:** Ensure the workout type fits the day.
-   - If slot is marked [LONG_RUN_DAY], you MUST set `workout_type` to "long".
-3. **Variety:**
-   - Don't just spam "easy".
-   - Include "tempo" or "interval" once a week for variety if the user is not a complete beginner.
-   - "easy" runs are for recovery between hard days.
-4. **Progression:**
-   - Start moderate.
-   - Build distance gradually.
-   - Taper in the last week.
+1. **Selection Strategy:** - You MUST select exactly **{workouts_per_week}** slots for each week from the list above.
+2. **Mandatory Long Run:** - If a week has a slot marked **[LONG_RUN_DAY]**, you MUST select it.
+3. **Workout Design:**
+   - **Long Run:** Must be on [LONG_RUN_DAY]. Increase distance gradually based on user's Max Distance ({max_dist}km).
+   - **Variety:** Include Interval/Tempo runs if frequency > 2.
+   - **Rest:** Ensure recovery between hard sessions.
+   - **Workout Types:** You have 4 option in tota (tempo, easy, interval, long)
+4. **Output:** Return ONLY valid JSON for the selected slots.
+    OUTPUT SCHEMA (YOU MUST FOLLOW IT):
+    {{
+    "workouts": [
+        {{
+        "day_offset": 5, 
+        "title": "Hafta Sonu Uzunu", 
+        "workout_type": "long", 
+        "distance_km": 10.0
+        }},
+        ...
+    ]
+    }}
 
 TITLES:
-- Use creative, motivating TURKISH titles. (e.g., "Hafta Ortası Ateşi", "Pazar Uzunu", "Toparlanma Koşusu")
+- Use motivating TURKISH titles.
+"""
 
-Return ONLY valid JSON:
-{{"workouts": [
-  {{"day_offset": 0, "title": "Başlangıç Koşusu", "workout_type": "easy", "distance_km": 5.0}},
-  ...
-]}}"""
-
+    # --- 5. LLM CALL ---
     try:
         llm_planner = ChatBedrockConverse(
-            model=SONNET_45,
-            temperature=0.2,
-            max_tokens=4096,
+            model=SONNET_4,
+            temperature=0.7, # Yaratıcılık için biraz pay bırak ama yapı bozulmasın
+            max_tokens=20000,
             region_name="us-east-1",
             disable_streaming=True
         )
-        
-        logger.info("🤖 AI antrenmanları planlıyor...")
+        logger.info(f"SYSTEM PROMTP: {system_prompt}")
+        logger.info("🤖 AI antrenmanları seçiyor ve planlıyor...")
         response = llm_planner.invoke(system_prompt)
         
-        # Yanıtı işle
+        # JSON Parse
         response_text = response.content
+        logger.info(f"LLM RESPONSE: {response_text}")
         if isinstance(response_text, list):
             response_text = "".join([c.get("text", "") for c in response_text if isinstance(c, dict)])
         
-        # JSON'ı ayıkla
         import re
         json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        
+        workouts_list = []
         if json_match:
             plan_data = json.loads(json_match.group())
-            workouts_list = plan_data.get("workouts", [])
+            
+            # SENARYO A: Düzgün format
+            if "workouts" in plan_data and isinstance(plan_data["workouts"], list):
+                workouts_list = plan_data["workouts"]
+                
+            # SENARYO B: 'weeks' içine gömülmüş format (Kurtarma Operasyonu)
+            elif "weeks" in plan_data:
+                logger.info("⚠️ LLM 'weeks' yapısı döndü, düzleştiriliyor...")
+                for week in plan_data["weeks"]:
+                    if "workouts" in week:
+                        workouts_list.extend(week["workouts"])
+            
+            else:
+                logger.error(f"❌ JSON yapısı tanınamadı: {plan_data.keys()}")
         else:
             raise Exception("JSON bulunamadı")
-            
-        logger.info(f"✅ AI {len(workouts_list)} antrenman oluşturdu.")
+
+        logger.info(f"✅ AI {len(workouts_list)} antrenman seçti.")
 
     except Exception as e:
         logger.error(f"❌ AI Hatası: {e}")
         return f"HATA: AI planlama hatası - {str(e)}"
 
-    # 5. FORMAT DÖNÜŞÜMÜ & KAYDETME
+    # --- 6. FORMATLAMA VE KAYDETME ---
     final_workouts = []
-    
-    # Python ile oluşturduğumuz takvim slotlarındaki offsetlerin kümesi (doğrulama için)
-    valid_offsets = {s['offset'] for s in workout_slots}
+    valid_offsets = {s['offset'] for s in available_slots}
 
     for workout in workouts_list:
         try:
             day_offset = workout.get("day_offset")
-            
-            # Eğer AI, bizim takvimimizde olmayan bir offset uydurduysa atla
-            if day_offset not in valid_offsets:
-                continue
+            if day_offset not in valid_offsets: continue # Hallucination check
 
             w_type = workout.get("workout_type", "easy")
             distance = float(workout.get("distance_km", 5.0))
-            title = workout.get("title", "Koşu Antrenmanı")
+            title = workout.get("title", "Koşu")
             
-            # Python ile süre ve pace hesapla
+            # Python Math
             pace_info = calculate_pace_and_duration(current_pace, w_type, distance)
             
-            workout_data = {
+            final_workouts.append({
                 "day_offset": day_offset,
                 "title": title,
                 "workout_type": w_type,
                 "distance_km": distance,
                 "target_pace_seconds": pace_info["pace"],
                 "duration_minutes": pace_info["duration"]
-            }
-            final_workouts.append(workout_data)
-            
-        except Exception as e:
-            continue
+            })
+        except: continue
 
     if not final_workouts:
-        return "HATA: Antrenman listesi oluşturulamadı."
+        return "HATA: Antrenman listesi boş."
 
-    # Backend'e gönder
+    # Backend Kayıt
     payload = {
         "title": title,
         "start_date": start_date,
         "duration_weeks": duration_weeks,
-        "workouts_per_week": len(final_workouts) // duration_weeks, # Ortalama frekans
+        "workouts_per_week": len(final_workouts) // duration_weeks,
         "description": description,
         "workouts": final_workouts
     }
 
     try:
         response = call_api("POST", "/programs/create_ai_plan/", config, data=payload)
+        if "error" in response: return f"API HATASI: {response['error']}"
         
-        if "error" in response:
-            return f"❌ API HATASI: {response['error']}"
-
-        program_id = response.get('program_id', 'Unknown')
-        return f"✅ Program başarıyla oluşturuldu!\n📋 ID: {program_id}\n🏃‍♂️ {len(final_workouts)} antrenman planlandı."
-
+        return f"✅ Program Oluşturuldu! ID: {response.get('program_id')}\n🎯 {len(final_workouts)} antrenman planlandı."
     except Exception as e:
-        return f"HATA: Backend sorunu - {str(e)}"
+        return f"Backend Hatası: {str(e)}"
+    
 
 
 # ============================================================
