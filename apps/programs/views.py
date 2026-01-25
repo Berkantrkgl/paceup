@@ -92,6 +92,134 @@ class ProgramViewSet(viewsets.ModelViewSet):
             import traceback
             traceback.print_exc()
             return Response({"error": str(e)}, status=500)
+        
+    @action(detail=True, methods=['post'], url_path='reschedule')
+    def reschedule(self, request, pk=None):
+        program = self.get_object()
+        new_start_date_str = request.data.get('start_date')
+
+        print(f"\n🚀 --- RESCHEDULE İŞLEMİ BAŞLADI ---")
+        print(f"📌 Program: {program.title}")
+        print(f"📌 İstenen Yeni Başlangıç: {new_start_date_str}")
+
+        if not new_start_date_str:
+            return Response({"error": "start_date parametresi zorunludur."}, status=400)
+
+        try:
+            new_start_date = datetime.datetime.strptime(new_start_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response({"error": "Tarih formatı YYYY-MM-DD olmalıdır."}, status=400)
+
+        today = timezone.now().date()
+        print(f"📌 Bugünün Tarihi: {today}")
+
+        with transaction.atomic():
+            # --- ADIM 1: TÜM LİSTEYİ ÇEK VE PYTHON'DA SIRALA ---
+            all_workouts = list(program.workouts.all())
+            # Sıralama: Önce planlanan tarih, sonra oluşturulma zamanı (UUID sıralaması yerine created_at daha güvenlidir ama modelde varsa)
+            # Eğer created_at yoksa id'ye göre sıralayalım ki stabil olsun.
+            all_workouts.sort(key=lambda w: (w.scheduled_date, w.created_at if w.created_at else w.id))
+
+            print(f"🔍 Toplam Antrenman Sayısı: {len(all_workouts)}")
+            print("📋 Mevcut Sıralama (İlk 10):")
+            for i, w in enumerate(all_workouts[:10]):
+                status_icon = "✅" if w.is_completed else "❌"
+                print(f"   {i+1}. [{w.scheduled_date}] {w.title} ({w.workout_type}) - {status_icon}")
+
+            # --- ADIM 2: AKTİF GÜNLERİ BELİRLE ---
+            active_days = set()
+            for w in all_workouts:
+                active_days.add(w.scheduled_date.weekday())
+            
+            if not active_days:
+                active_days = {1, 3, 5} 
+
+            days_map = {0:"Pzt", 1:"Sal", 2:"Çar", 3:"Per", 4:"Cum", 5:"Cmt", 6:"Paz"}
+            readable_days = [days_map[d] for d in sorted(list(active_days))]
+            print(f"📅 Kullanıcının Aktif Günleri: {readable_days} (Kodları: {active_days})")
+
+            # --- ADIM 3: ZİNCİRİ OLUŞTUR (Backtrack) ---
+            past_and_today_candidates = []
+            future_workouts = []
+
+            for w in all_workouts:
+                if w.scheduled_date <= today:
+                    past_and_today_candidates.append(w)
+                else:
+                    future_workouts.append(w)
+            
+            print(f"🕰️  Geçmiş/Bugün Antrenman Sayısı: {len(past_and_today_candidates)}")
+            print(f"🔮 Gelecek Antrenman Sayısı: {len(future_workouts)}")
+
+            chain_to_move = []
+            # Tersten tara
+            print("🔙 Geriye Doğru Tarama Başlıyor...")
+            for w in reversed(past_and_today_candidates):
+                print(f"   -> Kontrol: {w.title} ({w.scheduled_date}) - Completed: {w.is_completed}")
+                if w.is_completed:
+                    print("   🛑 DUR! Tamamlanmış antrenman bulundu. Zincir koptu.")
+                    break
+                else:
+                    print("   ➕ Zincire Eklendi.")
+                    chain_to_move.append(w)
+            
+            chain_to_move.reverse() 
+            workouts_to_shift = chain_to_move + future_workouts
+
+            print(f"\n📦 TAŞINACAK PAKET (Sırası Bozulmamalı):")
+            for i, w in enumerate(workouts_to_shift):
+                print(f"   {i+1}. {w.title} ({w.workout_type}) [Eski Tarih: {w.scheduled_date}]")
+
+            if not workouts_to_shift:
+                print("⚠️ Kaydırılacak antrenman yok!")
+                return Response({"message": "Kaydırılacak antrenman bulunamadı."}, status=200)
+
+            # --- ADIM 4: YERLEŞTİRME ---
+            print(f"\n🚀 YERLEŞTİRME BAŞLIYOR (Başlangıç: {new_start_date})")
+            
+            cursor_date = new_start_date
+            
+            for workout in workouts_to_shift:
+                # Uygun gün bulma döngüsü
+                loop_safety = 0
+                original_cursor = cursor_date
+                
+                while cursor_date.weekday() not in active_days:
+                    # Debug için gün atlamayı görelim
+                    # print(f"   ... {cursor_date} ({days_map[cursor_date.weekday()]}) uygun değil, atlanıyor.")
+                    cursor_date += datetime.timedelta(days=1)
+                    loop_safety += 1
+                    if loop_safety > 30: # Sonsuz döngü koruması
+                        break
+                
+                print(f"   ✅ Atandı: {workout.title} -> {cursor_date} ({days_map[cursor_date.weekday()]})")
+                
+                # DB İşlemi
+                workout.scheduled_date = cursor_date
+                if workout.status == 'missed':
+                    workout.status = 'scheduled'
+                workout.save()
+                
+                # Bir sonraki gün
+                cursor_date += datetime.timedelta(days=1)
+
+            # --- ADIM 5: Bitiş ---
+            # DB'den taze veri çekip sonuncuyu bul
+            all_workouts_refresh = list(Program.objects.get(id=program.id).workouts.all())
+            all_workouts_refresh.sort(key=lambda w: w.scheduled_date)
+            last_workout = all_workouts_refresh[-1]
+            
+            if last_workout:
+                program.end_date = last_workout.scheduled_date
+                program.save()
+                print(f"🏁 Program Bitiş Tarihi Güncellendi: {program.end_date}")
+
+        print("--- İŞLEM TAMAMLANDI ---\n")
+        return Response({
+            "status": "success",
+            "message": f"Debug işlemi tamamlandı. Konsolu kontrol et.",
+            "moved_count": len(workouts_to_shift)
+        })
 
 
 class WorkoutViewSet(viewsets.ModelViewSet):

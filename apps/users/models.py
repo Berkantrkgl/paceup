@@ -25,7 +25,7 @@ class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
-    profile_image = models.URLField(blank=True, null=True)
+    profile_image = models.ImageField(upload_to='profile_images/', blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
 
     gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)

@@ -11,9 +11,13 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv # <--- BU SATIRI EKLE
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(os.path.join(BASE_DIR, '.env')) # <--- BU SATIRI EKLE
 
 
 # Quick-start development settings - unsuitable for production
@@ -141,3 +145,28 @@ REST_FRAMEWORK = {
 
 
 AUTH_USER_MODEL = 'users.User'
+
+
+# --- AWS S3 AYARLARI ---
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')         # .env'den gelecek
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY') # .env'den gelecek
+AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME') # örn: paceup-bucket
+AWS_S3_REGION_NAME = os.getenv('AWS_DEFAULT_REGION', 'eu-central-1') # (Frankfurt) veya senin seçtiğin region
+AWS_S3_SIGNATURE_VERSION = 's3v4'
+
+# Profil resimlerinin URL'leri belli bir süre sonra (imzalı url) bozulmasın diye:
+AWS_QUERYSTRING_AUTH = False 
+
+# Dosyaları yönetmek için az önce oluşturduğumuz class'ı kullan:
+STORAGES = {
+    "default": {
+        "BACKEND": "custom_storages.MediaStorage", 
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+# Medya URL'si artık S3 olacak
+AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
+MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'

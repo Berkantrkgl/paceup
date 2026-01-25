@@ -25,6 +25,8 @@ class ProgramSerializer(serializers.ModelSerializer):
     current_week_calculated = serializers.ReadOnlyField()
     progress_percent = serializers.ReadOnlyField()
 
+    workouts = WorkoutSerializer(many=True, read_only=True)
+
     class Meta:
         model = Program
         fields = [
@@ -34,7 +36,8 @@ class ProgramSerializer(serializers.ModelSerializer):
             'total_workouts_count', 'completed_workouts_count',
             'status',
             'current_week_calculated', 
-            'progress_percent',        
+            'progress_percent',
+            'workouts', 
             'created_at'
         ]
         read_only_fields = ['user', 'completed_workouts_count', 'created_at']
