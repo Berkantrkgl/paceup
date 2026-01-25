@@ -38,8 +38,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
-    # Core
-    'core',
+    # Apps
+    'apps.users',
+    'apps.programs',
+    'apps.activity',
+    'apps.gamification',
+    'apps.notifications',
+    'apps.analytics',
+
     'rest_framework',
     'rest_framework_simplejwt'
 ]
@@ -134,4 +140,4 @@ REST_FRAMEWORK = {
 }
 
 
-AUTH_USER_MODEL = 'core.User'
+AUTH_USER_MODEL = 'users.User'
