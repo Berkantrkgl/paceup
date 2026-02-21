@@ -3,9 +3,10 @@ import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useEffect, useRef, useState } from "react";
 import {
-  Alert,
+  KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -16,10 +17,9 @@ import {
 // --- TYPES ---
 export interface ProgramSetupData {
   goal: string;
-  difficulty: "beginner" | "intermediate" | "advanced";
   mode: "duration" | "race_date";
   value: string; // Süre (hafta) veya Tarih (YYYY-MM-DD)
-  start_date: string; // YENİ: Başlangıç Tarihi (YYYY-MM-DD)
+  start_date: string; // Başlangıç Tarihi (YYYY-MM-DD)
 }
 
 interface ProgramSetupToolProps {
@@ -37,13 +37,6 @@ const GOAL_OPTIONS = [
   { id: "custom", label: "Kendin Yaz", icon: "create-outline" },
 ];
 
-const DIFFICULTY_OPTIONS = [
-  { id: "beginner", label: "Başlangıç", color: "#4CAF50" },
-  { id: "intermediate", label: "Orta", color: "#FF9800" },
-  { id: "advanced", label: "İleri", color: "#F44336" },
-];
-
-// Limitler
 const MAX_WEEKS = 32;
 const MAX_MONTHS_AHEAD = 8;
 const MAX_START_DAYS = 14;
@@ -55,30 +48,25 @@ export const ProgramSetupTool = ({
   const [isEditing, setIsEditing] = useState(true);
 
   // --- STATE ---
-
-  // 1. Hedef
   const [goalChip, setGoalChip] = useState<string | null>(null);
   const [customGoal, setCustomGoal] = useState("");
 
-  // 2. Zorluk
-  const [difficulty, setDifficulty] = useState<string>("intermediate");
-
-  // 3. Süre / Bitiş (Target Date)
   const [timingMode, setTimingMode] = useState<"duration" | "race_date">(
     "duration",
   );
   const [weeks, setWeeks] = useState(8);
 
   const defaultTargetDate = new Date();
-  defaultTargetDate.setDate(defaultTargetDate.getDate() + 84);
+  defaultTargetDate.setDate(defaultTargetDate.getDate() + 84); // 12 Hafta
   const [targetDate, setTargetDate] = useState(defaultTargetDate);
-  const [showTargetDatePicker, setShowTargetDatePicker] = useState(false);
-
-  // 4. Başlangıç Tarihi
   const [startDate, setStartDate] = useState(new Date());
-  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
 
-  // Input Ref
+  // Modal Yönetimi
+  const [activeModal, setActiveModal] = useState<
+    "start_date" | "target_date" | null
+  >(null);
+
+  // Input Ref (Custom Goal için)
   const inputRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -88,77 +76,41 @@ export const ProgramSetupTool = ({
   }, [goalChip]);
 
   // --- HANDLERS ---
-
   const handleChipSelect = (id: string) => {
     setGoalChip(id);
     if (id !== "custom") setCustomGoal("");
   };
 
-  // TARGET DATE VALIDATION
-  const validateTargetDate = (date: Date) => {
-    const today = new Date();
-    const maxDate = new Date();
-    maxDate.setMonth(today.getMonth() + MAX_MONTHS_AHEAD);
-
-    if (date > maxDate) {
-      Alert.alert(
-        "Süre Sınırı",
-        "En fazla 8 aylık bir program oluşturabiliriz.",
-      );
-      setTargetDate(maxDate);
-    } else {
-      setTargetDate(date);
-    }
-  };
-
-  // START DATE VALIDATION
   const getMaxStartDate = () => {
     const d = new Date();
     d.setDate(d.getDate() + MAX_START_DAYS);
     return d;
   };
 
-  const validateStartDate = (date: Date) => {
-    const maxDate = getMaxStartDate();
-    const dTime = new Date(date).setHours(0, 0, 0, 0);
-    const maxTime = new Date(maxDate).setHours(0, 0, 0, 0);
-
-    if (dTime > maxTime) {
-      Alert.alert(
-        "Başlangıç Tarihi",
-        "En fazla 2 hafta sonrasını seçebilirsin. Hemen başlayalım! 🚀",
-      );
-      setStartDate(maxDate);
-    } else {
-      setStartDate(date);
-    }
-  };
-
   const setStartDateToTomorrow = () => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    validateStartDate(d);
+    setStartDate(d);
   };
 
   const setStartDateToNextMonday = () => {
     const d = new Date();
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const nextMonday = new Date(d.setDate(diff + 7));
-    validateStartDate(nextMonday);
+    setStartDate(new Date(d.setDate(diff + 7)));
   };
 
-  // DATE CHANGE HANDLERS
-  const onTargetDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") setShowTargetDatePicker(false);
-    if (selectedDate) validateTargetDate(selectedDate);
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") {
+      setActiveModal(null); // Android'de picker kapanır
+    }
+    if (selectedDate) {
+      if (activeModal === "start_date") setStartDate(selectedDate);
+      if (activeModal === "target_date") setTargetDate(selectedDate);
+    }
   };
 
-  const onStartDateChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === "android") setShowStartDatePicker(false);
-    if (selectedDate) validateStartDate(selectedDate);
-  };
-
+  // Hafta Artır/Azalt
   const incrementWeeks = () =>
     setWeeks((prev) => Math.min(prev + 1, MAX_WEEKS));
   const decrementWeeks = () => setWeeks((prev) => Math.max(prev - 1, 4));
@@ -172,7 +124,6 @@ export const ProgramSetupTool = ({
       const option = GOAL_OPTIONS.find((g) => g.id === goalChip);
       finalGoal = option ? option.label : "";
     }
-
     if (!finalGoal) return;
 
     const formattedTargetDate = targetDate.toISOString().split("T")[0];
@@ -180,7 +131,6 @@ export const ProgramSetupTool = ({
 
     const payload: ProgramSetupData = {
       goal: finalGoal,
-      difficulty: difficulty as any,
       mode: timingMode,
       value: timingMode === "duration" ? String(weeks) : formattedTargetDate,
       start_date: formattedStartDate,
@@ -195,13 +145,35 @@ export const ProgramSetupTool = ({
     return GOAL_OPTIONS.find((g) => g.id === goalChip)?.label;
   };
 
-  // --- 1. SUBMITTED VIEW (ÖZET GÖRÜNÜM - GÜNCELLENDİ) ---
-  if (submitted || !isEditing) {
-    const diffLabel = DIFFICULTY_OPTIONS.find(
-      (d) => d.id === difficulty,
-    )?.label;
+  // --- MODAL İÇERİĞİ RENDERER (Sadece Tarih için) ---
+  const renderModalContent = () => {
+    if (activeModal === "start_date" || activeModal === "target_date") {
+      const maxTargetDate = new Date();
+      maxTargetDate.setMonth(maxTargetDate.getMonth() + MAX_MONTHS_AHEAD);
 
-    // Tarih Formatları
+      return (
+        <View style={styles.pickerWrapper}>
+          <DateTimePicker
+            value={activeModal === "start_date" ? startDate : targetDate}
+            mode="date"
+            display="spinner"
+            onChange={onDateChange}
+            minimumDate={new Date()}
+            maximumDate={
+              activeModal === "start_date" ? getMaxStartDate() : maxTargetDate
+            }
+            themeVariant="dark"
+            textColor="white"
+            style={{ height: 200, width: "100%" }}
+          />
+        </View>
+      );
+    }
+    return null;
+  };
+
+  // --- 1. SUBMITTED VIEW ---
+  if (submitted || !isEditing) {
     const targetDateDisplay = targetDate.toLocaleDateString("tr-TR", {
       day: "numeric",
       month: "short",
@@ -210,11 +182,9 @@ export const ProgramSetupTool = ({
       day: "numeric",
       month: "short",
     });
-
-    // Mod'a göre metin belirleme
     const timingText =
       timingMode === "duration"
-        ? `Süre: ${weeks} Haf`
+        ? `${weeks} Hafta Sürecek`
         : `Bitiş: ${targetDateDisplay}`;
 
     return (
@@ -223,9 +193,7 @@ export const ProgramSetupTool = ({
           <Ionicons name="rocket" size={16} color={COLORS.background} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.submittedText}>
-            {getDisplayGoal()} ({diffLabel})
-          </Text>
+          <Text style={styles.submittedText}>{getDisplayGoal()}</Text>
           <Text style={styles.submittedSubText}>
             Başlangıç: {startDateDisplay} • {timingText}
           </Text>
@@ -255,9 +223,8 @@ export const ProgramSetupTool = ({
             >
               <Ionicons
                 name={item.icon as any}
-                size={18}
+                size={22}
                 color={isActive ? "#000" : COLORS.accent}
-                style={{ marginBottom: 4 }}
               />
               <Text
                 style={[styles.gridText, isActive && styles.gridTextActive]}
@@ -288,122 +255,48 @@ export const ProgramSetupTool = ({
         </View>
       )}
 
-      {/* B. ZORLUK */}
-      <Text style={styles.label}>2. Programın Zorluk Seviyesi</Text>
-      <View style={styles.diffContainer}>
-        {DIFFICULTY_OPTIONS.map((item) => {
-          const isActive = difficulty === item.id;
-          return (
-            <TouchableOpacity
-              key={item.id}
-              style={[
-                styles.diffBtn,
-                isActive && {
-                  backgroundColor: item.color,
-                  borderColor: item.color,
-                },
-              ]}
-              onPress={() => setDifficulty(item.id)}
-            >
-              <Text
-                style={[
-                  styles.diffText,
-                  isActive && { color: "white", fontWeight: "bold" },
-                ]}
-              >
-                {item.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* C. BAŞLANGIÇ TARİHİ */}
-      <Text style={styles.label}>3. Ne zaman başlayalım?</Text>
-      <View style={styles.dateContainer}>
-        <View style={styles.quickDateRow}>
-          <TouchableOpacity
-            style={styles.quickDateBtn}
-            onPress={setStartDateToTomorrow}
-          >
-            <Text style={styles.quickDateText}>Yarın</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.quickDateBtn}
-            onPress={setStartDateToNextMonday}
-          >
-            <Text style={styles.quickDateText}>Haftaya Pzt</Text>
-          </TouchableOpacity>
-        </View>
-
+      {/* B. BAŞLANGIÇ TARİHİ */}
+      <Text style={styles.label}>2. Ne zaman başlayalım?</Text>
+      <View style={styles.quickDateRow}>
         <TouchableOpacity
-          style={styles.datePickerBtn}
-          onPress={() => setShowStartDatePicker(true)}
+          style={styles.quickDateBtn}
+          onPress={setStartDateToTomorrow}
         >
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Ionicons
-              name="calendar-outline"
-              size={18}
-              color={COLORS.accent}
-              style={{ marginRight: 8 }}
-            />
-            <Text style={styles.dateValue}>
-              {startDate.toLocaleDateString("tr-TR", {
-                day: "numeric",
-                month: "long",
-                year: "numeric",
-              })}
-            </Text>
-          </View>
-          <Ionicons name="chevron-down" size={16} color="#666" />
+          <Text style={styles.quickDateText}>Yarın</Text>
         </TouchableOpacity>
-
-        {/* Start Date Modal */}
-        {Platform.OS === "ios" ? (
-          <Modal
-            transparent={true}
-            animationType="slide"
-            visible={showStartDatePicker}
-            onRequestClose={() => setShowStartDatePicker(false)}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <View style={styles.modalHeader}>
-                  <TouchableOpacity
-                    onPress={() => setShowStartDatePicker(false)}
-                  >
-                    <Text style={styles.modalDoneBtn}>Tamam</Text>
-                  </TouchableOpacity>
-                </View>
-                <DateTimePicker
-                  value={startDate}
-                  mode="date"
-                  display="spinner"
-                  onChange={onStartDateChange}
-                  minimumDate={new Date()}
-                  maximumDate={getMaxStartDate()}
-                  themeVariant="dark"
-                  textColor="white"
-                />
-              </View>
-            </View>
-          </Modal>
-        ) : (
-          showStartDatePicker && (
-            <DateTimePicker
-              value={startDate}
-              mode="date"
-              display="default"
-              onChange={onStartDateChange}
-              minimumDate={new Date()}
-              maximumDate={getMaxStartDate()}
-            />
-          )
-        )}
+        <TouchableOpacity
+          style={styles.quickDateBtn}
+          onPress={setStartDateToNextMonday}
+        >
+          <Text style={styles.quickDateText}>Haftaya Pzt</Text>
+        </TouchableOpacity>
       </View>
+      <Pressable
+        style={styles.pickerTriggerCard}
+        onPress={() => setActiveModal("start_date")}
+      >
+        <Text style={styles.inputLabelCenter}>Başlangıç Tarihi</Text>
+        <View
+          style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}
+        >
+          <Ionicons
+            name="calendar-outline"
+            size={20}
+            color={COLORS.accent}
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.pickerTriggerText}>
+            {startDate.toLocaleDateString("tr-TR", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            })}
+          </Text>
+        </View>
+      </Pressable>
 
-      {/* D. SÜRE / BİTİŞ */}
-      <Text style={styles.label}>4. Program Süresi</Text>
+      {/* C. SÜRE / BİTİŞ */}
+      <Text style={styles.label}>3. Program Süresi</Text>
       <View style={styles.timingBox}>
         <View style={styles.toggleRow}>
           <TouchableOpacity
@@ -442,12 +335,13 @@ export const ProgramSetupTool = ({
 
         <View style={styles.timingContent}>
           {timingMode === "duration" ? (
+            // --- GERİ GETİRİLEN +/- BUTONLARI ---
             <View style={styles.durationControl}>
               <TouchableOpacity
                 style={styles.circleBtn}
                 onPress={decrementWeeks}
               >
-                <Ionicons name="remove" size={20} color="#CCC" />
+                <Ionicons name="remove" size={24} color="#CCC" />
               </TouchableOpacity>
               <View style={{ alignItems: "center", width: 90 }}>
                 <Text style={styles.bigValue}>{weeks}</Text>
@@ -457,88 +351,47 @@ export const ProgramSetupTool = ({
                 style={styles.circleBtn}
                 onPress={incrementWeeks}
               >
-                <Ionicons name="add" size={20} color="white" />
+                <Ionicons name="add" size={24} color="white" />
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={{ width: "100%" }}>
-              <TouchableOpacity
-                style={styles.datePickerBtn}
-                onPress={() => setShowTargetDatePicker(true)}
+            <Pressable
+              style={[
+                styles.pickerTriggerCard,
+                {
+                  width: "100%",
+                  borderWidth: 0,
+                  backgroundColor: "transparent",
+                  marginBottom: 0,
+                },
+              ]}
+              onPress={() => setActiveModal("target_date")}
+            >
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginTop: 6,
+                }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <Ionicons
-                    name="flag-outline"
-                    size={18}
-                    color={COLORS.accent}
-                    style={{ marginRight: 10 }}
-                  />
-                  <Text style={styles.datePickerText}>
-                    {targetDate.toLocaleDateString("tr-TR", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-down" size={16} color="#666" />
-              </TouchableOpacity>
-
-              {/* Target Date Modal */}
-              {Platform.OS === "ios" ? (
-                <Modal
-                  transparent={true}
-                  animationType="slide"
-                  visible={showTargetDatePicker}
-                  onRequestClose={() => setShowTargetDatePicker(false)}
-                >
-                  <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                      <View style={styles.modalHeader}>
-                        <TouchableOpacity
-                          onPress={() => setShowTargetDatePicker(false)}
-                        >
-                          <Text style={styles.modalDoneBtn}>Tamam</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <DateTimePicker
-                        value={targetDate}
-                        mode="date"
-                        display="spinner"
-                        onChange={onTargetDateChange}
-                        minimumDate={new Date()}
-                        maximumDate={
-                          new Date(
-                            new Date().setMonth(
-                              new Date().getMonth() + MAX_MONTHS_AHEAD,
-                            ),
-                          )
-                        }
-                        themeVariant="dark"
-                        textColor="white"
-                      />
-                    </View>
-                  </View>
-                </Modal>
-              ) : (
-                showTargetDatePicker && (
-                  <DateTimePicker
-                    value={targetDate}
-                    mode="date"
-                    display="default"
-                    onChange={onTargetDateChange}
-                    minimumDate={new Date()}
-                    maximumDate={
-                      new Date(
-                        new Date().setMonth(
-                          new Date().getMonth() + MAX_MONTHS_AHEAD,
-                        ),
-                      )
-                    }
-                  />
-                )
-              )}
-            </View>
+                <Ionicons
+                  name="flag-outline"
+                  size={20}
+                  color={COLORS.accent}
+                  style={{ marginRight: 8 }}
+                />
+                <Text style={styles.pickerTriggerText}>
+                  {targetDate.toLocaleDateString("tr-TR", {
+                    day: "numeric",
+                    month: "long",
+                    year: "numeric",
+                  })}
+                </Text>
+              </View>
+              <Text style={styles.inputLabelCenter}>
+                (Değiştirmek için tıkla)
+              </Text>
+            </Pressable>
           )}
         </View>
       </View>
@@ -560,6 +413,64 @@ export const ProgramSetupTool = ({
           style={{ marginLeft: 5 }}
         />
       </TouchableOpacity>
+
+      {/* --- CENTERED MODAL (Sadece Tarih İçin) --- */}
+      {Platform.OS === "ios" && activeModal ? (
+        <Modal visible={activeModal !== null} transparent animationType="fade">
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setActiveModal(null)}
+          >
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={styles.modalKeyboardAvoiding}
+            >
+              <Pressable
+                style={styles.modalCenteredContainer}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Pressable
+                      onPress={() => setActiveModal(null)}
+                      style={styles.headerBtn}
+                    >
+                      <Text style={styles.headerBtnTextCancel}>Kapat</Text>
+                    </Pressable>
+                    <Text style={styles.modalTitle}>Tarih Seçimi</Text>
+                    <Pressable
+                      onPress={() => setActiveModal(null)}
+                      style={styles.headerBtn}
+                    >
+                      <Text style={styles.headerBtnTextSave}>Tamam</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.modalBody}>{renderModalContent()}</View>
+                </View>
+              </Pressable>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Modal>
+      ) : (
+        activeModal && (
+          <DateTimePicker
+            value={activeModal === "start_date" ? startDate : targetDate}
+            mode="date"
+            display="default"
+            onChange={onDateChange}
+            minimumDate={new Date()}
+            maximumDate={
+              activeModal === "start_date"
+                ? getMaxStartDate()
+                : new Date(
+                    new Date().setMonth(
+                      new Date().getMonth() + MAX_MONTHS_AHEAD,
+                    ),
+                  )
+            }
+          />
+        )
+      )}
     </View>
   );
 };
@@ -573,30 +484,33 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   title: { color: "white", fontWeight: "700", fontSize: 14 },
+  // Başlık boşlukları dengelendi
   label: {
     color: "#888",
     fontSize: 12,
     fontWeight: "600",
-    marginBottom: 8,
-    marginTop: 4,
+    marginBottom: 6,
+    marginTop: 12,
   },
 
-  // Grid
+  // --- GRID (Tam Ortalanmış & Dengeli Boşluk) ---
   gridContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
+    justifyContent: "space-between",
     gap: 8,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   gridItem: {
-    width: "31%",
-    aspectRatio: 1.4,
-    backgroundColor: "#2C2C2C",
-    borderRadius: 10,
+    width: "31.5%",
+    aspectRatio: 1.25,
+    backgroundColor: "#252525",
+    borderRadius: 12,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#3A3A3C",
+    gap: 6, // İkon ve metin arası boşluk
   },
   gridItemActive: {
     backgroundColor: COLORS.accent,
@@ -604,78 +518,63 @@ const styles = StyleSheet.create({
   },
   gridText: {
     color: "#AAA",
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     textAlign: "center",
+    // marginTop kaldırıldı, gap kullanılıyor
   },
   gridTextActive: { color: "#000", fontWeight: "700" },
 
-  // Input
   customInputContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2C2C2C",
-    borderRadius: 10,
+    backgroundColor: "#252525",
+    borderRadius: 12,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: COLORS.accent,
-    marginBottom: 15,
+    marginBottom: 12,
   },
-  customInput: { flex: 1, paddingVertical: 12, color: "white", fontSize: 13 },
+  customInput: { flex: 1, paddingVertical: 14, color: "white", fontSize: 14 },
 
-  // Difficulty
-  diffContainer: { flexDirection: "row", gap: 8, marginBottom: 15 },
-  diffBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#444",
-    backgroundColor: "#2C2C2C",
-    alignItems: "center",
-  },
-  diffText: { color: "#AAA", fontSize: 12 },
-
-  // New Date Section (Start Date)
-  dateContainer: {
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#333",
-    marginBottom: 15,
-  },
-  quickDateRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  quickDateRow: { flexDirection: "row", gap: 10, marginBottom: 10 },
   quickDateBtn: {
     backgroundColor: "#333",
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#444",
   },
-  quickDateText: { color: COLORS.accent, fontSize: 11, fontWeight: "600" },
-  datePickerBtn: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#1F1F1F",
-    padding: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#333",
-  },
-  dateValue: { color: "white", fontSize: 14, fontWeight: "600" },
-  datePickerText: { color: "white", fontSize: 15, fontWeight: "600" },
+  quickDateText: { color: COLORS.accent, fontSize: 12, fontWeight: "600" },
 
-  // Timing
+  pickerTriggerCard: {
+    backgroundColor: "#252525",
+    paddingVertical: 18,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#3A3A3C",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12, // Boşluk dengelendi
+  },
+  pickerTriggerText: { color: "white", fontSize: 20, fontWeight: "bold" },
+  inputLabelCenter: {
+    color: "#888",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+
+  // --- TIMING BOX & DURATION CONTROL ---
   timingBox: {
     backgroundColor: "#252525",
     borderRadius: 12,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: "#333",
-    marginBottom: 15,
+    marginBottom: 12,
   },
   toggleRow: {
     flexDirection: "row",
@@ -683,86 +582,116 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#333",
   },
-  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: "center" },
+  toggleBtn: { flex: 1, paddingVertical: 12, alignItems: "center" },
   toggleBtnActive: { backgroundColor: "#2C2C2C" },
   toggleText: { color: "#666", fontSize: 12, fontWeight: "600" },
   toggleTextActive: { color: "white" },
-  timingContent: { padding: 15, alignItems: "center" },
-  durationControl: { flexDirection: "row", alignItems: "center", gap: 15 },
+  timingContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 15,
+  },
+
+  // Yeni +/- Buton Stilleri
+  durationControl: { flexDirection: "row", alignItems: "center", gap: 20 },
   circleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#333",
     justifyContent: "center",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#444",
   },
-  bigValue: { color: "white", fontSize: 28, fontWeight: "700" },
+  bigValue: { color: "white", fontSize: 32, fontWeight: "700" },
   smallLabel: {
     color: COLORS.accent,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
-    marginTop: 2,
+    marginTop: 4,
+    letterSpacing: 1,
   },
 
-  // Modal
   modalOverlay: {
     flex: 1,
-    justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
   },
+  modalKeyboardAvoiding: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCenteredContainer: { width: "90%", maxWidth: 400 },
   modalContent: {
-    backgroundColor: "#1F1F1F",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 30,
-    paddingHorizontal: 10,
+    backgroundColor: "#1C1C1E",
+    borderRadius: 20,
+    overflow: "hidden",
   },
   modalHeader: {
-    alignItems: "flex-end",
-    padding: 15,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#333",
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#242426",
   },
-  modalDoneBtn: { color: COLORS.accent, fontSize: 16, fontWeight: "bold" },
+  modalTitle: { fontSize: 16, fontWeight: "600", color: COLORS.white },
+  headerBtn: { padding: 5 },
+  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 15 },
+  headerBtnTextSave: { color: COLORS.accent, fontSize: 15, fontWeight: "bold" },
+  modalBody: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: "#1C1C1E",
+    minHeight: 150,
+    justifyContent: "center",
+  },
 
-  // Button
+  pickerWrapper: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
+
   btn: {
     backgroundColor: COLORS.accent,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
     marginTop: 5,
   },
   btnDisabled: { backgroundColor: "#333", opacity: 0.7 },
-  btnText: { color: "#000", fontWeight: "700", fontSize: 14 },
+  btnText: { color: "#000", fontWeight: "700", fontSize: 15 },
 
-  // Submitted
   submittedContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.card,
-    padding: 10,
-    borderRadius: 10,
-    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
     alignSelf: "flex-start",
     maxWidth: "100%",
   },
   submittedIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: COLORS.accent,
     justifyContent: "center",
     alignItems: "center",
   },
-  submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500" },
+  submittedText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
   submittedSubText: {
     color: "#888",
-    fontSize: 11,
-    fontWeight: "400",
-    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 3,
   },
 });

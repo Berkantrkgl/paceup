@@ -18,13 +18,18 @@ import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 import { PlanDetailsModal } from "./plan_details";
-import { RescheduleModal } from "./reschedule_modal"; // YENİ MODAL
+import { RescheduleModal } from "./reschedule_modal";
 
 const PlansScreen = () => {
-  const { token } = useContext(AuthContext);
+  // AuthContext'ten user ve veriyi tazelemek için refreshUserData'yı da alıyoruz
+  const { token, user, refreshUserData } = useContext(AuthContext);
   const [userPlans, setUserPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Kota Bilgileri (Backend'deki isimlerle eşleşmeli)
+  const remainingReschedules = user?.remaining_reschedules ?? 0;
+  const isPremium = user?.is_premium ?? false;
 
   // Modal State'leri
   const [selectedPlanDetails, setSelectedPlanDetails] = useState<any>(null);
@@ -44,10 +49,15 @@ const PlansScreen = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setUserPlans(data);
+        // DRF Pagination kontrolü: data bir obje ise ve results varsa onu al, yoksa data'nın kendisini al.
+        const plansArray = Array.isArray(data) ? data : data.results || [];
+        setUserPlans(plansArray);
+      } else {
+        const err = await response.text();
+        console.log("Backend error on fetch:", err);
       }
     } catch (error) {
-      console.log("Fetch plans error:", error);
+      console.log("Fetch plans network error:", error);
     } finally {
       setIsLoading(false);
     }
@@ -62,6 +72,7 @@ const PlansScreen = () => {
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchPlans();
+    if (refreshUserData) await refreshUserData(); // Refresh yaparken kullanıcı kotasını da tazeleyelim
     setRefreshing(false);
   };
 
@@ -143,8 +154,22 @@ const PlansScreen = () => {
     ]);
   };
 
-  // --- YENİ: ERTELEME AKSİYONLARI ---
+  // --- YENİ: ERTELEME AKSİYONLARI (KOTA KONTROLLÜ) ---
   const handleOpenReschedule = (plan: any) => {
+    // Kota Kontrolü
+    if (!isPremium && remainingReschedules <= 0) {
+      Alert.alert(
+        "Erteleme Hakkı Doldu",
+        "Bu ayki erteleme hakkınızı doldurdunuz. Sınırsız planlama esnekliği için Premium'a geçebilirsiniz.",
+        [
+          { text: "Vazgeç", style: "cancel" },
+          // İleride Premium ekranın varsa buraya router.push yönlendirmesi eklenebilir
+          { text: "Tamam", style: "default" },
+        ],
+      );
+      return;
+    }
+
     setReschedulePlan(plan);
     setIsRescheduleModalVisible(true);
   };
@@ -155,7 +180,6 @@ const PlansScreen = () => {
     setIsLoading(true);
 
     try {
-      // Backend'de bu endpointin var olduğunu varsayıyoruz:
       const response = await fetch(
         `${API_URL}/programs/${reschedulePlan.id}/reschedule/`,
         {
@@ -171,9 +195,17 @@ const PlansScreen = () => {
       if (response.ok) {
         Alert.alert("Başarılı", "Programınız yeni tarihe göre güncellendi.");
         await fetchPlans();
+
+        // İşlem başarılıysa global User state'i tazeleyerek kotanın (Ertele (1) vs) güncellenmesini sağla
+        if (refreshUserData) {
+          await refreshUserData();
+        }
       } else {
         const err = await response.json();
-        Alert.alert("Hata", err.detail || "Güncelleme yapılamadı.");
+        Alert.alert(
+          "Hata",
+          err.error || err.detail || "Güncelleme yapılamadı.",
+        );
       }
     } catch (error) {
       Alert.alert("Hata", "Sunucu hatası.");
@@ -192,6 +224,10 @@ const PlansScreen = () => {
       Math.round(
         (plan.completed_workouts_count / plan.total_workouts_count) * 100,
       ) || 0;
+
+    // Erteleme butonu durumu
+    const isOutOfQuota = !isPremium && remainingReschedules <= 0;
+    const quotaText = isPremium ? "" : ` (${remainingReschedules})`;
 
     return (
       <Pressable
@@ -262,14 +298,23 @@ const PlansScreen = () => {
 
         {/* Butonlar Alt Kısım */}
         <View style={styles.actionRow}>
-          {/* YENİ BUTON: AI GİTTİ, ERTELE GELDİ */}
+          {/* ERTELE BUTONU (KOTA KONTROLLÜ) */}
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleOpenReschedule(plan)}
           >
-            <Ionicons name="calendar-outline" size={16} color={COLORS.text} />
-            <Text style={[styles.actionButtonText, { color: COLORS.text }]}>
-              Programı Ertele
+            <Ionicons
+              name={isOutOfQuota ? "lock-closed-outline" : "calendar-outline"}
+              size={16}
+              color={isOutOfQuota ? COLORS.textDim : COLORS.text}
+            />
+            <Text
+              style={[
+                styles.actionButtonText,
+                { color: isOutOfQuota ? COLORS.textDim : COLORS.text },
+              ]}
+            >
+              Ertele{quotaText}
             </Text>
           </TouchableOpacity>
 
@@ -462,7 +507,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
   },
-  actionButtonText: { color: COLORS.text, fontSize: 13, fontWeight: "600" },
+  actionButtonText: { fontSize: 13, fontWeight: "600" },
   verticalDivider: {
     width: 1,
     height: 20,

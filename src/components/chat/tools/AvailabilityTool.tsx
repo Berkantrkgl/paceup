@@ -12,7 +12,6 @@ import {
 
 // --- TYPES ---
 export interface AvailabilityData {
-  frequency: number; // Haftada kaç gün
   days: string[]; // ["Mon", "Wed", "Fri"]
   long_run: string | null; // "Sun" veya null
 }
@@ -40,26 +39,18 @@ export const AvailabilityTool = ({
   const [isEditing, setIsEditing] = useState(true);
 
   // --- STATE ---
-  const [frequency, setFrequency] = useState(3); // Varsayılan 3 gün
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [longRunDay, setLongRunDay] = useState<string | null>(null);
 
-  // Frequency değiştiğinde validation uyarısı vermemek için,
-  // submit butonunu disable edeceğiz, ekstra bir side-effect gerekmez.
-
   // --- HANDLERS ---
-
-  const incrementFreq = () => setFrequency((prev) => Math.min(prev + 1, 7));
-  const decrementFreq = () => setFrequency((prev) => Math.max(prev - 1, 1));
-
   const toggleDay = (dayId: string) => {
     if (selectedDays.includes(dayId)) {
-      // Çıkarıyorsa
+      // Listeden çıkar
       setSelectedDays((prev) => prev.filter((d) => d !== dayId));
-      // Eğer çıkardığı gün, seçili uzun koşu günüyse, uzun koşuyu sıfırla
+      // Eğer çıkardığı gün, seçili uzun koşu günüyse, uzun koşuyu da sıfırla
       if (longRunDay === dayId) setLongRunDay(null);
     } else {
-      // Ekliyorsa
+      // Listeye ekle
       setSelectedDays((prev) => [...prev, dayId]);
     }
   };
@@ -74,17 +65,14 @@ export const AvailabilityTool = ({
   };
 
   const handleSubmit = () => {
-    // VALIDASYON: Seçilen gün sayısı, istenen sıklıktan az olamaz.
-    if (selectedDays.length < frequency) {
-      Alert.alert(
-        "Eksik Gün Seçimi",
-        `Haftada ${frequency} gün koşmak istiyorsun, ancak sadece ${selectedDays.length} gün seçtin. Lütfen ${frequency - selectedDays.length} gün daha işaretle.`,
-      );
+    // VALIDASYON: En az 1 gün seçilmiş olmalı
+    if (selectedDays.length < 1) {
+      Alert.alert("Eksik Seçim", "Lütfen koşmak istediğin günleri işaretle.");
       return;
     }
 
+    // ARTIK SADECE GÜNLER VE UZUN KOŞU GİDİYOR
     const payload: AvailabilityData = {
-      frequency: frequency,
       days: selectedDays,
       long_run: longRunDay,
     };
@@ -101,7 +89,6 @@ export const AvailabilityTool = ({
 
   // --- 1. SUBMITTED VIEW ---
   if (submitted || !isEditing) {
-    // Günleri sıralı göstermek için (Pzt, Sal...)
     const sortedDays = ALL_DAYS.filter((d) => selectedDays.includes(d.id)).map(
       (d) => d.label,
     );
@@ -115,7 +102,7 @@ export const AvailabilityTool = ({
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedText}>
-            {frequency} Gün/Hafta • Uzun: {getLongRunLabel()}
+            Haftada {selectedDays.length} Gün • Uzun: {getLongRunLabel()}
           </Text>
           <Text style={styles.submittedSubText} numberOfLines={1}>
             Müsait: {daySummary}
@@ -127,8 +114,8 @@ export const AvailabilityTool = ({
 
   // --- 2. EDIT VIEW ---
 
-  // Submit butonu ne zaman aktif?
-  const isValid = selectedDays.length >= frequency;
+  // Submit butonu sadece en az 1 gün seçiliyse aktif olacak
+  const isValid = selectedDays.length > 0;
 
   return (
     <View style={styles.container}>
@@ -137,29 +124,9 @@ export const AvailabilityTool = ({
         <Ionicons name="time-outline" size={16} color={COLORS.accent} />
       </View>
 
-      {/* A. SIKLIK (FREQUENCY) */}
-      <Text style={styles.label}>1. Haftada kaç gün koşmak istersin?</Text>
-      <View style={styles.freqContainer}>
-        <TouchableOpacity style={styles.circleBtn} onPress={decrementFreq}>
-          <Ionicons name="remove" size={20} color="#CCC" />
-        </TouchableOpacity>
-
-        <View style={styles.freqValueBox}>
-          <Text style={styles.bigValue}>{frequency}</Text>
-          <Text style={styles.smallLabel}>GÜN</Text>
-        </View>
-
-        <TouchableOpacity style={styles.circleBtn} onPress={incrementFreq}>
-          <Ionicons name="add" size={20} color="white" />
-        </TouchableOpacity>
-      </View>
-
-      {/* B. MÜSAİT GÜNLER */}
+      {/* A. MÜSAİT GÜNLER */}
       <View style={styles.labelRow}>
-        <Text style={styles.label}>2. Koşu için hangi günler müsaitsin?</Text>
-        <Text style={[styles.hint, !isValid && { color: COLORS.accent }]}>
-          (En az {frequency} gün)
-        </Text>
+        <Text style={styles.label}>1. Koşu için hangi günler müsaitsin?</Text>
       </View>
 
       <View style={styles.daysWrap}>
@@ -181,11 +148,11 @@ export const AvailabilityTool = ({
         })}
       </View>
 
-      {/* C. UZUN KOŞU (OPSİYONEL - SADECE SEÇİLEN GÜNLERDEN) */}
+      {/* B. UZUN KOŞU (OPSİYONEL - SADECE SEÇİLEN GÜNLERDEN) */}
       {selectedDays.length > 0 && (
         <View style={styles.sectionFade}>
           <Text style={styles.label}>
-            3. Uzun koşu için tercih ettiğin gün?
+            2. Uzun koşu için tercih ettiğin gün?
           </Text>
           <ScrollView
             horizontal
@@ -193,7 +160,6 @@ export const AvailabilityTool = ({
             style={styles.longRunScroll}
             contentContainerStyle={{ paddingRight: 20 }}
           >
-            {/* "Fark Etmez" Seçeneği gibi davranması için seçim iptal edilebilir */}
             {selectedDays.map((dayId) => {
               const dayLabel = ALL_DAYS.find((d) => d.id === dayId)?.label;
               const isLongRun = longRunDay === dayId;
@@ -222,7 +188,8 @@ export const AvailabilityTool = ({
             })}
           </ScrollView>
           <Text style={styles.hintSmall}>
-            * İsteğe bağlıdır. Seçmezsen AI en uygun günü belirler.
+            * İsteğe bağlıdır. Seçmezsen senin için en uygun günü ben
+            belirlerim.
           </Text>
         </View>
       )}
@@ -234,10 +201,16 @@ export const AvailabilityTool = ({
         onPress={handleSubmit}
       >
         <Text style={styles.btnText}>
-          {isValid
-            ? "Programı Tamamla 🏁"
-            : `Lütfen ${frequency - selectedDays.length} gün daha seç`}
+          {isValid ? "Seçimi Tamamla" : "En az 1 gün seçmelisin"}
         </Text>
+        {isValid && (
+          <Ionicons
+            name="arrow-forward"
+            size={16}
+            color="#000"
+            style={{ marginLeft: 5 }}
+          />
+        )}
       </TouchableOpacity>
     </View>
   );
@@ -249,7 +222,7 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 5,
   },
   title: { color: "white", fontWeight: "700", fontSize: 14 },
   label: {
@@ -263,43 +236,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 10,
+    marginBottom: 5,
     marginTop: 10,
   },
-  hint: { color: "#666", fontSize: 11, fontWeight: "500" },
   hintSmall: { color: "#555", fontSize: 10, marginTop: 8, fontStyle: "italic" },
 
-  // A. Frequency
-  freqContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    paddingVertical: 15,
-    borderWidth: 1,
-    borderColor: "#333",
-    gap: 20,
-    marginBottom: 10,
-  },
-  freqValueBox: { alignItems: "center", width: 60 },
-  bigValue: { color: "white", fontSize: 28, fontWeight: "700" },
-  smallLabel: {
-    color: COLORS.accent,
-    fontSize: 12,
-    fontWeight: "700",
-    marginTop: 2,
-  },
-  circleBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#333",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  // B. Days
+  // Days
   daysWrap: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -309,11 +251,11 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: "#2C2C2C",
+    backgroundColor: "#252525",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#3A3A3C",
   },
   dayCircleActive: {
     backgroundColor: COLORS.accent,
@@ -322,19 +264,19 @@ const styles = StyleSheet.create({
   dayText: { color: "#AAA", fontSize: 11, fontWeight: "600" },
   dayTextActive: { color: "#000", fontWeight: "700" },
 
-  // C. Long Run Chips
+  // Long Run Chips
   sectionFade: { marginTop: 5, marginBottom: 15 },
   longRunScroll: { flexDirection: "row" },
   chip: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2C2C2C",
-    paddingVertical: 8,
+    backgroundColor: "#252525",
+    paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 20,
     marginRight: 8,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: "#3A3A3C",
   },
   chipActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
   chipText: { color: "#AAA", fontSize: 12, fontWeight: "600" },
@@ -343,38 +285,40 @@ const styles = StyleSheet.create({
   // Main Button
   btn: {
     backgroundColor: COLORS.accent,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 14,
     marginTop: 5,
   },
   btnDisabled: { backgroundColor: "#333", opacity: 0.7 },
-  btnText: { color: "#000", fontWeight: "700", fontSize: 14 },
+  btnText: { color: "#000", fontWeight: "700", fontSize: 15 },
 
   // Submitted
   submittedContainer: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.card,
-    padding: 10,
-    borderRadius: 10,
-    gap: 10,
+    padding: 12,
+    borderRadius: 12,
+    gap: 12,
     alignSelf: "flex-start",
     maxWidth: "100%",
   },
   submittedIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: COLORS.accent,
     justifyContent: "center",
     alignItems: "center",
   },
-  submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500" },
+  submittedText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
   submittedSubText: {
     color: "#888",
-    fontSize: 11,
-    fontWeight: "400",
-    marginTop: 2,
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 3,
   },
 });

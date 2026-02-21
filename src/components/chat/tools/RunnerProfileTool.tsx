@@ -1,25 +1,47 @@
 import { COLORS } from "@/constants/Colors";
-import { API_URL } from "@/constants/Config"; // Backend URL
-import { AuthContext } from "@/utils/authContext"; // Token için
+import { API_URL } from "@/constants/Config";
+import { AuthContext } from "@/utils/authContext";
 import { Ionicons } from "@expo/vector-icons";
+import { Picker } from "@react-native-picker/picker";
 import React, { useContext, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+
+// --- YARDIMCI FONKSİYONLAR & SABİTLER ---
+const generateNumberRange = (start: number, end: number, suffix: string) => {
+  const options = [];
+  for (let i = start; i <= end; i++) {
+    // Suffix'i (cm, kg) Picker içinde gösteriyoruz
+    options.push({ label: `${i} ${suffix}`, value: String(i) });
+  }
+  return options;
+};
+
+const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
+const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
+
+const paceToSeconds = (paceStr: string): number => {
+  const parts = paceStr.split(":");
+  if (parts.length !== 2) return 360;
+  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+};
 
 // --- TYPES ---
 export interface RunnerProfileData {
   weight: string;
   height: string;
   gender: "male" | "female";
-  pace: string; // "5:30" formatında
-  experience: "beginner" | "intermediate" | "advanced";
+  pace: string; // "05:30" formatında
 }
 
 interface RunnerProfileToolProps {
@@ -28,20 +50,11 @@ interface RunnerProfileToolProps {
   initialData?: Partial<RunnerProfileData>;
 }
 
-// Varsayılan boş veri (Context yüklenmezse diye)
 const DEFAULT_DATA: RunnerProfileData = {
   weight: "70",
   height: "175",
   gender: "male",
-  pace: "6:00",
-  experience: "beginner",
-};
-
-// --- HELPER: Pace String to Seconds (5:30 -> 330) ---
-const paceToSeconds = (paceStr: string): number => {
-  const parts = paceStr.split(":");
-  if (parts.length !== 2) return 360; // Hata varsa varsayılan 6:00
-  return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+  pace: "06:00",
 };
 
 export const RunnerProfileTool = ({
@@ -49,16 +62,55 @@ export const RunnerProfileTool = ({
   submitted,
   initialData,
 }: RunnerProfileToolProps) => {
-  const { getValidToken, refreshUserData } = useContext(AuthContext); // refreshUserData ile app state'i de güncelleriz
-
+  const { getValidToken, refreshUserData } = useContext(AuthContext);
   const [isEditing, setIsEditing] = useState(false);
-  const [isSaving, setIsSaving] = useState(false); // Backend isteği için loading state
+  const [isSaving, setIsSaving] = useState(false);
 
-  // Form verisi
   const [formData, setFormData] = useState<RunnerProfileData>({
     ...DEFAULT_DATA,
     ...initialData,
   } as RunnerProfileData);
+
+  // --- MODAL STATE ---
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editConfig, setEditConfig] = useState<any>({
+    key: "",
+    title: "",
+    type: "picker",
+    options: [],
+  });
+
+  // Geçici Modal Verileri
+  const [tempValue, setTempValue] = useState<string>("");
+  const [tempPace, setTempPace] = useState({ min: 6, sec: 0 });
+
+  // --- MODAL YÖNETİMİ ---
+  const openEditor = (
+    key: keyof RunnerProfileData,
+    title: string,
+    type: "picker" | "pace",
+    options: any[] = [],
+  ) => {
+    setEditConfig({ key, title, type, options });
+    if (type === "pace") {
+      const [m, s] = formData.pace.split(":").map(Number);
+      setTempPace({ min: m || 6, sec: s || 0 });
+    } else {
+      setTempValue(formData[key]);
+    }
+    setModalVisible(true);
+  };
+
+  const saveModalChange = () => {
+    if (editConfig.type === "pace") {
+      const mStr = tempPace.min.toString().padStart(2, "0");
+      const sStr = tempPace.sec.toString().padStart(2, "0");
+      setFormData({ ...formData, pace: `${mStr}:${sStr}` });
+    } else {
+      setFormData({ ...formData, [editConfig.key]: tempValue });
+    }
+    setModalVisible(false);
+  };
 
   // --- BACKEND UPDATE LOGIC ---
   const handleSaveAndContinue = async () => {
@@ -67,17 +119,13 @@ export const RunnerProfileTool = ({
       const token = await getValidToken();
       if (!token) throw new Error("Oturum hatası");
 
-      // 1. Backend'in beklediği formata çevir (String -> Number vb.)
       const payload = {
-        weight: parseFloat(formData.weight),
-        height: parseInt(formData.height),
-        gender: formData.gender, // Backend 'male'/'female' kabul ediyorsa
-        experience_level: formData.experience,
-        // Backend pace'i saniye cinsinden (Int) bekliyordu:
+        weight: parseFloat(formData.weight) || 0,
+        height: parseInt(formData.height) || 0,
+        gender: formData.gender,
         current_pace: paceToSeconds(formData.pace),
       };
 
-      // 2. PATCH İsteği At
       const response = await fetch(`${API_URL}/users/me/`, {
         method: "PATCH",
         headers: {
@@ -87,27 +135,18 @@ export const RunnerProfileTool = ({
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        throw new Error("Profil güncellenemedi.");
-      }
+      if (!response.ok) throw new Error("Profil güncellenemedi.");
 
-      // 3. Başarılıysa Global State'i tazele (HomeScreen vb. güncellensin)
       await refreshUserData();
-
-      // 4. Chatbot'a devam et
       onSubmit({ status: "updated", ...formData });
     } catch (error) {
-      Alert.alert(
-        "Hata",
-        "Profil güncellenirken bir sorun oluştu. Lütfen tekrar dene."
-      );
+      Alert.alert("Hata", "Profil güncellenirken bir sorun oluştu.");
       console.error(error);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // --- VIEW MODE RENDERERS ---
   const renderInfoBadge = (icon: any, label: string, value: string) => (
     <View style={styles.infoBadge}>
       <View style={styles.badgeIconBox}>
@@ -120,7 +159,67 @@ export const RunnerProfileTool = ({
     </View>
   );
 
-  // --- 1. SUBMITTED STATE ---
+  // --- MODAL İÇERİĞİ ---
+  const renderModalContent = () => {
+    if (editConfig.type === "pace") {
+      return (
+        <View style={styles.dualPickerContainer}>
+          <View style={styles.pickerColumn}>
+            <Text style={styles.columnLabel}>Dakika</Text>
+            <Picker
+              selectedValue={tempPace.min}
+              onValueChange={(v) => setTempPace({ ...tempPace, min: v })}
+              style={styles.pickerStyleHalf}
+              itemStyle={styles.pickerItemStyle}
+            >
+              {PACE_MINUTES.map((m) => (
+                <Picker.Item key={m} label={m.toString()} value={m} />
+              ))}
+            </Picker>
+          </View>
+          <Text style={styles.pickerSeparator}>:</Text>
+          <View style={styles.pickerColumn}>
+            <Text style={styles.columnLabel}>Saniye</Text>
+            <Picker
+              selectedValue={tempPace.sec}
+              onValueChange={(v) => setTempPace({ ...tempPace, sec: v })}
+              style={styles.pickerStyleHalf}
+              itemStyle={styles.pickerItemStyle}
+            >
+              {PACE_SECONDS.map((s) => (
+                <Picker.Item
+                  key={s}
+                  label={s < 10 ? `0${s}` : s.toString()}
+                  value={s}
+                />
+              ))}
+            </Picker>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.pickerWrapper}>
+        <Picker
+          selectedValue={tempValue}
+          onValueChange={(itemValue) => setTempValue(itemValue)}
+          itemStyle={styles.pickerItemStyle}
+          dropdownIconColor="white"
+          style={styles.pickerStyleFull}
+        >
+          {editConfig.options.map((opt: any) => (
+            <Picker.Item
+              key={opt.value}
+              label={opt.label.toString()}
+              value={opt.value}
+            />
+          ))}
+        </Picker>
+      </View>
+    );
+  };
+
   if (submitted) {
     return (
       <View style={styles.submittedContainer}>
@@ -132,7 +231,6 @@ export const RunnerProfileTool = ({
     );
   }
 
-  // --- 2. EDIT MODE ---
   if (isEditing) {
     return (
       <View style={styles.container}>
@@ -141,7 +239,7 @@ export const RunnerProfileTool = ({
           <Ionicons name="settings-sharp" size={16} color={COLORS.textDim} />
         </View>
 
-        {/* Cinsiyet Seçimi (Segmented) */}
+        {/* Cinsiyet Seçimi */}
         <View style={styles.segmentContainer}>
           <TouchableOpacity
             style={[
@@ -187,77 +285,56 @@ export const RunnerProfileTool = ({
           </TouchableOpacity>
         </View>
 
-        {/* Boy & Kilo (Yan Yana) */}
+        {/* Boy & Kilo Row (YENİ KART TASARIMI) */}
         <View style={styles.rowInputs}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Boy (cm)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.height}
-              onChangeText={(t) => setFormData({ ...formData, height: t })}
-              keyboardType="numeric"
-              placeholder="175"
-              placeholderTextColor="#555"
-            />
-          </View>
-          <View style={{ width: 10 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.inputLabel}>Kilo (kg)</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.weight}
-              onChangeText={(t) => setFormData({ ...formData, weight: t })}
-              keyboardType="numeric"
-              placeholder="70"
-              placeholderTextColor="#555"
-            />
-          </View>
+          <Pressable
+            style={styles.pickerTriggerCard}
+            onPress={() =>
+              openEditor(
+                "height",
+                "Boy Seçimi",
+                "picker",
+                generateNumberRange(140, 230, "cm"),
+              )
+            }
+          >
+            <Text style={styles.inputLabelCenter}>Boy</Text>
+            <Text style={styles.pickerTriggerText}>
+              {formData.height} <Text style={styles.unitText}>cm</Text>
+            </Text>
+          </Pressable>
+          <View style={{ width: 12 }} />
+          <Pressable
+            style={styles.pickerTriggerCard}
+            onPress={() =>
+              openEditor(
+                "weight",
+                "Kilo Seçimi",
+                "picker",
+                generateNumberRange(40, 160, "kg"),
+              )
+            }
+          >
+            <Text style={styles.inputLabelCenter}>Kilo</Text>
+            <Text style={styles.pickerTriggerText}>
+              {formData.weight} <Text style={styles.unitText}>kg</Text>
+            </Text>
+          </Pressable>
         </View>
 
-        {/* Pace Input */}
+        {/* Pace Input (YENİ KART TASARIMI) */}
         <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Ortalama Pace (dk:sn)</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.pace}
-            onChangeText={(t) => setFormData({ ...formData, pace: t })}
-            placeholder="05:30"
-            placeholderTextColor="#555"
-          />
+          <Pressable
+            style={styles.pickerTriggerCard}
+            onPress={() => openEditor("pace", "Ortalama Pace Seçimi", "pace")}
+          >
+            <Text style={styles.inputLabelCenter}>Ortalama Pace</Text>
+            <Text style={styles.pickerTriggerText}>
+              {formData.pace} <Text style={styles.unitText}>/km</Text>
+            </Text>
+          </Pressable>
         </View>
 
-        {/* Deneyim Seviyesi */}
-        <Text style={styles.inputLabel}>Deneyim</Text>
-        <View style={styles.experienceRow}>
-          {(["beginner", "intermediate", "advanced"] as const).map((lvl) => (
-            <TouchableOpacity
-              key={lvl}
-              style={[
-                styles.expChip,
-                formData.experience === lvl && styles.expChipActive,
-              ]}
-              onPress={() => setFormData({ ...formData, experience: lvl })}
-            >
-              <Text
-                style={[
-                  styles.expText,
-                  formData.experience === lvl && {
-                    color: "#000",
-                    fontWeight: "700",
-                  },
-                ]}
-              >
-                {lvl === "beginner"
-                  ? "Başlangıç"
-                  : lvl === "intermediate"
-                  ? "Orta"
-                  : "İleri"}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {/* Aksiyonlar */}
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={styles.btnGhost}
@@ -266,7 +343,6 @@ export const RunnerProfileTool = ({
           >
             <Text style={styles.btnGhostText}>İptal</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.btn, styles.btnPrimary]}
             onPress={handleSaveAndContinue}
@@ -279,20 +355,53 @@ export const RunnerProfileTool = ({
             )}
           </TouchableOpacity>
         </View>
+
+        {/* CENTERED MODAL */}
+        <Modal visible={modalVisible} transparent animationType="fade">
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setModalVisible(false)}
+          >
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              style={styles.modalKeyboardAvoiding}
+            >
+              <Pressable
+                style={styles.modalCenteredContainer}
+                onPress={(e) => e.stopPropagation()}
+              >
+                <View style={styles.modalContent}>
+                  <View style={styles.modalHeader}>
+                    <Pressable
+                      onPress={() => setModalVisible(false)}
+                      style={styles.headerBtn}
+                    >
+                      <Text style={styles.headerBtnTextCancel}>Vazgeç</Text>
+                    </Pressable>
+                    <Text style={styles.modalTitle}>{editConfig.title}</Text>
+                    <Pressable
+                      onPress={saveModalChange}
+                      style={styles.headerBtn}
+                    >
+                      <Text style={styles.headerBtnTextSave}>Kaydet</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.modalBody}>{renderModalContent()}</View>
+                </View>
+              </Pressable>
+            </KeyboardAvoidingView>
+          </Pressable>
+        </Modal>
       </View>
     );
   }
 
-  // --- 3. VIEW MODE (Default - ID Card Style) ---
   return (
     <View style={styles.container}>
       <Text style={styles.questionText}>
         Senin için bu profil verilerini kullanıyorum:
       </Text>
-
-      {/* ID CARD TASARIMI */}
       <View style={styles.idCard}>
-        {/* Üst Satır: Profil Özeti */}
         <View style={styles.idHeader}>
           <View style={styles.avatarCircle}>
             <Ionicons
@@ -308,28 +417,20 @@ export const RunnerProfileTool = ({
             </Text>
           </View>
         </View>
-
         <View style={styles.divider} />
-
-        {/* Grid Veriler */}
         <View style={styles.gridContainer}>
           {renderInfoBadge(
             "speedometer-outline",
             "Pace",
-            `${formData.pace}/km`
+            `${formData.pace}/km`,
           )}
           {renderInfoBadge(
-            "cellular-outline",
-            "Seviye",
-            formData.experience === "beginner"
-              ? "Başlangıç"
-              : formData.experience === "intermediate"
-              ? "Orta"
-              : "İleri"
+            "person-outline",
+            "Cinsiyet",
+            formData.gender === "male" ? "Erkek" : "Kadın",
           )}
         </View>
       </View>
-
       <View style={styles.actionRow}>
         <TouchableOpacity
           style={[styles.btn, styles.btnSecondary]}
@@ -337,7 +438,6 @@ export const RunnerProfileTool = ({
         >
           <Text style={styles.btnTextSecondary}>Düzenle</Text>
         </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.btn, styles.btnPrimary]}
           onPress={() => onSubmit({ status: "confirmed", ...formData })}
@@ -349,7 +449,6 @@ export const RunnerProfileTool = ({
   );
 };
 
-// --- STYLES ---
 const styles = StyleSheet.create({
   container: { width: "100%" },
   title: { color: COLORS.white, fontWeight: "700", fontSize: 14 },
@@ -361,7 +460,6 @@ const styles = StyleSheet.create({
   },
   questionText: { color: "#DDD", marginBottom: 12, fontSize: 14 },
 
-  // ID Card Styles
   idCard: {
     backgroundColor: "#252525",
     borderRadius: 16,
@@ -393,7 +491,6 @@ const styles = StyleSheet.create({
   },
   idSubtitle: { color: COLORS.white, fontSize: 16, fontWeight: "600" },
   divider: { height: 1, backgroundColor: "#333", marginBottom: 12 },
-
   gridContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -419,22 +516,39 @@ const styles = StyleSheet.create({
   badgeLabel: { color: "#888", fontSize: 10, fontWeight: "600" },
   badgeValue: { color: "#EEE", fontSize: 13, fontWeight: "700" },
 
-  // Inputs
-  inputGroup: { marginBottom: 12 },
+  inputGroup: { marginBottom: 20 },
   rowInputs: { flexDirection: "row", marginBottom: 12 },
-  inputLabel: { color: "#888", fontSize: 12, marginBottom: 6, marginLeft: 4 },
-  input: {
-    backgroundColor: "#2C2C2C",
-    color: "white",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    fontSize: 14,
+
+  // --- YENİ KART TASARIMI ---
+  pickerTriggerCard: {
+    flex: 1,
+    backgroundColor: "#252525", // Biraz daha açık, karta benzeyen renk
+    paddingVertical: 18,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#444",
+    borderColor: "#3A3A3C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pickerTriggerText: {
+    color: "white",
+    fontSize: 22,
+    fontWeight: "bold",
+    marginTop: 6,
+  },
+  unitText: {
+    fontSize: 14,
+    color: "#888",
+    fontWeight: "500",
+  },
+  inputLabelCenter: {
+    color: "#888",
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 
-  // Segmented Control (Gender)
   segmentContainer: {
     flexDirection: "row",
     backgroundColor: "#2C2C2C",
@@ -455,21 +569,6 @@ const styles = StyleSheet.create({
   segmentText: { color: "#888", fontSize: 13, fontWeight: "600" },
   segmentTextActive: { color: "#000", fontWeight: "700" },
 
-  // Experience Chips
-  experienceRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
-  expChip: {
-    flex: 1,
-    backgroundColor: "#2C2C2C",
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: "#444",
-    alignItems: "center",
-  },
-  expChipActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  expText: { color: "#AAA", fontSize: 11, fontWeight: "600" },
-
-  // Buttons
   actionRow: { flexDirection: "row", gap: 10, marginTop: 5 },
   btn: {
     flex: 1,
@@ -493,7 +592,6 @@ const styles = StyleSheet.create({
   btnTextSecondary: { color: "white", fontSize: 13, fontWeight: "600" },
   btnGhostText: { color: "#888", fontSize: 13 },
 
-  // Submitted
   submittedContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -515,4 +613,75 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   submittedText: { color: "#CCC", fontSize: 13, fontWeight: "500" },
+
+  // --- MODAL STYLES ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalKeyboardAvoiding: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCenteredContainer: { width: "90%", maxWidth: 400 },
+  modalContent: {
+    backgroundColor: "#1C1C1E",
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#242426",
+  },
+  modalTitle: { fontSize: 16, fontWeight: "600", color: COLORS.white },
+  headerBtn: { padding: 5 },
+  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 15 },
+  headerBtnTextSave: { color: COLORS.accent, fontSize: 15, fontWeight: "bold" },
+  modalBody: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: "#1C1C1E",
+    minHeight: 150,
+    justifyContent: "center",
+  },
+
+  pickerWrapper: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
+
+  // YAZILARI ORTALAYAN STİL BURADA:
+  pickerStyleFull: { color: "white", width: "100%" },
+  pickerItemStyle: { color: "white", fontSize: 22, textAlign: "center" },
+
+  dualPickerContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+    paddingHorizontal: 20,
+  },
+  pickerColumn: { flex: 1, alignItems: "center" },
+  pickerStyleHalf: { color: "white", width: "100%" },
+  columnLabel: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    marginBottom: -10,
+    zIndex: 1,
+  },
+  pickerSeparator: {
+    fontSize: 30,
+    color: "white",
+    paddingBottom: 20,
+    paddingHorizontal: 10,
+  },
 });
