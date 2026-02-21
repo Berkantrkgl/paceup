@@ -15,61 +15,31 @@ logger = logging.getLogger(__name__)
 
 load_dotenv(".env", override=True)
 
-async def setup_postgres_connection():
+def get_checkpointer() -> AsyncPostgresSaver:
+    """AsyncPostgresSaver instance döndürür."""
     DB_URI = os.getenv("DB_URI")
     if not DB_URI:
         raise ValueError("DB_URI environment variable is not set")
+    return AsyncPostgresSaver.from_conn_string(DB_URI)
 
+async def check_thread_exists(checkpointer: AsyncPostgresSaver, thread_id: str) -> bool:
+    """
+    Checkpointer üzerinden thread'in var olup olmadığını kontrol eder.
+    """
     try:
-        # Create the pool with more explicit error handling
-        pool = AsyncConnectionPool(
-            conninfo=DB_URI,
-            max_size=20,
-            kwargs={"autocommit": True, "prepare_threshold": 0},
-            open=False,
-        )
-
-        # Open the pool with error handling
-        try:
-            await pool.open()
-        except Exception as e:
-            print(f"❌ DB Bağlantı Hatası: {e}")
-            raise e  # <--- BU SATIR ÇOK ÖNEMLİ! Hatayı yukarı fırlatmalı.
-
-        # Create the saver
-        memory = AsyncPostgresSaver(pool)
-
-        # Setup with error handling
-        try:
-            await memory.setup()
-        except Exception as e:
-            if "already exists" in str(e):
-                # If tables exist, we can continue
-                pass
-            else:
-                raise Exception(f"Failed to setup PostgreSQL tables: {str(e)}")
-
-        return memory, pool
-
+        config = {"configurable": {"thread_id": thread_id}}
+        state = await checkpointer.aget_tuple(config)
+        exists = state is not None
+        
+        if exists:
+            logger.info(f"✅ Thread mevcut: {thread_id}")
+        else:
+            logger.info(f"🆕 Yeni thread: {thread_id}")
+            
+        return exists
     except Exception as e:
-        raise Exception(f"Database initialization failed: {str(e)}")
-
-async def check_thread_exists(pool, thread_id: str) -> bool:
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                SELECT EXISTS(
-                    SELECT 1 
-                    FROM checkpoints 
-                    WHERE thread_id = %s
-                    LIMIT 1
-                )
-                """,
-                (thread_id,),
-            )
-            result = await cur.fetchone()
-            return result[0] if result else False
+        logger.error(f"❌ Thread kontrol hatası: {e}")
+        return False
         
         
 # Backend URL Yapılandırması
@@ -77,7 +47,6 @@ BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000/api")
 TOKEN_REFRESH_URL = f"{BACKEND_URL}/token/refresh/"
 
 # --- YARDIMCI FONKSİYONLAR ---
-
 def check_token_expiration(token: str, buffer_seconds: int = 60) -> bool:
     """
     Token'ın süresinin dolup dolmadığını kontrol eder.
@@ -192,7 +161,7 @@ def call_api(
 def fetch_user_context_data(config: RunnableConfig) -> dict:
     """
     Bu fonksiyon Tool değildir. Main Loop içinde system prompt'u 
-    doldurmak için çağrılır.
+    doldurmak için çağrılır. Chatbot'a o anki kullanıcının "durumunu" fısıldar.
     """
     user_data = call_api("GET", "/users/me/", config)
     # Hata durumunda boş context dön ki sistem patlamasın
@@ -204,6 +173,11 @@ def fetch_user_context_data(config: RunnableConfig) -> dict:
 
     now = datetime.datetime.now()
     
+    # Kalan erteleme hakkını güvenli şekilde çek
+    # (Backend UserSerializer'dan get_remaining_reschedules() methodunu 'remaining_reschedules' olarak döndürdüğünü varsayıyoruz)
+    remaining_reschedules = user_data.get("remaining_reschedules", 0)
+    is_premium = user_data.get("is_premium", False)
+
     context = {
         "meta": {
             "current_date": now.strftime("%Y-%m-%d"),
@@ -213,12 +187,13 @@ def fetch_user_context_data(config: RunnableConfig) -> dict:
         "user_profile": {
             "name": user_data.get("first_name") or user_data.get("email"),
             "weight": user_data.get("weight"),
-            "experience": user_data.get("experience_level"),
-            "current_pace_seconds": user_data.get("current_pace"),
+            "current_pace_seconds": user_data.get("current_pace", 480), # Default 480 eklendi
+            "is_premium": is_premium,
+            "remaining_reschedules": remaining_reschedules
         },
         "stats": {
             "total_distance_km": stats_data.get("total_distance"),
-            "weekly_progress": f"{stats_data.get('weekly_progress')}/{stats_data.get('weekly_goal')}",
+            "weekly_progress": f"{stats_data.get('weekly_progress', 0)}/{stats_data.get('weekly_goal', 0)}",
             "current_streak": stats_data.get("current_streak")
         },
         "active_program": None
@@ -251,7 +226,6 @@ def fetch_user_info_for_program_creation(config: RunnableConfig) -> dict:
     logger.info("🔍 DATA FETCH: Program oluşturma için kullanıcı verisi çekiliyor...")
     
     # 1. USER PROFILE (/users/me/)
-    # Backend Serializer: height, weight, gender, current_max_distance, total_workouts vb. döner.
     user_res = call_api("GET", "/users/me/", config)
     
     if "error" in user_res:
@@ -259,21 +233,19 @@ def fetch_user_info_for_program_creation(config: RunnableConfig) -> dict:
         return {"error": "User data fetch failed"}
 
     # 2. STATS SUMMARY (/stats/summary/)
-    # Hesaplanan güncel toplamları (total_distance, weekly_progress) buradan alırız.
     stats_res = call_api("GET", "/stats/summary/", config)
     
-    # Veriyi Güvenli Çekme (None gelirse varsayılan değer ata)
+    # Veriyi Güvenli Çekme (Experience Level kaldırıldı, model adları eşitlendi)
     profile = {
         "name": user_res.get("first_name") or user_res.get("email", "Runner"),
         "weight": user_res.get("weight", "Unknown"),
         "height": user_res.get("height", "Unknown"),
         "gender": user_res.get("gender", "Unknown"), # male/female
-        "experience_level": user_res.get("experience_level", "beginner"),
-        "current_pace": user_res.get("current_pace", 360), # saniye/km
-        "max_distance": user_res.get("current_max_distance", 0.0), # km
+        "current_pace": user_res.get("current_pace", 480), # 480 Fallback
+        "max_distance": user_res.get("max_runned_distance", 0.0), # DİKKAT: DB'deki adı max_runned_distance
     }
 
-    # İstatistikler (Stats endpointi daha güncel hesaplama yapar)
+    # İstatistikler
     history = {
         "total_workouts": stats_res.get("total_workouts", 0),
         "total_distance": stats_res.get("total_distance", 0.0),
@@ -287,3 +259,10 @@ def fetch_user_info_for_program_creation(config: RunnableConfig) -> dict:
     
     logger.info(f"✅ USER DATA READY: Gender={profile['gender']}, Height={profile['height']}, MaxDist={profile['max_distance']}")
     return final_context
+
+
+
+def has_tools(message):
+    if message.tool_calls and len(message.tool_calls) > 0:
+        return True
+    return False

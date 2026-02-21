@@ -1,86 +1,50 @@
-from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_aws import ChatBedrock
-import uuid
-import time
-import concurrent.futures
-import threading
+# helper_agents.py
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_aws import ChatBedrockConverse
+from agent.utils.helper_functions import has_tools
 
-from dotenv import load_dotenv
-
-def summarize_with_timeout(messages, timeout_seconds=15):
-    """
-    Özetleme işlemini belirtilen süre içinde tamamlamaya çalışır.
-    Timeout aşılırsa, ilk SystemMessage ve son mesajı döndürür.
-    """
-    first_message = messages[0]
-    last_message = messages[-1]
+def summarize_messages(llm: ChatBedrockConverse, messages: list, summary: str = None):
+    last_human_message = messages[-1]
     
-    # Özetleme işlemi için thread
-    def summarize_task():
-        try:
+    if summary:
+        summary_message = HumanMessage(content=f"""
+Expand the summary below by incorporating the above conversation while preserving context, key points, and
+user intent. Rework the summary if needed. Ensure that no critical information is lost and that the
+conversation can continue naturally without gaps. Keep the summary concise yet informative.
+Only return the updated summary.
 
-            load_dotenv(".env", override=True)
-            llm = ChatBedrock(
-                model_id="amazon.nova-lite-v1:0",
-                region="us-east-1",
-                model_kwargs=dict(temperature=0.6),
-                verbose=True
-            )
-            
-            # Mesaj içeriklerini birleştir (ilk ve son hariç)
-            conversation_content = "\n\n".join([
-                f"{'Kullanıcı' if isinstance(msg, HumanMessage) else 'Asistan' if isinstance(msg, AIMessage) else 'Araç'}: {msg.content}"
-                for msg in messages[1:-1]
-            ])
-            
-            # Özet için prompt
-            summary_prompt = f"""
-            Aşağıda bir konuşmanın geçmiş kısmı verilmiştir. Bu konuşmayı özetleyerek tek bir mesaj haline getir.
-            Konuşmayla ilgili önemli bilgileri, bağlamı ve sorulan ana soruları dahil et.
-            
-            Konuşma:
-            {conversation_content}
-            
-            Lütfen yukarıdaki konuşmanın kısa ama kapsamlı bir özetini yaz. Bu özet, kullanıcının sorularını ve verilen cevapları içermeli,
-            önemli arama sonuçları ve bulunmuş bilgileri içermelidir.
-            """
-            
-            summary_response = llm.invoke(summary_prompt)
-            return summary_response.content
-        except Exception as e:
-            print(f"Özetleme sırasında hata oluştu: {e}")
-            return None
+Existing summary:
+{summary}
+""")
+    else:
+        summary_message = HumanMessage(content="""
+Summarize the above conversation while preserving full context, key points, and user intent. Your response
+should be concise yet detailed enough to ensure seamless continuation of the discussion.
 
-    # ThreadPoolExecutor ile timeout kontrolü
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(summarize_task)
-        try:
-            summary_content = future.result(timeout=timeout_seconds)
-            if summary_content:
-                summary_message = HumanMessage(
-                    content=f"**Önceki Konuşma Özeti:** {summary_content}",
-                    id=str(uuid.uuid4())
-                )
-                return [first_message, summary_message, last_message]
-        except concurrent.futures.TimeoutError:
-            print(f"Özetleme işlemi {timeout_seconds} saniye içinde tamamlanamadı. Mesajlar kırpılıyor.")
-            return [first_message, last_message]
-        except Exception as e:
-            print(f"Beklenmeyen hata: {e}")
-            return [first_message, last_message]
-
-def summarize_message_field(messages, timeout_seconds=15):
-    """
-    Özetleme fonksiyonu: İlk SystemMessage'ı korur, diğer tüm mesajları özet bir AIMessage'a dönüştürür.
-    Timeout aşılırsa, ilk SystemMessage ve son mesajı döndürür.
-    """
-    if not messages or len(messages) <= 2:
-        return messages  # Mesaj yoksa veya sadece 1-2 mesaj varsa değişiklik yapma
+Only return the summarized content.
+""")
     
-    start_time = time.time()
-    result = summarize_with_timeout(messages, timeout_seconds)
-    end_time = time.time()
+    trimmed_messages = []
+    for m in messages[:-1]:  
+        if isinstance(m, HumanMessage):
+            trimmed_messages.append(m)
+        elif isinstance(m, AIMessage) and not has_tools(m):
+            trimmed_messages.append(m)
     
-    print(f"Mesaj özetleme için geçen zaman: {end_time - start_time:.2f} saniye.")
-    return result
-
+    messages_to_summary = trimmed_messages + [summary_message]
+    print(trimmed_messages)
+    
+    response = llm.invoke(messages_to_summary)
+    
+    # 👇 YENİ: BEDROCK YANITINI GÜVENLİ ŞEKİLDE AYIKLA 👇
+    raw_content = response.content
+    if isinstance(raw_content, str):
+        new_summary = raw_content.strip()
+    elif isinstance(raw_content, list):
+        new_summary = "".join([
+            c.get("text", "") for c in raw_content 
+            if isinstance(c, dict) and c.get("type") == "text"
+        ]).strip()
+    else:
+        new_summary = str(raw_content).strip()
+    return new_summary
