@@ -25,7 +25,7 @@ class User(AbstractUser):
 
     # Running info
     max_runned_distance = models.FloatField(default=0.0)
-    current_pace = models.IntegerField(default=360, help_text="Saniye/km")
+    current_pace = models.IntegerField(default=480, help_text="Saniye/km")
     preferred_running_days = models.JSONField(default=list, blank=True, help_text="Örn: [0, 2, 4] (0=Pzt, 6=Paz)")
 
     # Current statistics

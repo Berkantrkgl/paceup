@@ -1,11 +1,8 @@
 from rest_framework import serializers
 from .models import Program, Workout
-
-# Cross-App Import: Result verisini Workout içinde göstermek için
 from apps.activity.serializers import WorkoutResultSerializer
 
 class WorkoutSerializer(serializers.ModelSerializer):
-    # Nested Serializer kullanımı
     result = WorkoutResultSerializer(read_only=True)
     pace_display = serializers.ReadOnlyField()
     program = serializers.PrimaryKeyRelatedField(queryset=Program.objects.all())
@@ -24,7 +21,6 @@ class WorkoutSerializer(serializers.ModelSerializer):
 class ProgramSerializer(serializers.ModelSerializer):
     current_week_calculated = serializers.ReadOnlyField()
     progress_percent = serializers.ReadOnlyField()
-
     workouts = WorkoutSerializer(many=True, read_only=True)
 
     class Meta:
@@ -32,7 +28,7 @@ class ProgramSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'title', 'description', 'goal',
             'start_date', 'end_date', 'duration_weeks',
-            'workouts_per_week', 
+            'running_days', # workouts_per_week SİLİNDİ, running_days EKLENDİ
             'total_workouts_count', 'completed_workouts_count',
             'status',
             'current_week_calculated', 

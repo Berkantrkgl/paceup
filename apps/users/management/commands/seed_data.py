@@ -98,7 +98,6 @@ class Command(BaseCommand):
                 end_date=end_date,
                 duration_weeks=weeks,
                 running_days=user.preferred_running_days, 
-                workouts_per_week=len(user.preferred_running_days),
                 total_workouts_count=weeks * len(user.preferred_running_days),
                 status='active' 
             )

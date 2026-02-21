@@ -58,8 +58,9 @@ class ProgramViewSet(viewsets.ModelViewSet):
                     start_date=start_date_obj,
                     end_date=end_date_obj,
                     duration_weeks=int(data['duration_weeks']),
+                    running_days=data.get('running_days', []), # YENİ EKLENDİ
                     status='active',
-                    workouts_per_week=int(data.get('workouts_per_week', 3)), 
+                    # workouts_per_week SİLİNDİ!
                     total_workouts_count=len(data['workouts'])
                 )
 

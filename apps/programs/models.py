@@ -24,7 +24,6 @@ class Program(models.Model):
     duration_weeks = models.IntegerField()
 
     running_days = models.JSONField(default=list, blank=True, help_text="Örn: [0, 2, 4]")
-    workouts_per_week = models.IntegerField()
     
     total_workouts_count = models.IntegerField(default=0)
     completed_workouts_count = models.IntegerField(default=0)
