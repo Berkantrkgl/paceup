@@ -18,19 +18,41 @@ export type UserData = {
   email: string;
   first_name: string;
   last_name: string;
+  phone?: string;
   date_joined?: string;
+  date_of_birth?: string;
+
+  // Fiziksel & Profil Bilgileri
   weight?: number;
   height?: number;
   gender?: string;
-  experience_level?: string;
-  preferred_distance?: string;
-  weekly_goal?: number;
+
+  // Koşu & İstatistik Bilgileri
+  max_runned_distance: number;
+  current_pace: number;
+  pace_display?: string;
+
   total_workouts: number;
   total_distance: number;
   total_time: number;
   current_streak: number;
   longest_streak: number;
   profile_image?: string | null;
+
+  // Yeni Eklenen Alanlar
+  is_premium: boolean;
+  total_tokens_used: number;
+  preferred_running_days: number[];
+  remaining_reschedules: number;
+
+  // Bildirim Alanları
+  push_token?: string | null;
+  timezone?: string;
+  preferred_reminder_time?: string;
+  notification_workout_reminder?: boolean;
+  notification_weekly_report?: boolean;
+  notification_achievements?: boolean;
+  notification_plan_updates?: boolean;
 };
 
 type AuthState = {

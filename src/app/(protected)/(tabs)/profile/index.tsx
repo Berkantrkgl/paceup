@@ -35,17 +35,14 @@ const GENDER_OPTIONS = [
   { label: "Diğer", value: "other" },
 ];
 
-const EXPERIENCE_OPTIONS = [
-  { label: "Başlangıç", value: "beginner" },
-  { label: "Orta Seviye", value: "intermediate" },
-  { label: "İleri Seviye", value: "advanced" },
-];
-
-const DISTANCE_OPTIONS = [
-  { label: "5K", value: "5K" },
-  { label: "10K", value: "10K" },
-  { label: "Yarı Maraton", value: "half_marathon" },
-  { label: "Maraton", value: "marathon" },
+const DAYS_MAP = [
+  "Pazartesi",
+  "Salı",
+  "Çarşamba",
+  "Perşembe",
+  "Cuma",
+  "Cumartesi",
+  "Pazar",
 ];
 
 // --- YARDIMCI FONKSİYONLAR ---
@@ -58,8 +55,8 @@ const generateNumberRange = (start: number, end: number, suffix: string) => {
 };
 
 // Pace için dakika (3dk - 15dk arası mantıklı) ve saniye (0-59) dizileri
-const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3); // 3, 4, ... 15
-const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i); // 0, 1, ... 59
+const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
+const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
 
 const ProfileScreen = () => {
   const { user, logOut, refreshUserData } = useContext(AuthContext);
@@ -68,7 +65,7 @@ const ProfileScreen = () => {
   // --- MODAL STATE ---
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Edit Config: 'text', 'picker', 'date', 'time', 'pace'
+  // Edit Config: 'text', 'picker', 'date', 'time', 'pace', 'multiselect'
   const [editConfig, setEditConfig] = useState<any>({
     key: "",
     title: "",
@@ -78,8 +75,9 @@ const ProfileScreen = () => {
 
   // Geçici Değerler
   const [tempValue, setTempValue] = useState<any>(""); // Text ve Tekli Picker için
+  const [tempArrayValue, setTempArrayValue] = useState<number[]>([]); // Çoklu Seçim (Günler) için
   const [dateValue, setDateValue] = useState(new Date()); // Date ve Time için
-  const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 }); // Pace için {min, sec}
+  const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 }); // Pace için
 
   // --- GÖRÜNTÜLEME FORMATLAYICILARI ---
   const formatDisplayTime = (timeStr: string) =>
@@ -90,6 +88,12 @@ const ProfileScreen = () => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  const formatDisplayDays = (daysArray: number[]) => {
+    if (!daysArray || daysArray.length === 0) return "Seçilmedi";
+    // 0=Pzt, 6=Paz. İlk 3 harflerini alıp gösterelim.
+    return daysArray.map((d) => DAYS_MAP[d].substring(0, 3)).join(", ");
   };
 
   // --- ACTIONS ---
@@ -142,22 +146,22 @@ const ProfileScreen = () => {
 
   const openEditor = (config: any) => {
     setEditConfig(config);
-    const currentVal = user?.[config.key];
+    const currentVal = user?.[config.key as keyof typeof user];
 
     if (config.type === "date") {
-      setDateValue(currentVal ? new Date(currentVal) : new Date(1995, 0, 1));
+      setDateValue(
+        currentVal ? new Date(currentVal as string) : new Date(1995, 0, 1),
+      );
     } else if (config.type === "time") {
-      const [h, m] = (currentVal || "09:00").split(":");
+      const [h, m] = ((currentVal as string) || "09:00").split(":");
       const d = new Date();
       d.setHours(parseInt(h), parseInt(m));
       setDateValue(d);
     } else if (config.type === "pace") {
-      // Saniyeyi Dakika/Saniye objesine çevir
-      const totalSec = currentVal || 330; // Default 5:30
-      setPaceValue({
-        min: Math.floor(totalSec / 60),
-        sec: totalSec % 60,
-      });
+      const totalSec = (currentVal as number) || 330;
+      setPaceValue({ min: Math.floor(totalSec / 60), sec: totalSec % 60 });
+    } else if (config.type === "multiselect") {
+      setTempArrayValue((currentVal as number[]) || []);
     } else if (config.type === "picker") {
       setTempValue(currentVal || config.options[0]?.value);
     } else {
@@ -172,19 +176,18 @@ const ProfileScreen = () => {
       const token = await AsyncStorage.getItem("auth-access-token");
       let payloadValue: any = tempValue;
 
-      // Özel payload hazırlığı
       if (editConfig.type === "date") {
-        const d = dateValue;
-        payloadValue = d.toISOString().split("T")[0];
+        payloadValue = dateValue.toISOString().split("T")[0];
       } else if (editConfig.type === "time") {
         const h = dateValue.getHours();
         const m = dateValue.getMinutes();
         payloadValue = `${h < 10 ? "0" + h : h}:${m < 10 ? "0" + m : m}:00`;
       } else if (editConfig.type === "pace") {
-        // Dakika/Saniye -> Toplam Saniye
         payloadValue = paceValue.min * 60 + paceValue.sec;
       } else if (editConfig.type === "number") {
         payloadValue = Number(tempValue);
+      } else if (editConfig.type === "multiselect") {
+        payloadValue = tempArrayValue.sort(); // Günleri sıraya dizerek kaydet
       }
 
       const response = await fetch(`${API_URL}/users/me/`, {
@@ -204,6 +207,14 @@ const ProfileScreen = () => {
       }
     } catch (e) {
       Alert.alert("Hata", "Bağlantı hatası.");
+    }
+  };
+
+  const toggleDaySelection = (dayIndex: number) => {
+    if (tempArrayValue.includes(dayIndex)) {
+      setTempArrayValue(tempArrayValue.filter((d) => d !== dayIndex));
+    } else {
+      setTempArrayValue([...tempArrayValue, dayIndex]);
     }
   };
 
@@ -232,19 +243,21 @@ const ProfileScreen = () => {
     </View>
   );
 
-  const InfoRow = ({ label, value, onPress, isLast }: any) => (
+  const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
     <Pressable
       style={({ pressed }) => [
         styles.row,
-        pressed && styles.rowPressed,
+        pressed && !isReadonly && styles.rowPressed,
         isLast && styles.rowLast,
       ]}
-      onPress={onPress}
+      onPress={!isReadonly ? onPress : undefined}
     >
       <Text style={styles.rowLabel}>{label}</Text>
       <View style={styles.rowRight}>
-        <Text style={styles.rowValue}>{value || "Seçiniz"}</Text>
-        {onPress && (
+        <Text style={[styles.rowValue, isReadonly && { color: COLORS.accent }]}>
+          {value}
+        </Text>
+        {!isReadonly && (
           <Ionicons
             name="chevron-forward"
             size={16}
@@ -270,9 +283,7 @@ const ProfileScreen = () => {
   );
 
   // --- MODAL CONTENT RENDERERS ---
-
   const renderModalContent = () => {
-    // 1. DATE / TIME PICKER (Native iOS Wheel)
     if (editConfig.type === "date" || editConfig.type === "time") {
       return (
         <View style={styles.pickerWrapper}>
@@ -292,7 +303,6 @@ const ProfileScreen = () => {
       );
     }
 
-    // 2. PACE PICKER (Custom Dual Column)
     if (editConfig.type === "pace") {
       return (
         <View style={styles.dualPickerContainer}>
@@ -301,8 +311,8 @@ const ProfileScreen = () => {
             <Picker
               selectedValue={paceValue.min}
               onValueChange={(v) => setPaceValue({ ...paceValue, min: v })}
-              itemStyle={{ color: "white", fontSize: 20 }}
               style={{ width: 100, color: "white" }}
+              itemStyle={{ color: "white" }}
             >
               {PACE_MINUTES.map((m) => (
                 <Picker.Item key={m} label={m.toString()} value={m} />
@@ -315,8 +325,8 @@ const ProfileScreen = () => {
             <Picker
               selectedValue={paceValue.sec}
               onValueChange={(v) => setPaceValue({ ...paceValue, sec: v })}
-              itemStyle={{ color: "white", fontSize: 20 }}
               style={{ width: 100, color: "white" }}
+              itemStyle={{ color: "white" }}
             >
               {PACE_SECONDS.map((s) => (
                 <Picker.Item
@@ -331,7 +341,42 @@ const ProfileScreen = () => {
       );
     }
 
-    // 3. STANDARD PICKER (Gender, Experience etc.)
+    if (editConfig.type === "multiselect") {
+      return (
+        <View style={styles.multiselectContainer}>
+          {DAYS_MAP.map((day, index) => {
+            const isSelected = tempArrayValue.includes(index);
+            return (
+              <Pressable
+                key={index}
+                style={[
+                  styles.dayButton,
+                  isSelected && styles.dayButtonSelected,
+                ]}
+                onPress={() => toggleDaySelection(index)}
+              >
+                <Text
+                  style={[
+                    styles.dayButtonText,
+                    isSelected && styles.dayButtonTextSelected,
+                  ]}
+                >
+                  {day}
+                </Text>
+                {isSelected && (
+                  <Ionicons
+                    name="checkmark"
+                    size={18}
+                    color={COLORS.background}
+                  />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      );
+    }
+
     if (editConfig.type === "picker") {
       return (
         <View style={styles.pickerWrapper}>
@@ -354,14 +399,13 @@ const ProfileScreen = () => {
       );
     }
 
-    // 4. FALLBACK TEXT INPUT
     return (
       <View>
         <TextInput
           style={styles.input}
           value={tempValue}
           onChangeText={setTempValue}
-          keyboardType="default"
+          keyboardType={editConfig.type === "number" ? "numeric" : "default"}
           placeholder="Değer giriniz"
           placeholderTextColor={COLORS.textDim}
           autoFocus
@@ -417,8 +461,13 @@ const ProfileScreen = () => {
                   🔥 {user?.current_streak} Gün Seri
                 </Text>
                 <Text style={styles.statDot}>•</Text>
-                <Text style={styles.statText}>
-                  🏆 {user?.experience_level?.toUpperCase()}
+                <Text
+                  style={[
+                    styles.statText,
+                    user?.is_premium && { color: COLORS.accent },
+                  ]}
+                >
+                  {user?.is_premium ? "💎 PREMIUM" : "🏃‍♂️ STANDART"}
                 </Text>
               </View>
             </View>
@@ -440,7 +489,6 @@ const ProfileScreen = () => {
                 openEditor({ key: "last_name", title: "Soyad", type: "text" })
               }
             />
-
             <InfoRow
               label="Cinsiyet"
               value={
@@ -455,7 +503,6 @@ const ProfileScreen = () => {
                 })
               }
             />
-
             <InfoRow
               label="Doğum Tarihi"
               value={user?.date_of_birth}
@@ -467,7 +514,6 @@ const ProfileScreen = () => {
                 })
               }
             />
-
             <InfoRow
               label="Boy"
               value={user?.height ? `${user.height} cm` : ""}
@@ -480,7 +526,6 @@ const ProfileScreen = () => {
                 })
               }
             />
-
             <InfoRow
               label="Kilo"
               value={user?.weight ? `${user.weight} kg` : ""}
@@ -496,65 +541,8 @@ const ProfileScreen = () => {
             />
           </Section>
 
-          {/* SECTION 2: KOŞU PROFİLİ */}
+          {/* SECTION 2: KOŞU PROFİLİ (Güncellendi) */}
           <Section title="KOŞU PROFİLİ">
-            <InfoRow
-              label="Deneyim"
-              value={
-                EXPERIENCE_OPTIONS.find(
-                  (o) => o.value === user?.experience_level,
-                )?.label
-              }
-              onPress={() =>
-                openEditor({
-                  key: "experience_level",
-                  title: "Deneyim Seviyesi",
-                  type: "picker",
-                  options: EXPERIENCE_OPTIONS,
-                })
-              }
-            />
-            <InfoRow
-              label="Mesafe Tercihi"
-              value={
-                DISTANCE_OPTIONS.find(
-                  (o) => o.value === user?.preferred_distance,
-                )?.label
-              }
-              onPress={() =>
-                openEditor({
-                  key: "preferred_distance",
-                  title: "Tercih Edilen Mesafe",
-                  type: "picker",
-                  options: DISTANCE_OPTIONS,
-                })
-              }
-            />
-            <InfoRow
-              label="Haftalık Hedef"
-              value={`${user?.weekly_goal} Antrenman`}
-              onPress={() =>
-                openEditor({
-                  key: "weekly_goal",
-                  title: "Haftalık Hedef",
-                  type: "picker",
-                  options: generateNumberRange(1, 7, "Gün"),
-                })
-              }
-            />
-            <InfoRow
-              label="Maksimum Mesafe"
-              value={`${user?.current_max_distance} km`}
-              onPress={() =>
-                openEditor({
-                  key: "current_max_distance",
-                  title: "Maks. Mesafe",
-                  type: "number",
-                })
-              }
-            />
-
-            {/* YENİ PACE ROW */}
             <InfoRow
               label="Ortalama Pace"
               value={`${formatDisplayPace(user?.current_pace)} /km`}
@@ -565,12 +553,57 @@ const ProfileScreen = () => {
                   type: "pace",
                 })
               }
+            />
+            <InfoRow
+              label="Maksimum Mesafe"
+              value={`${user?.max_runned_distance} km`}
+              onPress={() =>
+                openEditor({
+                  key: "max_runned_distance",
+                  title: "Maks. Mesafe (km)",
+                  type: "number",
+                })
+              }
+            />
+            <InfoRow
+              label="Koşu Günleri"
+              value={formatDisplayDays(user?.preferred_running_days || [])}
+              onPress={() =>
+                openEditor({
+                  key: "preferred_running_days",
+                  title: "Koşu Günleri Seçimi",
+                  type: "multiselect",
+                })
+              }
+            />
+          </Section>
+
+          {/* SECTION 3: HESAP BİLGİLERİ (YENİ) */}
+          <Section title="HESAP BİLGİLERİ">
+            <InfoRow
+              label="Üyelik Tipi"
+              value={user?.is_premium ? "Premium" : "Standart"}
+              isReadonly
+            />
+            <InfoRow
+              label="Kalan Erteleme Hakkı"
+              value={
+                user?.is_premium
+                  ? "Sınırsız"
+                  : `${user?.remaining_reschedules} / 2`
+              }
+              isReadonly
+            />
+            <InfoRow
+              label="Kullanılan AI Token"
+              value={`${user?.total_tokens_used}`}
+              isReadonly
               isLast
             />
           </Section>
 
-          {/* SECTION 3: TERCİHLER (Eksiksiz) */}
-          <Section title="TERCİHLER">
+          {/* SECTION 4: TERCİHLER */}
+          <Section title="BİLDİRİM TERCİHLERİ">
             <InfoRow
               label="Hatırlatma Saati"
               value={formatDisplayTime(user?.preferred_reminder_time)}
@@ -618,36 +651,52 @@ const ProfileScreen = () => {
             <Pressable style={styles.logoutBtn} onPress={logOut}>
               <Text style={styles.logoutText}>Oturumu Kapat</Text>
             </Pressable>
-            <Text style={styles.versionText}>PaceUp v2.2.0 (Build 2401)</Text>
+            <Text style={styles.versionText}>
+              PaceUp v2.3.0 (Centered Modal Update)
+            </Text>
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      {/* --- NATIVE STYLE MODAL --- */}
-      <Modal visible={modalVisible} transparent animationType="slide">
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+      {/* --- CENTERED MODAL --- */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <Pressable
           style={styles.modalOverlay}
+          onPress={() => setModalVisible(false)} // Dışarı tıklanınca kapat
         >
-          <View style={styles.modalContent}>
-            {/* Header */}
-            <View style={styles.modalHeader}>
-              <Pressable
-                onPress={() => setModalVisible(false)}
-                style={styles.headerBtn}
-              >
-                <Text style={styles.headerBtnTextCancel}>Vazgeç</Text>
-              </Pressable>
-              <Text style={styles.modalTitle}>{editConfig.title}</Text>
-              <Pressable onPress={saveChange} style={styles.headerBtn}>
-                <Text style={styles.headerBtnTextSave}>Bitti</Text>
-              </Pressable>
-            </View>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Pressable
+              style={styles.modalCenteredContainer}
+              onPress={(e) => e.stopPropagation()} // İçeri tıklanmayı engelle
+            >
+              <View style={styles.modalContent}>
+                {/* Header */}
+                <View style={styles.modalHeader}>
+                  <Pressable
+                    onPress={() => setModalVisible(false)}
+                    style={styles.headerBtn}
+                  >
+                    <Text style={styles.headerBtnTextCancel}>Vazgeç</Text>
+                  </Pressable>
+                  <Text style={styles.modalTitle}>{editConfig.title}</Text>
+                  <Pressable onPress={saveChange} style={styles.headerBtn}>
+                    <Text style={styles.headerBtnTextSave}>Kaydet</Text>
+                  </Pressable>
+                </View>
 
-            {/* Body */}
-            <View style={styles.modalBody}>{renderModalContent()}</View>
-          </View>
-        </KeyboardAvoidingView>
+                {/* Body */}
+                <View style={styles.modalBody}>{renderModalContent()}</View>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
       </Modal>
     </View>
   );
@@ -771,17 +820,21 @@ const styles = StyleSheet.create({
   logoutText: { color: COLORS.danger, fontSize: 15, fontWeight: "600" },
   versionText: { fontSize: 11, color: COLORS.textDim, opacity: 0.4 },
 
-  // --- NATIVE MODAL STYLES ---
+  // --- CENTERED MODAL STYLES ---
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "flex-end",
+    backgroundColor: "rgba(0,0,0,0.7)", // Biraz daha koyu bir arka plan
+    justifyContent: "center", // DİKKAT: Artık ortalıyoruz
+    alignItems: "center",
+  },
+  modalCenteredContainer: {
+    width: "90%", // Ekranın %90'ını kaplasın
+    maxWidth: 400,
   },
   modalContent: {
     backgroundColor: "#1C1C1E",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 40,
+    borderRadius: 20, // Köşeleri tüm kenarlardan yuvarlattık
+    overflow: "hidden", // Köşe taşmalarını engellemek için
   },
   modalHeader: {
     flexDirection: "row",
@@ -789,16 +842,20 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "#2C2C2E",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderBottomColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "#242426",
   },
   modalTitle: { fontSize: 16, fontWeight: "600", color: COLORS.white },
   headerBtn: { padding: 5 },
-  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 16 },
-  headerBtnTextSave: { color: COLORS.accent, fontSize: 16, fontWeight: "bold" },
-  modalBody: { paddingVertical: 10, backgroundColor: "#1C1C1E" },
+  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 15 },
+  headerBtnTextSave: { color: COLORS.accent, fontSize: 15, fontWeight: "bold" },
+  modalBody: {
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: "#1C1C1E",
+    minHeight: 150,
+    justifyContent: "center",
+  },
 
   pickerWrapper: { justifyContent: "center" },
 
@@ -813,7 +870,7 @@ const styles = StyleSheet.create({
     color: COLORS.textDim,
     fontSize: 12,
     marginBottom: -10,
-    zIndex: 1,
+    zHeight: 1,
   },
   pickerSeparator: {
     fontSize: 30,
@@ -822,15 +879,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
 
+  // --- MULTISELECT STYLES ---
+  multiselectContainer: { padding: 10 },
+  dayButton: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 8,
+    backgroundColor: "#2C2C2E",
+  },
+  dayButtonSelected: {
+    backgroundColor: COLORS.accent + "20",
+    borderColor: COLORS.accent,
+    borderWidth: 1,
+  },
+  dayButtonText: { color: COLORS.white, fontSize: 16 },
+  dayButtonTextSelected: { color: COLORS.accent, fontWeight: "bold" },
+
   input: {
     backgroundColor: "#2C2C2E",
     color: COLORS.text,
     fontSize: 18,
     padding: 16,
     borderRadius: 12,
-    margin: 20,
+    margin: 10,
     borderWidth: 1,
     borderColor: "#3A3A3C",
+    textAlign: "center",
   },
 });
 
