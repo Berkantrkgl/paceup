@@ -24,10 +24,32 @@ class Command(BaseCommand):
         Program.objects.all().delete()
         User.objects.filter(email__contains='@test.com').delete()
 
-        # 3. KULLANICI OLUŞTURMA (AHMET & MEHMET)
+        # 3. KULLANICI OLUŞTURMA (BERKAN & AYŞENAZ)
         users_data = [
-            {"first": "Ahmet", "last": "Yilmaz", "level": "advanced", "goal": 4},
-            {"first": "Mehmet", "last": "Demir", "level": "beginner", "goal": 3},
+            {
+                "first": "Berkan", 
+                "last": "Standart", 
+                "is_premium": False, 
+                "days": [1, 3, 5], # Salı, Perşembe, Cumartesi
+                "max_dist": 10.0,
+                "pace": 360,
+                "gender": "male",
+                "weight": 80,
+                "height": 182,
+                "dob": datetime.date(2001, 3, 26) # 26 Mart 2001
+            },
+            {
+                "first": "Aysenaz", 
+                "last": "Premium", 
+                "is_premium": True, 
+                "days": [0, 2, 4, 6], # Pzt, Çar, Cuma, Pazar
+                "max_dist": 21.1,
+                "pace": 310,
+                "gender": "female",
+                "weight": 58,
+                "height": 168,
+                "dob": datetime.date(2001, 2, 19) # 19 Şubat 2001
+            },
         ]
 
         created_users = []
@@ -35,7 +57,6 @@ class Command(BaseCommand):
         for u in users_data:
             email = f"{u['first'].lower()}@test.com"
             
-            # create_user yardımcı metodunu kullanıyoruz
             user = User.objects.create_user(
                 username=u['first'].lower(),
                 email=email,
@@ -44,68 +65,62 @@ class Command(BaseCommand):
                 last_name=u['last']
             )
             
-            # Ekstra alanları manuel set ediyoruz
-            user.gender = 'male'
-            user.weight = random.randint(70, 85)
-            user.height = random.randint(175, 185)
-            user.experience_level = u['level']
-            user.weekly_goal = u['goal']
-            user.current_pace = 300 if u['level'] == 'advanced' else 390 
+            # Yeni alanlar set ediliyor
+            user.gender = u['gender']
+            user.weight = u['weight']
+            user.height = u['height']
+            user.is_premium = u['is_premium']
+            user.preferred_running_days = u['days']
+            user.max_runned_distance = u['max_dist']
+            user.current_pace = u['pace']
+            user.date_of_birth = u['dob'] # <-- DOĞUM TARİHİ EKLENDİ
             
             user.save()
             created_users.append(user)
-            self.stdout.write(f"Kullanıcı oluşturuldu: {user.email} (Şifre: 123)")
+            self.stdout.write(f"Kullanıcı oluşturuldu: {user.first_name} (Doğum: {user.date_of_birth}, Premium: {user.is_premium})")
 
         # 4. PROGRAM & WORKOUT OLUŞTURMA
-        program_templates = [
-            {"title": "10K Hızlandırma", "weeks": 10},
-            {"title": "5K Başlangıç", "weeks": 8},
-        ]
-
-        # Antrenman Günleri (Pazartesi=0 ... Pazar=6)
-        schedule_patterns = {
-            3: [1, 3, 5],    # Salı, Perşembe, Cmt
-            4: [0, 2, 4, 6]  # Pzt, Çar, Cuma, Paz
-        }
-
-        for idx, user in enumerate(created_users):
-            template = program_templates[0] if user.experience_level == 'advanced' else program_templates[1]
+        for user in created_users:
+            # Premium kullanıcıya daha uzun, standart kullanıcıya daha kısa program
+            weeks = 10 if user.is_premium else 6
+            title = "Yarı Maraton Hazırlık" if user.is_premium else "5K Hızlandırma"
             
-            start_date = today - datetime.timedelta(weeks=3)
-            end_date = start_date + datetime.timedelta(weeks=template['weeks'])
+            start_date = today - datetime.timedelta(weeks=2) # 2 hafta önce başlamış olsunlar
+            end_date = start_date + datetime.timedelta(weeks=weeks)
             
             # Program oluşturma
             program = Program.objects.create(
                 user=user,
-                title=template['title'],
+                title=title,
                 description=f"{user.first_name} için otomatik oluşturulan plan.",
                 goal="Form tutmak",
                 start_date=start_date,
                 end_date=end_date,
-                duration_weeks=template['weeks'],
-                difficulty=user.experience_level,
-                workouts_per_week=user.weekly_goal,
-                total_workouts_count=template['weeks'] * user.weekly_goal,
-                status='active' # Enum yerine string kullanmak daha güvenli olabilir (import hatası riskine karşı)
+                duration_weeks=weeks,
+                running_days=user.preferred_running_days, 
+                workouts_per_week=len(user.preferred_running_days),
+                total_workouts_count=weeks * len(user.preferred_running_days),
+                status='active' 
             )
 
             current_day = start_date
-            active_days = schedule_patterns.get(user.weekly_goal, [1, 3, 5]) 
+            active_days = user.preferred_running_days 
 
             while current_day <= end_date:
+                # Eğer o gün, kullanıcının koşu günlerinden biriyse (0=Pzt, 6=Paz)
                 if current_day.weekday() in active_days:
                     
-                    if current_day.weekday() >= 5: 
+                    if current_day.weekday() >= 5: # Hafta sonuysa uzun koşu
                         w_type = 'long'
-                        duration = 60
-                        dist = 10.0
+                        duration = 60 if user.is_premium else 45
+                        dist = 12.0 if user.is_premium else 8.0
                     else:
                         w_type = random.choice(['easy', 'tempo', 'interval'])
-                        duration = 45
-                        dist = 5.0
+                        duration = 45 if user.is_premium else 30
+                        dist = 6.0 if user.is_premium else 5.0
 
                     titles = {'easy': "Hafif Koşu", 'tempo': "Tempo Koşusu", 'interval': "İnterval", 'long': "Uzun Koşu"}
-                    target_pace = 300 if w_type == 'tempo' else 360
+                    target_pace = user.current_pace - 30 if w_type == 'tempo' else user.current_pace
 
                     is_past = current_day < today
                     is_today = current_day == today
@@ -114,7 +129,7 @@ class Command(BaseCommand):
                     is_completed = False
                     
                     if is_past:
-                        if random.random() > 0.2: 
+                        if random.random() > 0.15: # %85 ihtimalle tamamlamış olsunlar
                             status = 'completed'
                             is_completed = True
                         else:
@@ -148,13 +163,13 @@ class Command(BaseCommand):
                         WorkoutResult.objects.create(
                             workout=workout,
                             user=user,
-                            actual_distance=dist, 
-                            actual_duration=duration,
+                            actual_distance=dist + random.uniform(-0.5, 0.5),
+                            actual_duration=duration + random.randint(-5, 5),
                             completed_at=completed_datetime,
                             feeling='normal',
-                            user_notes="Otomatik veri."
+                            user_notes="Harika bir antrenmandı!" if user.is_premium else "Biraz yoruldum."
                         )
 
                 current_day += datetime.timedelta(days=1)
 
-        self.stdout.write(self.style.SUCCESS(f'\n✅ BAŞARILI! Ahmet ve Mehmet için veriler yüklendi.'))
+        self.stdout.write(self.style.SUCCESS(f'\n✅ BAŞARILI! Berkan ve Ayşenaz verileri (doğum tarihleriyle birlikte) yüklendi.'))

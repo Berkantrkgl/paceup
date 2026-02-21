@@ -60,7 +60,6 @@ class ProgramViewSet(viewsets.ModelViewSet):
                     duration_weeks=int(data['duration_weeks']),
                     status='active',
                     workouts_per_week=int(data.get('workouts_per_week', 3)), 
-                    difficulty='beginner',
                     total_workouts_count=len(data['workouts'])
                 )
 
@@ -96,11 +95,18 @@ class ProgramViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reschedule')
     def reschedule(self, request, pk=None):
         program = self.get_object()
+        user = request.user
         new_start_date_str = request.data.get('start_date')
 
         print(f"\n🚀 --- RESCHEDULE İŞLEMİ BAŞLADI ---")
         print(f"📌 Program: {program.title}")
         print(f"📌 İstenen Yeni Başlangıç: {new_start_date_str}")
+
+        # 1. HAK KONTROLÜ
+        if not user.use_reschedule():
+            return Response({
+                "error": "Bu ayki erteleme hakkınızı (2/2) doldurdunuz. Premium'a geçerek sınırsız erteleme yapabilirsiniz."
+            }, status=403)
 
         if not new_start_date_str:
             return Response({"error": "start_date parametresi zorunludur."}, status=400)

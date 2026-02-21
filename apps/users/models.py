@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext_lazy as _
 import uuid
+from django.utils import timezone
 # Create your models here.
 
 # 1. USER MODEL (Aynı kalıyor, sadece importları düzenledim)
@@ -11,43 +12,39 @@ class User(AbstractUser):
         FEMALE = 'female', _('Female')
         OTHER = 'other', _('Other')
 
-    class ExperienceLevel(models.TextChoices):
-        BEGINNER = 'beginner', _('Beginner')
-        INTERMEDIATE = 'intermediate', _('Intermediate')
-        ADVANCED = 'advanced', _('Advanced')
-
-    class PreferredDistance(models.TextChoices):
-        FIVE_K = '5K', _('5K')
-        TEN_K = '10K', _('10K')
-        HALF_MARATHON = 'half_marathon', _('Half Marathon')
-        MARATHON = 'marathon', _('Marathon')
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # Personal info
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     profile_image = models.ImageField(upload_to='profile_images/', blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
-
     gender = models.CharField(max_length=10, choices=Gender.choices, blank=True, null=True)
     weight = models.FloatField(help_text="kg", blank=True, null=True)
     height = models.IntegerField(help_text="cm", blank=True, null=True)
 
-    experience_level = models.CharField(max_length=20, choices=ExperienceLevel.choices, default=ExperienceLevel.BEGINNER)
-    preferred_distance = models.CharField(max_length=20, choices=PreferredDistance.choices, blank=True, null=True)
-    current_max_distance = models.FloatField(default=0.0)
+    # Running info
+    max_runned_distance = models.FloatField(default=0.0)
     current_pace = models.IntegerField(default=360, help_text="Saniye/km")
-    weekly_goal = models.IntegerField(default=3)
+    preferred_running_days = models.JSONField(default=list, blank=True, help_text="Örn: [0, 2, 4] (0=Pzt, 6=Paz)")
 
+    # Current statistics
     total_workouts = models.IntegerField(default=0)
     total_distance = models.FloatField(default=0.0)
     total_time = models.IntegerField(default=0)
     current_streak = models.IntegerField(default=0)
     longest_streak = models.IntegerField(default=0)
+    
+    # Reschedule Limit Mantığı
+    total_tokens_used = models.IntegerField(default=0, help_text="Chatbot token kullanımı")
+    is_premium = models.BooleanField(default=False)
+    reschedules_used_this_month = models.IntegerField(default=0)
+    last_reschedule_reset = models.DateField(auto_now_add=True, null=True, blank=True)
 
+    # Notification fiels
     push_token = models.CharField(max_length=255, blank=True, null=True)
     timezone = models.CharField(max_length=50, default='UTC')
     preferred_reminder_time = models.TimeField(default='09:00:00')
-
     notification_workout_reminder = models.BooleanField(default=True)
     notification_weekly_report = models.BooleanField(default=True)
     notification_achievements = models.BooleanField(default=True)
@@ -69,6 +66,32 @@ class User(AbstractUser):
                  self.username = f"{self.username}_{uuid.uuid4().hex[:8]}"
         super().save(*args, **kwargs)
 
+    def get_remaining_reschedules(self):
+        """Kullanıcının kalan erteleme hakkını döner ve gerekiyorsa yeni ay sıfırlamasını yapar."""
+        if self.is_premium:
+            return 999  # Premium için sınırsız kabul edebiliriz (veya istersen onlara da limit koyabilirsin)
+            
+        today = timezone.now().date()
+        # Eğer kayıtlı tarih yoksa veya ay/yıl değişmişse sıfırla
+        if not self.last_reschedule_reset or (today.year > self.last_reschedule_reset.year or today.month > self.last_reschedule_reset.month):
+            self.reschedules_used_this_month = 0
+            self.last_reschedule_reset = today
+            self.save(update_fields=['reschedules_used_this_month', 'last_reschedule_reset'])
+            
+        return max(0, 2 - self.reschedules_used_this_month)
+
+    def use_reschedule(self):
+        """Erteleme hakkı varsa kullanır ve True döner. Yoksa False döner."""
+        if self.is_premium:
+            return True
+            
+        if self.get_remaining_reschedules() > 0:
+            self.reschedules_used_this_month += 1
+            self.save(update_fields=['reschedules_used_this_month'])
+            return True
+            
+        return False
+    
     @property
     def pace_display(self):
         if not self.current_pace: return "0:00"

@@ -32,7 +32,7 @@ class ProgramSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'title', 'description', 'goal',
             'start_date', 'end_date', 'duration_weeks',
-            'difficulty', 'workouts_per_week', 
+            'workouts_per_week', 
             'total_workouts_count', 'completed_workouts_count',
             'status',
             'current_week_calculated', 

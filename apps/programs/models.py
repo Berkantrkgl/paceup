@@ -13,13 +13,8 @@ class Program(models.Model):
         INACTIVE = 'inactive', _('Inactive') # Arşivlenmiş/İptal edilmiş
         COMPLETED = 'completed', _('Completed')
 
-    class Difficulty(models.TextChoices):
-        BEGINNER = 'beginner', _('Beginner')
-        INTERMEDIATE = 'intermediate', _('Intermediate')
-        ADVANCED = 'advanced', _('Advanced')
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='programs')    
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='programs')
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     goal = models.CharField(max_length=255)
@@ -28,7 +23,7 @@ class Program(models.Model):
     end_date = models.DateField()
     duration_weeks = models.IntegerField()
 
-    difficulty = models.CharField(max_length=20, choices=Difficulty.choices)
+    running_days = models.JSONField(default=list, blank=True, help_text="Örn: [0, 2, 4]")
     workouts_per_week = models.IntegerField()
     
     total_workouts_count = models.IntegerField(default=0)
