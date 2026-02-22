@@ -1,3 +1,5 @@
+# apps/analytics/views.py
+
 from datetime import timedelta
 from django.utils import timezone
 from django.db.models import Sum, Count
@@ -5,9 +7,9 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import permissions
 
-# Analitik için diğer tüm app'lerin modellerine ihtiyacımız var
 from apps.activity.models import WorkoutResult
 from apps.programs.models import Program, Workout
+
 
 class StatsSummaryView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -15,7 +17,7 @@ class StatsSummaryView(APIView):
     def get(self, request):
         user = request.user
         today = timezone.now().date()
-        
+
         stats = WorkoutResult.objects.filter(user=user).aggregate(
             total_dist=Sum('actual_distance'),
             total_dur=Sum('actual_duration'),
@@ -39,11 +41,11 @@ class StatsSummaryView(APIView):
             "total_duration_mins": stats.get('total_dur') or 0,
             "total_workouts": stats.get('total_count') or 0,
             "calories_burned": stats.get('total_cal') or 0,
-            "current_streak": user.current_streak, 
+            "current_streak": user.current_streak,
             "days_active": active_days_count,
-            "weekly_goal": user.weekly_goal,
             "weekly_progress": this_week_count,
         })
+
 
 class StatsChartsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -52,14 +54,14 @@ class StatsChartsView(APIView):
         user = request.user
         period = request.query_params.get('period', 'week')
         today = timezone.now().date()
-        
+
         if period == 'week':
             start_date = today - timedelta(days=6)
         else:
             start_date = today - timedelta(days=29)
 
         results = WorkoutResult.objects.filter(
-            user=user, 
+            user=user,
             completed_at__date__gte=start_date
         ).values('completed_at', 'actual_distance', 'actual_duration')
 
@@ -79,21 +81,17 @@ class StatsChartsView(APIView):
         while current <= today:
             d_str = str(current)
             labels.append(current.strftime("%d/%m"))
-            
+
             if d_str in data_map:
                 val = data_map[d_str]
                 dist = val['dist']
                 dur = val['dur']
                 distances.append(round(dist, 1))
-                if dist > 0:
-                    pace_val = round(dur / dist, 2)
-                    paces.append(pace_val)
-                else:
-                    paces.append(0.0)
+                paces.append(round(dur / dist, 2) if dist > 0 else 0.0)
             else:
                 distances.append(0.0)
                 paces.append(0.0)
-            
+
             current += timedelta(days=1)
 
         return Response({
@@ -102,15 +100,16 @@ class StatsChartsView(APIView):
             "pace_data": paces
         })
 
+
 class ActiveProgramStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
         today = timezone.now().date()
-        
+
         active_prog = Program.objects.filter(user=user, status='active').first()
-        
+
         if not active_prog:
             return Response({"has_active_program": False})
 
