@@ -14,6 +14,17 @@ from agent.utils.config import *
 
 logger = logging.getLogger(__name__)
 
+
+from agent.utils.helper_agents import summarize_messages
+
+# Özetleme için hafif modeli tanımlıyoruz
+tool_summarizer_llm = ChatBedrockConverse(
+    model=NOVA_LITE_2, # Senin NOVA_LITE_2 değişkenin
+    region_name="us-east-1",
+    temperature=0.5,
+    max_tokens=4096,
+)
+
 def map_day_name_to_int(day_name: str) -> int:
     mapping = {
         'mon': 0, 'monday': 0, 'pzt': 0, 'pazartesi': 0,
@@ -66,16 +77,6 @@ def generate_available_slots(start_date_str: str, duration_weeks: int, selected_
 
 
 # ============================================================
-# 1. DATA MODELS (Sadeleştirilmiş)
-# ============================================================
-
-class CreatePlanInput(BaseModel):
-    title: str = Field(..., description="Programın başlığı (Örn: Maraton Yolculuğu)")
-    start_date: str = Field(..., description="YYYY-MM-DD formatında başlangıç tarihi")
-    duration_weeks: int = Field(..., description="Programın toplam kaç hafta süreceği")
-    description: Optional[str] = Field(default="", description="Kullanıcının hedefi veya özel isteği")
-
-# ============================================================
 # 2. PYTHON LOGIC (Güncellenmiş Pace ve Slot Mantığı)
 # ============================================================
 
@@ -99,21 +100,29 @@ def calculate_pace_and_duration(base_pace: Optional[int], w_type: str, distance:
     duration = int(math.ceil((distance * pace) / 60)) if distance > 0 else 0
     return {"pace": pace, "duration": duration}
 
-# ============================================================
-# 3. CREATE WORKOUT PLAN TOOL (Refactored)
-# ============================================================
 
-# agent/utils/tools.py içerisindeki tool fonksiyonunu güncelle:
 
-from agent.utils.helper_agents import summarize_messages
 
-# Özetleme için hafif modeli tanımlıyoruz
-tool_summarizer_llm = ChatBedrockConverse(
-    model=NOVA_LITE_2, # Senin NOVA_LITE_2 değişkenin
-    region_name="us-east-1",
-    temperature=0.5,
-    max_tokens=4096,
-)
+
+class CreatePlanInput(BaseModel):
+    title: str = Field(..., description="Programın başlığı (Örn: Maraton Yolculuğu)")
+    start_date: str = Field(..., description="YYYY-MM-DD formatında başlangıç tarihi")
+    duration_weeks: int = Field(..., description="Programın toplam kaç hafta süreceği")
+    description: Optional[str] = Field(default="", description="Kullanıcının hedefi veya özel isteği")
+    
+    # YENİ PARAMETRELER - LLM bunları chat'ten anlayarak dolduracak
+    selected_days: List[str] = Field(
+        ..., 
+        description="Kullanıcının koşmak istediği günler. Örn: ['Mon', 'Wed', 'Fri']. MUTLAKA chat geçmişinden al."
+    )
+    long_run_day: Optional[str] = Field(
+        default=None,
+        description="Kullanıcının uzun koşu için tercih ettiği gün (Örn: 'Sun'). Eğer kullanıcı belirtmediyse null gönder."
+    )
+    goal: str = Field(
+        ...,
+        description="Kullanıcının koşu hedefi (Örn: '10K', 'Maraton', 'Kilo Verme'). Chat geçmişinden al."
+    )
 
 @tool(args_schema=CreatePlanInput)
 def create_workout_plan(
@@ -121,14 +130,32 @@ def create_workout_plan(
     start_date: str, 
     duration_weeks: int, 
     description: str,
+    selected_days: List[str],  # YENİ
+    long_run_day: Optional[str],  # YENİ
+    goal: str,  # YENİ
     config: RunnableConfig,
     state: Annotated[dict, InjectedState] 
 ) -> str:
     """
-    Kullanıcının profil verilerini (pace, mesafe) ve seçtiği günleri 
-    kullanarak matematiksel olarak optimize edilmiş bir koşu planı oluşturur.
+    Kullanıcının profiline ve koşu bilimi kurallarına (80/20 kuralı, toparlanma dengesi) uygun antrenman programı oluşturur.
+    Not: Bu araç sadece kullanıcı hedef, başlangıç tarihi, koşu günleri ve süreyi netleştirdiğinde çağrılmalıdır.
+
+    Args:
+        title (str): Programın yaratıcı başlığı (Örn: "Berkan'ın maraton hazırlık programı").
+        start_date (str): Başlangıç tarihi (YYYY-MM-DD formatında).
+        duration_weeks (int): Programın hafta olarak süresi.
+        description (str): Programın açıklaması.
+        selected_days (List[str]): Kullanıcının koşmak istediği günler (Örn: ['Mon', 'Wed', 'Fri']).
+        long_run_day (Optional[str]): Uzun koşu günü tercihi (Örn: 'Sun' veya null).
+        goal (str): Kullanıcının hedefi (Örn: '10K', 'Maraton').
+
+    Returns:
+        str: İşlem sonucunu (başarı/hata) belirten durum mesajı.
     """
     logger.info(f"🚀 Spark Planlama Başlatıldı: {title}")
+    logger.info(f"📅 Seçilen Günler (LLM'den): {selected_days}")
+    logger.info(f"🔥 Uzun Koşu Günü (LLM'den): {long_run_day}")
+    logger.info(f"🎯 Hedef (LLM'den): {goal}")
 
     # --- ADIM 1: USER CONTEXT ÇEKME ---
     try:
@@ -139,6 +166,16 @@ def create_workout_plan(
         profile = full_context.get("user_profile", {})
         
         current_pace = profile.get("current_pace")
+
+        if not current_pace:
+            pace_info = "BİLİNMİYOR (Kullanıcı hızını bilmiyor, koşuya YENİ BAŞLAYAN/ACEMİ seviyesinde.)"
+            beginner_warning = "- DİKKAT: Kullanıcı acemi! İlk haftalarda mesafeleri çok kısa tut (Örn: 2-3km) ve antrenmanlara yürüyüş molaları ('easy' günlerde) ekleyebileceğini belirten başlıklar kullan."
+            actual_pace_for_math = 480
+        else:
+            pace_info = f"{current_pace} sn/km"
+            beginner_warning = ""
+            actual_pace_for_math = current_pace
+
         max_dist = profile.get("max_distance", 0.0)
         weight = profile.get("weight")
         height = profile.get("height")
@@ -148,25 +185,16 @@ def create_workout_plan(
         logger.error(f"❌ Context Fetch Hatası: {e}")
         return "HATA: Profil verilerine şu an ulaşılamıyor."
 
-    # --- ADIM 2: TERCİHLERİ DOĞRUDAN STATE'TEN AL ---
-    user_prefs = state.get("user_preferences", {})
-    
-    selected_days = user_prefs.get("selected_days", [])
-    long_run_day = user_prefs.get("long_run_day")
-    goal_from_chat = user_prefs.get("goal")
-
-    print('USER PREF FROM STAT: ', user_prefs)
-    if not selected_days:
-        return "HATA: Koşu günlerini belirlemeden plan yapamam. Lütfen sistemde bir hata oluştuğunu belirtin ve günleri tekrar sorun."
+    # --- ADIM 2: ARTIK STATE YERİNE DOĞRUDAN PARAMETRELERDEN ALIYORUZ ---
+    if not selected_days or len(selected_days) == 0:
+        return "HATA: Koşu günleri parametresi boş geldi. LLM chat geçmişinden 'selected_days' bilgisini çıkarmalı."
     
     workouts_per_week = len(selected_days)
-    final_goal = goal_from_chat or description
+    final_goal = goal or description
 
-    # --- ADIM 3: SOHBET GEÇMİŞİNİ ÖZETLE (YENİ EKLENEN KISIM) ---
+    # --- ADIM 3: SOHBET GEÇMİŞİNİ ÖZETLE ---
     logger.info("📝 Tool İçinde Sohbet Özeti Çıkarılıyor...")
     messages = state.get("messages", [])
-    
-    # State içindeki ana özeti al (yoksa boş string)
     existing_summary = state.get("summary", "") 
     
     try:
@@ -174,7 +202,7 @@ def create_workout_plan(
         logger.info(f"✅ Tool Özeti Alındı ({len(chat_context_summary)} karakter)")
     except Exception as e:
         logger.error(f"⚠️ Sohbet özetleme hatası (Tool İçi): {e}")
-        chat_context_summary = existing_summary # Hata olursa elimizdeki son geçerli özeti kullanalım
+        chat_context_summary = existing_summary
 
     # --- ADIM 4: SLOT HAVUZU ---
     available_slots = generate_available_slots(start_date, duration_weeks, selected_days)
@@ -186,40 +214,44 @@ def create_workout_plan(
         lr_tag = " [LONG_RUN_DAY]" if day_idx == long_run_weekday else ""
         slots_payload += f"ID {i}: offset={slot['offset']}, date={slot['date']}, day={slot['day_name']}{lr_tag}, week={slot['week_num']}\n"
 
-    # --- ADIM 5: LLM PROMPT (SOHBET ÖZETİ İLE ZENGİNLEŞTİRİLDİ) ---
+    # --- ADIM 5: LLM PROMPT ---
     system_prompt = f"""
-Uzman Koşu Koçu 'Spark' olarak, kullanıcıya {duration_weeks} haftalık program planla.
+    Uzman Koşu Koçu 'Spark' olarak, kullanıcıya {duration_weeks} haftalık program planla.
 
-KULLANICI VERİLERİ:
-- Cinsiyet/Boy/Kilo: {gender}, {height}cm, {weight}kg
-- Mevcut Pace: {current_pace if current_pace else 480} sn/km
-- Max Koşulan Mesafe: {max_dist}km
-- Hedef: {final_goal}
+    KULLANICI VERİLERİ:
+    - Cinsiyet/Boy/Kilo: {gender}, {height}cm, {weight}kg
+    - Mevcut Pace: {pace_info}
+    - Max Koşulan Mesafe: {max_dist}km
+    - Hedef: {final_goal}
 
-KULLANICIYLA YAPILAN GÖRÜŞMENİN ÖZETİ:
-"{chat_context_summary}"
-*(Lütfen antrenman başlıklarını ve ilerlemeyi bu bağlama ve kullanıcının ruh haline göre kişiselleştir.)*
+    KULLANICIYLA YAPILAN GÖRÜŞMENİN ÖZETİ:
+    "{chat_context_summary}"
+    *(Lütfen antrenman başlıklarını ve ilerlemeyi bu bağlama ve kullanıcının ruh haline göre kişiselleştir.)*
 
-KURALLAR:
-1. Her hafta için tam olarak {workouts_per_week} adet antrenman seç.
-2. [LONG_RUN_DAY] slotunu mutlaka 'long' run tipi için kullan.
-3. Workout Tipleri: 'easy', 'tempo', 'interval', 'long'.
-4. Mesafeleri haftalık %10 artış kuralına göre, kullanıcının max mesafesi ({max_dist}km) üzerinden kademeli artır.
+    PLANLAMA KURALLARI (Kesinlikle Uyulacak):
+    {beginner_warning}
+    1. Yüklenme ve Toparlanma Dengesi: İki zorlu antrenmanı ('interval', 'tempo', 'long') ASLA arka arkaya (peş peşe günlere) koyma. Zorlu bir antrenmanın hemen ertesi gününde bir koşu slotu varsa, bu koşu KESİNLİKLE 'easy' (toparlanma/recovery) olmalıdır.
+    2. Kaliteli Antrenman Kotası ve Haftalık İskelet: Bir haftada en fazla 1 veya 2 "kaliteli" antrenman ('interval' veya 'tempo') yap. Haftanın temel iskeleti şu olmalıdır: 1 Kaliteli Antrenman + 1 Uzun Koşu ('long') + Geri kalan tüm koşular 'easy'.
+    3. 'Easy' Günlerin Amacı: Kolay ('easy') günlerin mesafesi, toparlanmayı sağlamak için her zaman kaliteli ve uzun günlerin mesafesinden daha kısa tutulmalıdır (80/20 Kuralı).
+    4. Uzun Koşu Kuralı: [LONG_RUN_DAY] etiketine sahip slotu MUTLAKA 'long' (uzun koşu) tipi için kullan. Uzun koşudan sonraki ilk antrenman günü istisnasız 'easy' olmalıdır. Eğer kullanıcı özel bir uzun koşu günü seçmemişse, haftanın son koşu gününü 'long' yap.
+    5. İlerleyiş (Progressive Overload): Mesafeleri haftalık maksimum %10 artır. Kullanıcının max mesafesini ({max_dist}km) baz alarak çok kademeli ve güvenli ilerle.
+    6. Yaratıcılık: Antrenman başlıklarında ("title") yaratıcı, motive edici ve eğlenceli ol. ("Salı Koşusu" yerine "Zihni Boşaltma Temposu" gibi).
 
-MÜSAİT SLOTLAR:
-{slots_payload}
+    MÜSAİT SLOTLAR:
+    {slots_payload}
 
-ÇIKTI SADECE JSON:
-{{
-  "workouts": [
-    {{ "day_offset": 0, "title": "Açılış Koşusu", "workout_type": "easy", "distance_km": 5.0 }},
-    ...
-  ]
-}}
-"""
+    ÇIKTI SADECE AŞAĞIDAKİ JSON FORMATINDA OLMALI (Her hafta tam olarak {workouts_per_week} adet antrenman içermeli):
+    {{
+    "workouts": [
+        {{ "day_offset": 0, "title": "Açılış Koşusu", "workout_type": "easy", "distance_km": 5.0 }},
+        ...
+    ]
+    }}
+    """
 
     print('Planner LLM Prompt')
     print(system_prompt)
+    
     # --- ADIM 6: AI ÇAĞRISI ---
     try:
         llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name="us-east-1", disable_streaming=True)
@@ -242,7 +274,7 @@ MÜSAİT SLOTLAR:
         dist = float(w.get("distance_km", 0))
         w_type = w.get("workout_type", "easy")
         
-        math_data = calculate_pace_and_duration(current_pace, w_type, dist)
+        math_data = calculate_pace_and_duration(actual_pace_for_math, w_type, dist)
         
         final_workout_objects.append({
             "day_offset": offset,
@@ -267,6 +299,9 @@ MÜSAİT SLOTLAR:
     if "error" in res: return f"API HATASI: {res['error']}"
 
     return f"✅ '{title}' programın oluşturuldu! Haftada {workouts_per_week} gün beraber koşuyoruz. İlk antrenmanın takvimine işlendi."
+
+
+
 # ============================================================
 # 📱 UI TOOLS (Frontend Triggers)
 # ============================================================

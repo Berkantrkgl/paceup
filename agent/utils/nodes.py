@@ -64,35 +64,37 @@ async def agent(state: State, config, writer: StreamWriter):
     messages = state.get("messages", [])
     current_summary = state.get("summary", "")
     
-    # Mevcut tercihleri state'den al ve kopyasını oluştur (referans hatalarını önlemek için)
+    # Tercihleri state'de tutmaya devam edebiliriz (fallback için)
     user_prefs = state.get("user_preferences") or {}
     user_prefs_copy = dict(user_prefs)
     
-    # --- YENİ VE GÜVENLİ: TOOL CEVAPLARINDAN TERCİHLERİ AYIKLA ---
+    # Tool mesajlarından ayıklama (eski mantık korunuyor)
     if messages:
         last_msg = messages[-1]
         
         if getattr(last_msg, 'type', '') == 'tool':
             try:
-                # İçerik string ise JSON'a çevir, zaten dict ise direkt kullan
                 data = json.loads(last_msg.content) if isinstance(last_msg.content, str) else last_msg.content
                 
                 if isinstance(data, dict):
-                    # İçinde 'days' varsa kesinlikle Availability Tool'dur
                     if 'days' in data:
                         user_prefs_copy['selected_days'] = data['days']
                     if 'long_run' in data:
                         user_prefs_copy['long_run_day'] = data['long_run']
-                        
-                    # İçinde 'goal' varsa kesinlikle Program Setup Tool'dur
                     if 'goal' in data:
                         user_prefs_copy['goal'] = data['goal']
+                    if 'mode' in data: 
+                        user_prefs_copy['program_mode'] = data['mode']
+                    if 'value' in data: 
+                        user_prefs_copy['program_value'] = data['value']
+                    if 'start_date' in data: 
+                        user_prefs_copy['start_date'] = data['start_date']
                         
             except (json.JSONDecodeError, TypeError):
-                # Düz metin (✅ Program oluşturuldu vs.) geldiyse sessizce atla
                 pass
             except Exception as e:
                 logger.warning(f"⚠️ Tercihler State'e yazılırken hata oluştu: {e}")
+
 
     # --- DİNAMİK SYSTEM PROMPT OLUŞTURMA ---
     user_ctx = fetch_user_context_data(config)
@@ -100,6 +102,18 @@ async def agent(state: State, config, writer: StreamWriter):
         summary=current_summary if current_summary else "Henüz bir özet bulunmuyor.",
         user_info=json.dumps(user_ctx, ensure_ascii=False)
     )
+    
+    # --- YENİ: YAPAY ZEKAYA SÜRE KARAR VERME YETKİSİ ---
+    p_mode = user_prefs_copy.get("program_mode")
+    p_val = user_prefs_copy.get("program_value")
+    
+    if p_mode == "ai_decide":
+        formatted_sys_prompt += (
+            "\n\n[GİZLİ SİSTEM NOTU]: Kullanıcı program süresini (hafta sayısını) SENİN belirlemeni istedi ('ai_decide'). "
+            "Lütfen kullanıcının seçtiği hedefe (goal), profiline ve mevcut pace'ine bakarak en ideal program süresini "
+            "KENDİN belirle (Örn: 5K için 4-6 hafta, Maraton için 16-20 hafta vb.). "
+            "Planlama yaparken ve 'create_workout_plan' aracını çağırırken 'duration_weeks' argümanına hesapladığın bu sayıyı gönder."
+        )
     
     sys_msg = SystemMessage(content=formatted_sys_prompt)
     messages_for_llm = [sys_msg] + messages
