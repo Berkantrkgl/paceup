@@ -16,19 +16,22 @@ import {
   Switch,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-// --- NATIVE MODÜLLER ---
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 
+import { PremiumModal } from "@/components/PremiumModal";
 import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
-// --- SEÇENEK SABİTLERİ ---
+// ============================================================
+// SABİTLER
+// ============================================================
 const GENDER_OPTIONS = [
   { label: "Erkek", value: "male" },
   { label: "Kadın", value: "female" },
@@ -45,7 +48,8 @@ const DAYS_MAP = [
   "Pazar",
 ];
 
-// --- YARDIMCI FONKSİYONLAR ---
+const TOKEN_LIMIT_FREE = 50000;
+
 const generateNumberRange = (start: number, end: number, suffix: string) => {
   const options = [];
   for (let i = start; i <= end; i++) {
@@ -54,32 +58,35 @@ const generateNumberRange = (start: number, end: number, suffix: string) => {
   return options;
 };
 
-// Pace için dakika (3dk - 15dk arası mantıklı) ve saniye (0-59) dizileri
 const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
 const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
 
+// ============================================================
+// ANA EKRAN
+// ============================================================
 const ProfileScreen = () => {
   const { user, logOut, refreshUserData } = useContext(AuthContext);
   const [uploading, setUploading] = useState(false);
 
-  // --- MODAL STATE ---
+  // Edit Modal
   const [modalVisible, setModalVisible] = useState(false);
-
-  // Edit Config: 'text', 'picker', 'date', 'time', 'pace', 'multiselect'
   const [editConfig, setEditConfig] = useState<any>({
     key: "",
     title: "",
     type: "text",
     options: [],
   });
+  const [tempValue, setTempValue] = useState<any>("");
+  const [tempArrayValue, setTempArrayValue] = useState<number[]>([]);
+  const [dateValue, setDateValue] = useState(new Date());
+  const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 });
 
-  // Geçici Değerler
-  const [tempValue, setTempValue] = useState<any>(""); // Text ve Tekli Picker için
-  const [tempArrayValue, setTempArrayValue] = useState<number[]>([]); // Çoklu Seçim (Günler) için
-  const [dateValue, setDateValue] = useState(new Date()); // Date ve Time için
-  const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 }); // Pace için
+  // Premium Modal
+  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
 
-  // --- GÖRÜNTÜLEME FORMATLAYICILARI ---
+  // ============================================================
+  // GÖRÜNTÜLEME FORMATLAYICILARI
+  // ============================================================
   const formatDisplayTime = (timeStr: string) =>
     timeStr?.substring(0, 5) || "09:00";
 
@@ -92,11 +99,27 @@ const ProfileScreen = () => {
 
   const formatDisplayDays = (daysArray: number[]) => {
     if (!daysArray || daysArray.length === 0) return "Seçilmedi";
-    // 0=Pzt, 6=Paz. İlk 3 harflerini alıp gösterelim.
     return daysArray.map((d) => DAYS_MAP[d].substring(0, 3)).join(", ");
   };
 
-  // --- ACTIONS ---
+  const getTokenProgressPercent = () => {
+    if (!user || user.is_premium) return 100;
+    return Math.min(
+      100,
+      ((user.total_tokens_used || 0) / TOKEN_LIMIT_FREE) * 100,
+    );
+  };
+
+  const getTokenProgressColor = () => {
+    const pct = getTokenProgressPercent();
+    if (pct >= 90) return "#FF5252";
+    if (pct >= 70) return "#FFA500";
+    return COLORS.accent;
+  };
+
+  // ============================================================
+  // ACTIONS
+  // ============================================================
   const handlePickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
@@ -109,7 +132,6 @@ const ProfileScreen = () => {
       aspect: [1, 1],
       quality: 0.5,
     });
-
     if (!result.canceled) uploadProfileImage(result.assets[0].uri);
   };
 
@@ -121,13 +143,11 @@ const ProfileScreen = () => {
       const filename = uri.split("/").pop();
       const match = /\.(\w+)$/.exec(filename || "");
       const type = match ? `image/${match[1]}` : `image/jpeg`;
-
       formData.append("profile_image", {
         uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
         name: filename || "profile.jpg",
         type,
       } as any);
-
       await fetch(`${API_URL}/users/me/`, {
         method: "PATCH",
         headers: {
@@ -147,7 +167,6 @@ const ProfileScreen = () => {
   const openEditor = (config: any) => {
     setEditConfig(config);
     const currentVal = user?.[config.key as keyof typeof user];
-
     if (config.type === "date") {
       setDateValue(
         currentVal ? new Date(currentVal as string) : new Date(1995, 0, 1),
@@ -167,7 +186,6 @@ const ProfileScreen = () => {
     } else {
       setTempValue(String(currentVal || ""));
     }
-
     setModalVisible(true);
   };
 
@@ -175,7 +193,6 @@ const ProfileScreen = () => {
     try {
       const token = await AsyncStorage.getItem("auth-access-token");
       let payloadValue: any = tempValue;
-
       if (editConfig.type === "date") {
         payloadValue = dateValue.toISOString().split("T")[0];
       } else if (editConfig.type === "time") {
@@ -187,9 +204,8 @@ const ProfileScreen = () => {
       } else if (editConfig.type === "number") {
         payloadValue = Number(tempValue);
       } else if (editConfig.type === "multiselect") {
-        payloadValue = tempArrayValue.sort(); // Günleri sıraya dizerek kaydet
+        payloadValue = tempArrayValue.sort();
       }
-
       const response = await fetch(`${API_URL}/users/me/`, {
         method: "PATCH",
         headers: {
@@ -198,7 +214,6 @@ const ProfileScreen = () => {
         },
         body: JSON.stringify({ [editConfig.key]: payloadValue }),
       });
-
       if (response.ok) {
         await refreshUserData();
         setModalVisible(false);
@@ -235,7 +250,9 @@ const ProfileScreen = () => {
     }
   };
 
-  // --- SUB COMPONENTS ---
+  // ============================================================
+  // SUB COMPONENTS
+  // ============================================================
   const Section = ({ title, children }: any) => (
     <View style={styles.sectionContainer}>
       <Text style={styles.sectionHeader}>{title}</Text>
@@ -282,7 +299,9 @@ const ProfileScreen = () => {
     </View>
   );
 
-  // --- MODAL CONTENT RENDERERS ---
+  // ============================================================
+  // MODAL CONTENT
+  // ============================================================
   const renderModalContent = () => {
     if (editConfig.type === "date" || editConfig.type === "time") {
       return (
@@ -302,7 +321,6 @@ const ProfileScreen = () => {
         </View>
       );
     }
-
     if (editConfig.type === "pace") {
       return (
         <View style={styles.dualPickerContainer}>
@@ -340,7 +358,6 @@ const ProfileScreen = () => {
         </View>
       );
     }
-
     if (editConfig.type === "multiselect") {
       return (
         <View style={styles.multiselectContainer}>
@@ -376,7 +393,6 @@ const ProfileScreen = () => {
         </View>
       );
     }
-
     if (editConfig.type === "picker") {
       return (
         <View style={styles.pickerWrapper}>
@@ -398,7 +414,6 @@ const ProfileScreen = () => {
         </View>
       );
     }
-
     return (
       <View>
         <TextInput
@@ -414,6 +429,80 @@ const ProfileScreen = () => {
     );
   };
 
+  // ============================================================
+  // TOKEN PROGRESS BAR
+  // ============================================================
+  const TokenCard = () => {
+    const pct = getTokenProgressPercent();
+    const color = getTokenProgressColor();
+    const used = user?.total_tokens_used || 0;
+    const remaining = user?.remaining_tokens;
+
+    return (
+      <View style={styles.tokenCard}>
+        {/* Başlık */}
+        <View style={styles.tokenCardHeader}>
+          <View style={styles.tokenCardTitleRow}>
+            <Ionicons name="flash" size={16} color={color} />
+            <Text style={styles.tokenCardTitle}>AI Token Kullanımı</Text>
+          </View>
+          {user?.is_premium ? (
+            <View style={styles.premiumBadge}>
+              <Text style={styles.premiumBadgeText}>💎 Sınırsız</Text>
+            </View>
+          ) : (
+            <Text style={[styles.tokenPctText, { color }]}>
+              %{Math.round(pct)}
+            </Text>
+          )}
+        </View>
+
+        {/* Progress Bar */}
+        {!user?.is_premium && (
+          <>
+            <View style={styles.progressBarBg}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: `${pct}%` as any, backgroundColor: color },
+                ]}
+              />
+            </View>
+            <View style={styles.tokenCardFooter}>
+              <Text style={styles.tokenUsedText}>
+                {used.toLocaleString()} kullanıldı
+              </Text>
+              <Text style={[styles.tokenRemainingText, { color }]}>
+                {remaining !== null && remaining !== undefined
+                  ? `${remaining.toLocaleString()} kaldı`
+                  : "—"}
+              </Text>
+            </View>
+          </>
+        )}
+
+        {/* Premium CTA */}
+        {!user?.is_premium && (
+          <TouchableOpacity
+            style={[styles.upgradeCta, pct >= 90 && styles.upgradeCtaUrgent]}
+            onPress={() => setPremiumModalVisible(true)}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="flash" size={14} color="#000" />
+            <Text style={styles.upgradeCtaText}>
+              {pct >= 90
+                ? "Limitin Dolmak Üzere! Premium'a Geç →"
+                : "Premium'a Geç, Sınırsız Kullan →"}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
@@ -461,17 +550,26 @@ const ProfileScreen = () => {
                   🔥 {user?.current_streak} Gün Seri
                 </Text>
                 <Text style={styles.statDot}>•</Text>
-                <Text
-                  style={[
-                    styles.statText,
-                    user?.is_premium && { color: COLORS.accent },
-                  ]}
+                <TouchableOpacity
+                  onPress={() =>
+                    !user?.is_premium && setPremiumModalVisible(true)
+                  }
                 >
-                  {user?.is_premium ? "💎 PREMIUM" : "🏃‍♂️ STANDART"}
-                </Text>
+                  <Text
+                    style={[
+                      styles.statText,
+                      user?.is_premium && { color: COLORS.accent },
+                    ]}
+                  >
+                    {user?.is_premium ? "💎 PREMIUM" : "🏃‍♂️ STANDART"}
+                  </Text>
+                </TouchableOpacity>
               </View>
             </View>
           </View>
+
+          {/* TOKEN KARTI */}
+          <TokenCard />
 
           {/* SECTION 1: KİMLİK & FİZİKSEL */}
           <Section title="KİMLİK VE FİZİKSEL">
@@ -541,7 +639,7 @@ const ProfileScreen = () => {
             />
           </Section>
 
-          {/* SECTION 2: KOŞU PROFİLİ (Güncellendi) */}
+          {/* SECTION 2: KOŞU PROFİLİ */}
           <Section title="KOŞU PROFİLİ">
             <InfoRow
               label="Ortalama Pace"
@@ -575,14 +673,15 @@ const ProfileScreen = () => {
                   type: "multiselect",
                 })
               }
+              isLast
             />
           </Section>
 
-          {/* SECTION 3: HESAP BİLGİLERİ (YENİ) */}
+          {/* SECTION 3: HESAP BİLGİLERİ */}
           <Section title="HESAP BİLGİLERİ">
             <InfoRow
               label="Üyelik Tipi"
-              value={user?.is_premium ? "Premium" : "Standart"}
+              value={user?.is_premium ? "Premium 💎" : "Standart"}
               isReadonly
             />
             <InfoRow
@@ -593,20 +692,15 @@ const ProfileScreen = () => {
                   : `${user?.remaining_reschedules} / 2`
               }
               isReadonly
-            />
-            <InfoRow
-              label="Kullanılan AI Token"
-              value={`${user?.total_tokens_used}`}
-              isReadonly
               isLast
             />
           </Section>
 
-          {/* SECTION 4: TERCİHLER */}
+          {/* SECTION 4: BİLDİRİM TERCİHLERİ */}
           <Section title="BİLDİRİM TERCİHLERİ">
             <InfoRow
               label="Hatırlatma Saati"
-              value={formatDisplayTime(user?.preferred_reminder_time)}
+              value={formatDisplayTime(user?.preferred_reminder_time ?? "")}
               onPress={() =>
                 openEditor({
                   key: "preferred_reminder_time",
@@ -651,18 +745,16 @@ const ProfileScreen = () => {
             <Pressable style={styles.logoutBtn} onPress={logOut}>
               <Text style={styles.logoutText}>Oturumu Kapat</Text>
             </Pressable>
-            <Text style={styles.versionText}>
-              PaceUp v2.3.0 (Centered Modal Update)
-            </Text>
+            <Text style={styles.versionText}>PaceUp v2.3.0</Text>
           </View>
         </ScrollView>
       </SafeAreaView>
 
-      {/* --- CENTERED MODAL --- */}
+      {/* Edit Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setModalVisible(false)} // Dışarı tıklanınca kapat
+          onPress={() => setModalVisible(false)}
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -674,10 +766,9 @@ const ProfileScreen = () => {
           >
             <Pressable
               style={styles.modalCenteredContainer}
-              onPress={(e) => e.stopPropagation()} // İçeri tıklanmayı engelle
+              onPress={(e) => e.stopPropagation()}
             >
               <View style={styles.modalContent}>
-                {/* Header */}
                 <View style={styles.modalHeader}>
                   <Pressable
                     onPress={() => setModalVisible(false)}
@@ -690,18 +781,26 @@ const ProfileScreen = () => {
                     <Text style={styles.headerBtnTextSave}>Kaydet</Text>
                   </Pressable>
                 </View>
-
-                {/* Body */}
                 <View style={styles.modalBody}>{renderModalContent()}</View>
               </View>
             </Pressable>
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      {/* Premium Modal */}
+      <PremiumModal
+        visible={premiumModalVisible}
+        onClose={() => setPremiumModalVisible(false)}
+        reason="general"
+      />
     </View>
   );
 };
 
+// ============================================================
+// STYLES
+// ============================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
@@ -718,12 +817,12 @@ const styles = StyleSheet.create({
   },
   scrollContent: { paddingBottom: 80 },
 
-  // User Card & Sections
+  // User Card
   userCard: {
     flexDirection: "row",
     alignItems: "center",
     padding: 24,
-    marginBottom: 10,
+    marginBottom: 4,
   },
   avatarContainer: { marginRight: 20, position: "relative" },
   avatar: {
@@ -766,7 +865,70 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", alignItems: "center" },
   statText: { fontSize: 12, color: COLORS.secondary, fontWeight: "600" },
   statDot: { color: COLORS.textDim, marginHorizontal: 6, fontSize: 10 },
-  sectionContainer: { marginBottom: 30 },
+
+  // Token Card
+  tokenCard: {
+    marginHorizontal: 20,
+    marginBottom: 24,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  tokenCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  tokenCardTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  tokenCardTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
+  tokenPctText: { fontSize: 13, fontWeight: "700" },
+  premiumBadge: {
+    backgroundColor: "rgba(255,69,1,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255,69,1,0.3)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+  },
+  premiumBadgeText: { color: COLORS.accent, fontSize: 11, fontWeight: "700" },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 3,
+    overflow: "hidden",
+    marginBottom: 8,
+  },
+  progressBarFill: { height: "100%", borderRadius: 3 },
+  tokenCardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  tokenUsedText: { color: COLORS.textDim, fontSize: 12 },
+  tokenRemainingText: { fontSize: 12, fontWeight: "600" },
+  upgradeCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.accent,
+    borderRadius: 10,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  upgradeCtaUrgent: {
+    backgroundColor: "#FF5252",
+  },
+  upgradeCtaText: {
+    color: "#000",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Sections
+  sectionContainer: { marginBottom: 28 },
   sectionHeader: {
     fontSize: 12,
     color: COLORS.textDim,
@@ -806,6 +968,8 @@ const styles = StyleSheet.create({
     marginRight: 4,
     textAlign: "right",
   },
+
+  // Footer
   footer: { paddingHorizontal: 20, alignItems: "center", paddingBottom: 20 },
   logoutBtn: {
     width: "100%",
@@ -820,21 +984,18 @@ const styles = StyleSheet.create({
   logoutText: { color: COLORS.danger, fontSize: 15, fontWeight: "600" },
   versionText: { fontSize: 11, color: COLORS.textDim, opacity: 0.4 },
 
-  // --- CENTERED MODAL STYLES ---
+  // Edit Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)", // Biraz daha koyu bir arka plan
-    justifyContent: "center", // DİKKAT: Artık ortalıyoruz
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
     alignItems: "center",
   },
-  modalCenteredContainer: {
-    width: "90%", // Ekranın %90'ını kaplasın
-    maxWidth: 400,
-  },
+  modalCenteredContainer: { width: "90%", maxWidth: 400 },
   modalContent: {
     backgroundColor: "#1C1C1E",
-    borderRadius: 20, // Köşeleri tüm kenarlardan yuvarlattık
-    overflow: "hidden", // Köşe taşmalarını engellemek için
+    borderRadius: 20,
+    overflow: "hidden",
   },
   modalHeader: {
     flexDirection: "row",
@@ -856,10 +1017,7 @@ const styles = StyleSheet.create({
     minHeight: 150,
     justifyContent: "center",
   },
-
   pickerWrapper: { justifyContent: "center" },
-
-  // Custom Dual Picker Styles
   dualPickerContainer: {
     flexDirection: "row",
     justifyContent: "center",
@@ -870,7 +1028,7 @@ const styles = StyleSheet.create({
     color: COLORS.textDim,
     fontSize: 12,
     marginBottom: -10,
-    zHeight: 1,
+    zIndex: 1,
   },
   pickerSeparator: {
     fontSize: 30,
@@ -878,8 +1036,6 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingHorizontal: 10,
   },
-
-  // --- MULTISELECT STYLES ---
   multiselectContainer: { padding: 10 },
   dayButton: {
     flexDirection: "row",
@@ -898,7 +1054,6 @@ const styles = StyleSheet.create({
   },
   dayButtonText: { color: COLORS.white, fontSize: 16 },
   dayButtonTextSelected: { color: COLORS.accent, fontWeight: "bold" },
-
   input: {
     backgroundColor: "#2C2C2E",
     color: COLORS.text,

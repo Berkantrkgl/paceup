@@ -53,6 +53,10 @@ export type UserData = {
   notification_weekly_report?: boolean;
   notification_achievements?: boolean;
   notification_plan_updates?: boolean;
+
+  // hesap bilgileri.
+  remaining_tokens: number | null;
+  can_use_chat: boolean;
 };
 
 type AuthState = {

@@ -1,4 +1,4 @@
-import { FASTAPI_URL } from "@/constants/Config";
+import { API_URL, FASTAPI_URL } from "@/constants/Config";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useContext, useEffect, useRef, useState } from "react";
 import {
@@ -12,11 +12,11 @@ import {
   Platform,
   StatusBar,
   StyleSheet,
+  Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-// 📦 MARKDOWN & SSE
 import Markdown from "react-native-markdown-display";
 import EventSource from "react-native-sse";
 
@@ -24,13 +24,13 @@ import { COLORS } from "@/constants/Colors";
 import { ChatMessage } from "@/types/plans";
 import { AuthContext } from "@/utils/authContext";
 
-// 🛠️ WIDGET IMPORTS
 import { AvailabilityTool } from "@/components/chat/tools/AvailabilityTool";
 import { ProgramSetupTool } from "@/components/chat/tools/ProgramSetupTool";
 import { RunnerProfileTool } from "@/components/chat/tools/RunnerProfileTool";
+import { PremiumModal } from "@/components/PremiumModal";
 
 // ============================================================
-// 💬 SABİTLER: Bekleme Metinleri
+// 💬 SABİTLER
 // ============================================================
 const LOADING_TEXTS = [
   "🚀 Koşu verilerin işleniyor...",
@@ -40,8 +40,10 @@ const LOADING_TEXTS = [
   "🎯 Hedeflerine en uygun takvim oluşturuluyor...",
 ];
 
+const TOKEN_WARNING_THRESHOLD = 10000;
+
 // ============================================================
-// ✨ BİLEŞEN: DynamicSystemMessage
+// ✨ DynamicSystemMessage
 // ============================================================
 const DynamicSystemMessage = ({
   isFinished,
@@ -53,13 +55,11 @@ const DynamicSystemMessage = ({
   const [textIndex, setTextIndex] = useState(() =>
     Math.floor(Math.random() * LOADING_TEXTS.length),
   );
-
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (isFinished) return;
-
     const interval = setInterval(() => {
       Animated.sequence([
         Animated.timing(slideAnim, {
@@ -73,16 +73,14 @@ const DynamicSystemMessage = ({
           useNativeDriver: true,
         }),
       ]).start();
-
       setTextIndex((prev) => {
-        let nextIndex;
+        let next;
         do {
-          nextIndex = Math.floor(Math.random() * LOADING_TEXTS.length);
-        } while (nextIndex === prev && LOADING_TEXTS.length > 1);
-        return nextIndex;
+          next = Math.floor(Math.random() * LOADING_TEXTS.length);
+        } while (next === prev && LOADING_TEXTS.length > 1);
+        return next;
       });
     }, 3000);
-
     return () => clearInterval(interval);
   }, [isFinished]);
 
@@ -109,12 +107,11 @@ const DynamicSystemMessage = ({
     ).start();
   }, [isFinished]);
 
-  let currentText = LOADING_TEXTS[textIndex];
-  if (isFinished) {
-    currentText = isError
+  const currentText = isFinished
+    ? isError
       ? "⚠️ Bir sorun oluştu."
-      : "✅ Programın başarıyla oluşturuldu!";
-  }
+      : "✅ Programın başarıyla oluşturuldu!"
+    : LOADING_TEXTS[textIndex];
 
   return (
     <Animated.View
@@ -147,38 +144,102 @@ const DynamicSystemMessage = ({
 };
 
 // ============================================================
-// 📱 ANA EKRAN BİLEŞENİ
+// 📱 ANA EKRAN
 // ============================================================
 const ChatbotScreen = () => {
-  const { getValidToken, user } = useContext(AuthContext);
+  const { getValidToken, user, refreshUserData } = useContext(AuthContext);
   const flatListRef = useRef<FlatList>(null);
 
-  const [threadId, setThreadId] = useState(
+  const [threadId] = useState(
     `thread-${Math.random().toString(36).substring(7)}`,
   );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-
   const [userScrolling, setUserScrolling] = useState(false);
   const isUserInteracting = useRef(false);
+
+  // Token state
+  const [canUseChat, setCanUseChat] = useState(true);
+  const [remainingTokens, setRemainingTokens] = useState<number | null>(null);
+
+  // Premium modal
+  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
 
   const activeToolId = messages.find(
     (m) => m.sender === "tool_widget" && !m.toolData?.submitted,
   )?.id;
 
+  // ============================================================
+  // 🚀 USER'DAN TOKEN DURUMUNU OKU
+  // ============================================================
+  useEffect(() => {
+    if (!user) return;
+    setRemainingTokens(user.remaining_tokens ?? null);
+    setCanUseChat(user.can_use_chat ?? true);
+  }, [user]);
+
+  // Token dolunca otomatik modal aç
+  useEffect(() => {
+    if (!canUseChat) {
+      setPremiumModalVisible(true);
+    }
+  }, [canUseChat]);
+
+  // ============================================================
+  // 🚀 CHAT BAŞLATMA
+  // ============================================================
   useEffect(() => {
     if (messages.length > 0) return;
-    const initChat = async () => {
-      console.log("💬 Chat başlatılıyor...");
-      await connectAndStream([
-        { role: "user", content: [{ type: "text", text: "Selam!" }] },
-      ]);
-    };
-    initChat();
+    connectAndStream([
+      { role: "user", content: [{ type: "text", text: "Selam!" }] },
+    ]);
   }, [threadId]);
 
+  // ============================================================
+  // 📡 DJANGO TOKEN GÜNCELLEME
+  // ============================================================
+  const reportTokenUsage = async (tokensUsed: number) => {
+    if (tokensUsed <= 0) return;
+    try {
+      const validToken = await getValidToken();
+      if (!validToken) return;
+
+      const res = await fetch(`${API_URL}/users/update_token_usage/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${validToken}`,
+        },
+        body: JSON.stringify({ tokens_used: tokensUsed }),
+      });
+
+      if (!res.ok) {
+        console.warn("reportTokenUsage HTTP error:", res.status);
+        return;
+      }
+
+      const data = await res.json();
+      setRemainingTokens(data.remaining_tokens ?? null);
+      setCanUseChat(data.can_use_chat ?? true);
+
+      // AuthContext user'ını da güncelle (Profile sayfası için)
+      await refreshUserData();
+    } catch (e) {
+      console.error("Token usage güncelleme hatası:", e);
+    }
+  };
+
+  // ============================================================
+  // 📡 SSE STREAM
+  // ============================================================
   const connectAndStream = async (payloadMessages: any[]) => {
+    // Token kontrolü — modal aç, mesaj gönderme
+    if (!canUseChat) {
+      setPremiumModalVisible(true);
+      return;
+    }
+
     const validToken = await getValidToken();
     if (!validToken) return;
 
@@ -196,6 +257,8 @@ const ChatbotScreen = () => {
       },
     ]);
 
+    let sessionTokenAccumulator = 0;
+
     try {
       const eventSource = new EventSource(`${FASTAPI_URL}/chat-stream`, {
         method: "POST",
@@ -210,6 +273,7 @@ const ChatbotScreen = () => {
         pollingInterval: 0,
       });
 
+      // --- TEXT TOKEN ---
       eventSource.addEventListener("token", (event) => {
         if (!event.data) return;
         try {
@@ -228,10 +292,22 @@ const ChatbotScreen = () => {
             );
           }
         } catch (e) {
-          console.error("Token error:", e);
+          console.error("token event parse error:", e);
         }
       });
 
+      // --- LLM TOKEN KULLANIMI ---
+      eventSource.addEventListener("token_usage", (event) => {
+        if (!event.data) return;
+        try {
+          const data = JSON.parse(event.data);
+          sessionTokenAccumulator += data.total_tokens || 0;
+        } catch (e) {
+          console.error("token_usage parse error:", e);
+        }
+      });
+
+      // --- BACKEND TOOL BİLDİRİMİ ---
       eventSource.addEventListener("tool_use_notification", (event) => {
         if (!event.data) return;
         try {
@@ -253,20 +329,24 @@ const ChatbotScreen = () => {
             const newAiMsgId = `ai-${Date.now()}`;
             activeAiMsgId = newAiMsgId;
 
-            const newAiMsg: ChatMessage = {
-              id: newAiMsgId,
-              sender: "ai",
-              text: "",
-              timestamp: new Date(),
-              isStreaming: true,
-            };
-            return [...cleanHistory, notificationMsg, newAiMsg];
+            return [
+              ...cleanHistory,
+              notificationMsg,
+              {
+                id: newAiMsgId,
+                sender: "ai",
+                text: "",
+                timestamp: new Date(),
+                isStreaming: true,
+              },
+            ];
           });
         } catch (e) {
-          console.error("Notify error:", e);
+          console.error("tool_use_notification error:", e);
         }
       });
 
+      // --- UI TOOL ---
       eventSource.addEventListener("ask_user", (event) => {
         if (!event.data) return;
         try {
@@ -279,7 +359,6 @@ const ChatbotScreen = () => {
               msg.id === activeAiMsgId ? { ...msg, isStreaming: false } : msg,
             ),
           );
-
           setMessages((prev) => {
             if (prev.some((m) => m.id === tool.id)) return prev;
             return [
@@ -299,18 +378,24 @@ const ChatbotScreen = () => {
             ];
           });
         } catch (e) {
-          console.error("Tool error:", e);
+          console.error("ask_user event error:", e);
         }
       });
 
-      const finalizeStream = () => {
+      // --- STREAM BİTİŞİ ---
+      const finalizeStream = async () => {
         setIsTyping(false);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === activeAiMsgId ? { ...msg, isStreaming: false } : msg,
           ),
         );
+        eventSource.removeAllEventListeners();
         eventSource.close();
+
+        if (sessionTokenAccumulator > 0) {
+          await reportTokenUsage(sessionTokenAccumulator);
+        }
       };
 
       eventSource.addEventListener("status", finalizeStream);
@@ -326,12 +411,14 @@ const ChatbotScreen = () => {
     }
   };
 
+  // ============================================================
+  // 📤 KULLANICI MESAJ GÖNDERME
+  // ============================================================
   const handleUserSend = () => {
     if (!inputText.trim()) return;
     const text = inputText.trim();
     setInputText("");
     Keyboard.dismiss();
-
     setUserScrolling(false);
     isUserInteracting.current = false;
 
@@ -347,6 +434,9 @@ const ChatbotScreen = () => {
     connectAndStream([{ role: "user", content: [{ type: "text", text }] }]);
   };
 
+  // ============================================================
+  // 🛠️ TOOL SUBMIT
+  // ============================================================
   const handleToolSubmit = (toolId: string, responseJson: object) => {
     setMessages((prev) =>
       prev.map((msg) =>
@@ -365,6 +455,9 @@ const ChatbotScreen = () => {
     ]);
   };
 
+  // ============================================================
+  // 🎨 RENDER ITEM
+  // ============================================================
   const renderItem = ({ item, index }: ListRenderItemInfo<ChatMessage>) => {
     if (item.sender === "system_info") {
       const nextMsg = messages[index + 1];
@@ -376,7 +469,6 @@ const ChatbotScreen = () => {
         nextMsg &&
         (nextMsg.text.startsWith("Üzgünüm") ||
           nextMsg.text.includes("hata oluştu"));
-
       return (
         <View
           style={{ width: "100%", alignItems: "center", marginVertical: 10 }}
@@ -399,7 +491,6 @@ const ChatbotScreen = () => {
           <RunnerProfileTool
             onSubmit={(data) => handleToolSubmit(id, data)}
             submitted={submitted}
-            // 👇 DİKKAT: Buradaki experience alanı kaldırıldı! 👇
             initialData={{
               weight: user?.weight ? String(user.weight) : "70",
               height: user?.height ? String(user.height) : "175",
@@ -427,6 +518,7 @@ const ChatbotScreen = () => {
           />
         );
       }
+
       return ToolComponent ? (
         <View style={styles.toolContainer}>{ToolComponent}</View>
       ) : null;
@@ -446,6 +538,7 @@ const ChatbotScreen = () => {
         </View>
       );
     }
+
     if (!item.text && !item.isStreaming) return null;
 
     return (
@@ -466,19 +559,49 @@ const ChatbotScreen = () => {
     );
   };
 
-  const handleScroll = (event: any) => {
-    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
-    if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 20) {
-      setUserScrolling(false);
-      isUserInteracting.current = false;
-    }
-  };
-
-  const isInputDisabled = isTyping || !!activeToolId;
+  // ============================================================
+  // 🎨 RENDER
+  // ============================================================
+  const isInputDisabled = isTyping || !!activeToolId || !canUseChat;
 
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
+
+      {/* Token Bloke Banner */}
+      {!canUseChat && (
+        <TouchableOpacity
+          style={styles.tokenBlockedBanner}
+          onPress={() => setPremiumModalVisible(true)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="lock-closed" size={16} color="#FF5252" />
+          <Text style={styles.tokenBlockedText}>
+            Ücretsiz kullanım hakkın doldu.
+          </Text>
+          <View style={styles.tokenBlockedBtn}>
+            <Text style={styles.tokenBlockedBtnText}>Premium Al →</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* Token Uyarı Banner */}
+      {canUseChat &&
+        remainingTokens !== null &&
+        remainingTokens < TOKEN_WARNING_THRESHOLD && (
+          <TouchableOpacity
+            style={styles.tokenWarningBanner}
+            onPress={() => setPremiumModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="warning-outline" size={14} color="#FFA500" />
+            <Text style={styles.tokenWarningText}>
+              Kalan: {remainingTokens.toLocaleString()} token
+            </Text>
+            <Text style={styles.tokenWarningLink}>Premium Al</Text>
+          </TouchableOpacity>
+        )}
+
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -489,13 +612,24 @@ const ChatbotScreen = () => {
           if (!userScrolling && !isUserInteracting.current)
             flatListRef.current?.scrollToEnd({ animated: true });
         }}
-        onScroll={handleScroll}
+        onScroll={(event) => {
+          const { layoutMeasurement, contentOffset, contentSize } =
+            event.nativeEvent;
+          if (
+            layoutMeasurement.height + contentOffset.y >=
+            contentSize.height - 20
+          ) {
+            setUserScrolling(false);
+            isUserInteracting.current = false;
+          }
+        }}
         onScrollBeginDrag={() => {
           setUserScrolling(true);
           isUserInteracting.current = true;
         }}
         removeClippedSubviews={Platform.OS === "android"}
       />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
@@ -512,31 +646,52 @@ const ChatbotScreen = () => {
             value={inputText}
             onChangeText={setInputText}
             placeholder={
-              activeToolId ? "Seçimi tamamlayın..." : "Mesaj yazın..."
+              !canUseChat
+                ? "Limit doldu..."
+                : activeToolId
+                  ? "Seçimi tamamlayın..."
+                  : "Mesaj yazın..."
             }
             placeholderTextColor="#666"
             editable={!isInputDisabled}
             multiline
           />
           <TouchableOpacity
-            onPress={handleUserSend}
-            disabled={!inputText.trim() || isInputDisabled}
+            onPress={
+              !canUseChat ? () => setPremiumModalVisible(true) : handleUserSend
+            }
+            disabled={canUseChat && (!inputText.trim() || isInputDisabled)}
             style={[
               styles.sendBtn,
-              (!inputText.trim() || isInputDisabled) && { opacity: 0.5 },
+              canUseChat &&
+                (!inputText.trim() || isInputDisabled) && { opacity: 0.5 },
+              !canUseChat && { backgroundColor: COLORS.accent },
             ]}
           >
-            <Ionicons name="arrow-up" size={20} color={COLORS.background} />
+            <Ionicons
+              name={!canUseChat ? "flash" : "arrow-up"}
+              size={20}
+              color={COLORS.background}
+            />
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      {/* Premium Modal */}
+      <PremiumModal
+        visible={premiumModalVisible}
+        onClose={() => setPremiumModalVisible(false)}
+        reason={!canUseChat ? "token_limit" : "general"}
+      />
     </View>
   );
 };
 
 export default ChatbotScreen;
 
-// STYLES
+// ============================================================
+// 🎨 STYLES
+// ============================================================
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   messageRow: {
@@ -630,7 +785,60 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  // Token Bloke Banner
+  tokenBlockedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,82,82,0.1)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,82,82,0.2)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  tokenBlockedText: {
+    color: "#FF5252",
+    fontSize: 13,
+    flex: 1,
+    fontWeight: "600",
+  },
+  tokenBlockedBtn: {
+    backgroundColor: "rgba(255,82,82,0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,82,82,0.4)",
+  },
+  tokenBlockedBtnText: {
+    color: "#FF5252",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  // Token Uyarı Banner
+  tokenWarningBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,165,0,0.08)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,165,0,0.15)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    gap: 6,
+  },
+  tokenWarningText: {
+    color: "#FFA500",
+    fontSize: 12,
+    fontWeight: "500",
+    flex: 1,
+  },
+  tokenWarningLink: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: "700",
+  },
 });
+
 const markdownStylesAi = StyleSheet.create({
   body: { color: "#E0E0E0", fontSize: 14, lineHeight: 20 },
   heading1: {
@@ -641,6 +849,7 @@ const markdownStylesAi = StyleSheet.create({
   },
   strong: { color: "#FFFFFF", fontWeight: "700" },
 });
+
 const markdownStylesUser = StyleSheet.create({
   body: { color: "#000000", fontSize: 14, lineHeight: 20, fontWeight: "500" },
   paragraph: { margin: 0 },
