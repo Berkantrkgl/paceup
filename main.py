@@ -136,6 +136,79 @@ async def stream_chat(req: Request, inp: StreamChatInput, user: dict = Depends(v
                         output = chunk["data"]["output"]
                         tool_calls = extract_tool_calls_safe(output)
 
+                        # Bedrock generations formatından usage_metadata çıkar
+                        usage_metadata = None
+
+                        # 1. Direkt attribute
+                        if hasattr(output, "usage_metadata") and output.usage_metadata:
+                            usage_metadata = output.usage_metadata
+
+                        # 2. Dict — direkt key
+                        elif isinstance(output, dict) and "usage_metadata" in output:
+                            usage_metadata = output["usage_metadata"]
+
+                        # 3. Bedrock generations formatı
+                        elif isinstance(output, dict) and "generations" in output:
+                            try:
+                                gen = output["generations"][0]
+                                if isinstance(gen, list):
+                                    gen = gen[0]
+                                # gen bir dict ise
+                                if isinstance(gen, dict):
+                                    msg = gen.get("message")
+                                    if msg and hasattr(msg, "usage_metadata"):
+                                        usage_metadata = msg.usage_metadata
+                                    elif msg and isinstance(msg, dict):
+                                        usage_metadata = msg.get("usage_metadata")
+                                # gen bir obje ise
+                                elif hasattr(gen, "message"):
+                                    msg = gen.message
+                                    if hasattr(msg, "usage_metadata"):
+                                        usage_metadata = msg.usage_metadata
+                            except Exception as e:
+                                logger.warning(f"generations parse error: {e}")
+
+                        # 4. llm_output içinde token kullanımı (Bedrock alternatif konum)
+                        if not usage_metadata and isinstance(output, dict) and "llm_output" in output:
+                            llm_output = output["llm_output"]
+                            logger.info(f"🔍 llm_output: {llm_output}")
+                            usage = llm_output.get("usage", {})
+                            if usage:
+                                usage_metadata = {
+                                    "input_tokens": usage.get("prompt_tokens") or usage.get("inputTokens") or usage.get("input_tokens", 0),
+                                    "output_tokens": usage.get("completion_tokens") or usage.get("outputTokens") or usage.get("output_tokens", 0),
+                                    "total_tokens": usage.get("total_tokens") or usage.get("totalTokens", 0),
+                                }
+
+                        if not usage_metadata:
+                            logger.warning(f"❌ usage_metadata bulunamadı. output keys: {list(output.keys()) if isinstance(output, dict) else type(output)}")
+                            # Tüm output'u logla (kısa tutarak)
+                            if isinstance(output, dict):
+                                for k, v in output.items():
+                                    if k != "generations":
+                                        logger.info(f"   output['{k}']: {str(v)[:200]}")
+
+                        if usage_metadata:
+                            if isinstance(usage_metadata, dict):
+                                input_tokens = usage_metadata.get("input_tokens", 0)
+                                output_tokens = usage_metadata.get("output_tokens", 0)
+                                total_tokens = usage_metadata.get("total_tokens", 0) or (input_tokens + output_tokens)
+                            else:
+                                input_tokens = getattr(usage_metadata, "input_tokens", 0) or 0
+                                output_tokens = getattr(usage_metadata, "output_tokens", 0) or 0
+                                total_tokens = getattr(usage_metadata, "total_tokens", 0) or (input_tokens + output_tokens)
+
+                            logger.info(f"📊 Token usage: input={input_tokens}, output={output_tokens}, total={total_tokens}")
+
+                            yield {
+                                "event": "token_usage",
+                                "data": json.dumps({
+                                    "input_tokens": input_tokens,
+                                    "output_tokens": output_tokens,
+                                    "total_tokens": total_tokens
+                                })
+                            }
+
                         if tool_calls:
                             for tc in tool_calls:
                                 raw_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", "")
