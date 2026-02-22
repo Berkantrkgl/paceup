@@ -1,19 +1,13 @@
 import { COLORS } from "@/constants/Colors";
+import { AuthContext } from "@/utils/authContext";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React, { useContext, useEffect, useState } from "react";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 // --- TYPES ---
 export interface AvailabilityData {
-  days: string[]; // ["Mon", "Wed", "Fri"]
-  long_run: string | null; // "Sun" veya null
+  days: string[];
+  long_run: string | null;
 }
 
 interface AvailabilityToolProps {
@@ -23,302 +17,447 @@ interface AvailabilityToolProps {
 
 // --- CONSTANTS ---
 const ALL_DAYS = [
-  { id: "Mon", label: "Pzt" },
-  { id: "Tue", label: "Sal" },
-  { id: "Wed", label: "Çar" },
-  { id: "Thu", label: "Per" },
-  { id: "Fri", label: "Cum" },
-  { id: "Sat", label: "Cmt" },
-  { id: "Sun", label: "Paz" },
+  { id: "Mon", label: "Pazartesi", short: "Pzt", index: 0 },
+  { id: "Tue", label: "Salı", short: "Sal", index: 1 },
+  { id: "Wed", label: "Çarşamba", short: "Çar", index: 2 },
+  { id: "Thu", label: "Perşembe", short: "Per", index: 3 },
+  { id: "Fri", label: "Cuma", short: "Cum", index: 4 },
+  { id: "Sat", label: "Cumartesi", short: "Cmt", index: 5 },
+  { id: "Sun", label: "Pazar", short: "Paz", index: 6 },
 ];
 
 export const AvailabilityTool = ({
   onSubmit,
   submitted,
 }: AvailabilityToolProps) => {
-  const [isEditing, setIsEditing] = useState(true);
-
-  // --- STATE ---
+  const { user } = useContext(AuthContext);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [longRunDay, setLongRunDay] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
 
-  // --- HANDLERS ---
+  // Kullanıcı verilerinden günleri yükle
+  useEffect(() => {
+    if (
+      !initialized &&
+      user?.preferred_running_days &&
+      Array.isArray(user.preferred_running_days)
+    ) {
+      // Backend'den gelen index'leri (0-6) day ID'lerine çevir
+      const userDayIds = user.preferred_running_days
+        .map((dayIndex: number) => {
+          const day = ALL_DAYS.find((d) => d.index === dayIndex);
+          return day ? day.id : null;
+        })
+        .filter(Boolean) as string[];
+
+      if (userDayIds.length > 0) {
+        setSelectedDays(userDayIds);
+      }
+      setInitialized(true);
+    }
+  }, [user, initialized]);
+
   const toggleDay = (dayId: string) => {
     if (selectedDays.includes(dayId)) {
-      // Listeden çıkar
       setSelectedDays((prev) => prev.filter((d) => d !== dayId));
-      // Eğer çıkardığı gün, seçili uzun koşu günüyse, uzun koşuyu da sıfırla
       if (longRunDay === dayId) setLongRunDay(null);
     } else {
-      // Listeye ekle
       setSelectedDays((prev) => [...prev, dayId]);
     }
   };
 
-  const toggleLongRun = (dayId: string) => {
-    // Zaten seçiliyse kaldır (toggle), değilse seç
-    if (longRunDay === dayId) {
-      setLongRunDay(null);
-    } else {
-      setLongRunDay(dayId);
-    }
-  };
-
   const handleSubmit = () => {
-    // VALIDASYON: En az 1 gün seçilmiş olmalı
     if (selectedDays.length < 1) {
-      Alert.alert("Eksik Seçim", "Lütfen koşmak istediğin günleri işaretle.");
+      Alert.alert("Eksik Seçim", "Lütfen en az 1 gün seçmelisin.");
       return;
     }
 
-    // ARTIK SADECE GÜNLER VE UZUN KOŞU GİDİYOR
-    const payload: AvailabilityData = {
+    onSubmit({
       days: selectedDays,
       long_run: longRunDay,
-    };
-
-    setIsEditing(false);
-    onSubmit(payload);
+    });
   };
 
-  // --- HELPERS ---
-  const getLongRunLabel = () =>
-    longRunDay
-      ? ALL_DAYS.find((d) => d.id === longRunDay)?.label
-      : "Fark Etmez";
-
-  // --- 1. SUBMITTED VIEW ---
-  if (submitted || !isEditing) {
+  if (submitted) {
     const sortedDays = ALL_DAYS.filter((d) => selectedDays.includes(d.id)).map(
-      (d) => d.label,
+      (d) => d.label.substring(0, 3),
     );
-    const daySummary =
-      sortedDays.length === 7 ? "Her Gün" : sortedDays.join(", ");
+    const daySummary = sortedDays.join(", ");
+    const longRunLabel = longRunDay
+      ? ALL_DAYS.find((d) => d.id === longRunDay)?.label
+      : "Otomatik";
 
     return (
-      <View style={styles.submittedContainer}>
+      <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="calendar" size={16} color={COLORS.background} />
+          <Ionicons name="checkmark-circle" size={24} color={COLORS.accent} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={styles.submittedText}>
-            Haftada {selectedDays.length} Gün • Uzun: {getLongRunLabel()}
+          <Text style={styles.submittedTitle}>
+            {selectedDays.length} Gün • Uzun: {longRunLabel}
           </Text>
-          <Text style={styles.submittedSubText} numberOfLines={1}>
-            Müsait: {daySummary}
+          <Text style={styles.submittedSubtitle} numberOfLines={1}>
+            {daySummary}
           </Text>
         </View>
       </View>
     );
   }
 
-  // --- 2. EDIT VIEW ---
-
-  // Submit butonu sadece en az 1 gün seçiliyse aktif olacak
   const isValid = selectedDays.length > 0;
 
   return (
     <View style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Haftalık Program</Text>
-        <Ionicons name="time-outline" size={16} color={COLORS.accent} />
+        <View>
+          <Text style={styles.title}>📅 Haftalık Program</Text>
+          <Text style={styles.subtitle}>
+            {user?.preferred_running_days &&
+            user.preferred_running_days.length > 0
+              ? "Günlerini kontrol et veya değiştir"
+              : "Koşu günlerini işaretle"}
+          </Text>
+        </View>
+        {selectedDays.length > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{selectedDays.length} gün</Text>
+          </View>
+        )}
       </View>
 
-      {/* A. MÜSAİT GÜNLER */}
-      <View style={styles.labelRow}>
-        <Text style={styles.label}>1. Koşu için hangi günler müsaitsin?</Text>
-      </View>
+      {/* Haftalık Takvim - Görsel Bloklar */}
+      <View style={styles.weekContainer}>
+        {ALL_DAYS.map((day) => {
+          const isSelected = selectedDays.includes(day.id);
+          const isLongRun = longRunDay === day.id;
 
-      <View style={styles.daysWrap}>
-        {ALL_DAYS.map((d) => {
-          const isSelected = selectedDays.includes(d.id);
           return (
-            <TouchableOpacity
-              key={d.id}
-              style={[styles.dayCircle, isSelected && styles.dayCircleActive]}
-              onPress={() => toggleDay(d.id)}
-            >
-              <Text
-                style={[styles.dayText, isSelected && styles.dayTextActive]}
+            <View key={day.id} style={styles.dayWrapper}>
+              <TouchableOpacity
+                style={[styles.dayBlock, isSelected && styles.dayBlockActive]}
+                onPress={() => toggleDay(day.id)}
+                activeOpacity={0.7}
               >
-                {d.label}
-              </Text>
-            </TouchableOpacity>
+                {/* Gün Harfi */}
+                <View style={styles.dayLetterCircle}>
+                  <Text
+                    style={[
+                      styles.dayLetter,
+                      isSelected && { color: COLORS.accent },
+                    ]}
+                  >
+                    {day.label[0]}
+                  </Text>
+                </View>
+
+                {/* Seçim İndikatörü */}
+                {isSelected && (
+                  <View
+                    style={[
+                      styles.selectedIndicator,
+                      { backgroundColor: COLORS.accent },
+                    ]}
+                  />
+                )}
+
+                {/* Uzun Koşu İşareti */}
+                {isLongRun && (
+                  <View style={styles.longRunBadge}>
+                    <Ionicons name="flame" size={12} color="#000" />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Gün İsmi */}
+              <Text style={styles.dayLabel}>{day.short}</Text>
+            </View>
           );
         })}
       </View>
 
-      {/* B. UZUN KOŞU (OPSİYONEL - SADECE SEÇİLEN GÜNLERDEN) */}
+      {/* Uzun Koşu Seçici */}
       {selectedDays.length > 0 && (
-        <View style={styles.sectionFade}>
-          <Text style={styles.label}>
-            2. Uzun koşu için tercih ettiğin gün?
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.longRunScroll}
-            contentContainerStyle={{ paddingRight: 20 }}
-          >
+        <View style={styles.longRunSection}>
+          <View style={styles.longRunHeader}>
+            <View style={styles.longRunTitleRow}>
+              <View style={styles.fireIconBox}>
+                <Ionicons name="flame" size={16} color={COLORS.accent} />
+              </View>
+              <Text style={styles.longRunTitle}>Uzun koşu için tercihim</Text>
+            </View>
+          </View>
+
+          <View style={styles.longRunOptions}>
+            {/* Otomatik Seçenek */}
+            <TouchableOpacity
+              style={[
+                styles.longRunOption,
+                !longRunDay && styles.longRunOptionActive,
+              ]}
+              onPress={() => setLongRunDay(null)}
+            >
+              <Ionicons
+                name="sparkles"
+                size={16}
+                color={!longRunDay ? COLORS.accent : "#666"}
+              />
+              <Text
+                style={[
+                  styles.longRunOptionText,
+                  !longRunDay && styles.longRunOptionTextActive,
+                ]}
+              >
+                Otomatik
+              </Text>
+            </TouchableOpacity>
+
+            {/* Seçili Günler */}
             {selectedDays.map((dayId) => {
-              const dayLabel = ALL_DAYS.find((d) => d.id === dayId)?.label;
-              const isLongRun = longRunDay === dayId;
+              const day = ALL_DAYS.find((d) => d.id === dayId);
+              const isActive = longRunDay === dayId;
               return (
                 <TouchableOpacity
                   key={dayId}
-                  style={[styles.chip, isLongRun && styles.chipActive]}
-                  onPress={() => toggleLongRun(dayId)}
+                  style={[
+                    styles.longRunOption,
+                    isActive && styles.longRunOptionActive,
+                  ]}
+                  onPress={() => setLongRunDay(dayId)}
                 >
-                  <Ionicons
-                    name={isLongRun ? "flame" : "radio-button-off"}
-                    size={14}
-                    color={isLongRun ? "#000" : COLORS.accent}
-                    style={{ marginRight: 6 }}
-                  />
                   <Text
                     style={[
-                      styles.chipText,
-                      isLongRun && styles.chipTextActive,
+                      styles.longRunOptionText,
+                      isActive && styles.longRunOptionTextActive,
                     ]}
                   >
-                    {dayLabel}
+                    {day?.short}
                   </Text>
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-          <Text style={styles.hintSmall}>
-            * İsteğe bağlıdır. Seçmezsen senin için en uygun günü ben
-            belirlerim.
-          </Text>
+          </View>
         </View>
       )}
 
-      {/* SUBMIT BUTTON */}
+      {/* Submit Button */}
       <TouchableOpacity
         style={[styles.btn, !isValid && styles.btnDisabled]}
         disabled={!isValid}
         onPress={handleSubmit}
       >
         <Text style={styles.btnText}>
-          {isValid ? "Seçimi Tamamla" : "En az 1 gün seçmelisin"}
+          {isValid ? "Devam Et" : "En az 1 gün seç"}
         </Text>
-        {isValid && (
-          <Ionicons
-            name="arrow-forward"
-            size={16}
-            color="#000"
-            style={{ marginLeft: 5 }}
-          />
-        )}
+        {isValid && <Ionicons name="arrow-forward" size={20} color="#000" />}
       </TouchableOpacity>
     </View>
   );
 };
 
-// --- STYLES ---
 const styles = StyleSheet.create({
-  container: { width: "100%" },
+  container: {
+    width: "100%",
+    backgroundColor: "#1A1A1A",
+    borderRadius: 20,
+    padding: 20,
+  },
+
+  // Header
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 5,
+    alignItems: "flex-start",
+    marginBottom: 24,
   },
-  title: { color: "white", fontWeight: "700", fontSize: 14 },
-  label: {
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FFF",
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 13,
     color: "#888",
+  },
+  badge: {
+    backgroundColor: COLORS.accent + "20",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.accent + "40",
+  },
+  badgeText: {
     fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 10,
-    marginTop: 5,
+    fontWeight: "700",
+    color: COLORS.accent,
   },
-  labelRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 5,
-    marginTop: 10,
-  },
-  hintSmall: { color: "#555", fontSize: 10, marginTop: 8, fontStyle: "italic" },
 
-  // Days
-  daysWrap: {
+  // Haftalık Takvim
+  weekContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 15,
+    marginBottom: 24,
   },
-  dayCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  dayWrapper: {
+    alignItems: "center",
+    gap: 8,
+  },
+  dayBlock: {
+    width: 42,
+    height: 60,
     backgroundColor: "#252525",
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: "#2A2A2A",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#3A3A3C",
+    position: "relative",
   },
-  dayCircleActive: {
-    backgroundColor: COLORS.accent,
+  dayBlockActive: {
+    backgroundColor: "#2A2A2A",
     borderColor: COLORS.accent,
   },
-  dayText: { color: "#AAA", fontSize: 11, fontWeight: "600" },
-  dayTextActive: { color: "#000", fontWeight: "700" },
+  dayLetterCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#1F1F1F",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dayLetter: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#666",
+  },
+  selectedIndicator: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  longRunBadge: {
+    position: "absolute",
+    bottom: 4,
+    backgroundColor: COLORS.accent,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  dayLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#666",
+  },
 
-  // Long Run Chips
-  sectionFade: { marginTop: 5, marginBottom: 15 },
-  longRunScroll: { flexDirection: "row" },
-  chip: {
+  // Uzun Koşu Section
+  longRunSection: {
+    marginBottom: 20,
+  },
+  longRunHeader: {
+    marginBottom: 12,
+  },
+  longRunTitleRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
+  },
+  fireIconBox: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: COLORS.accent + "15",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  longRunTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#CCC",
+  },
+  longRunOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  longRunOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     backgroundColor: "#252525",
-    paddingVertical: 10,
-    paddingHorizontal: 16,
     borderRadius: 20,
-    marginRight: 8,
     borderWidth: 1,
     borderColor: "#3A3A3C",
   },
-  chipActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  chipText: { color: "#AAA", fontSize: 12, fontWeight: "600" },
-  chipTextActive: { color: "#000", fontWeight: "700" },
+  longRunOptionActive: {
+    backgroundColor: COLORS.accent + "15",
+    borderColor: COLORS.accent,
+  },
+  longRunOptionText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#888",
+  },
+  longRunOptionTextActive: {
+    color: COLORS.accent,
+    fontWeight: "700",
+  },
 
-  // Main Button
+  // Button
   btn: {
     backgroundColor: COLORS.accent,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
+    gap: 8,
     paddingVertical: 14,
     borderRadius: 14,
-    marginTop: 5,
   },
-  btnDisabled: { backgroundColor: "#333", opacity: 0.7 },
-  btnText: { color: "#000", fontWeight: "700", fontSize: 15 },
+  btnDisabled: {
+    backgroundColor: "#333",
+    opacity: 0.7,
+  },
+  btnText: {
+    color: "#000",
+    fontWeight: "700",
+    fontSize: 15,
+  },
 
   // Submitted
-  submittedContainer: {
+  submittedCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: COLORS.card,
-    padding: 12,
-    borderRadius: 12,
+    backgroundColor: "#252525",
+    padding: 16,
+    borderRadius: 16,
     gap: 12,
-    alignSelf: "flex-start",
-    maxWidth: "100%",
+    borderWidth: 1,
+    borderColor: "#3A3A3A",
   },
   submittedIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.accent,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.accent + "20",
     justifyContent: "center",
     alignItems: "center",
   },
-  submittedText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
-  submittedSubText: {
-    color: "#888",
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 3,
+  submittedTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#FFF",
+    marginBottom: 4,
+  },
+  submittedSubtitle: {
+    fontSize: 13,
+    color: "#999",
   },
 });
