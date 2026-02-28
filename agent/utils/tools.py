@@ -16,7 +16,7 @@ from agent.utils.config import *
 logger = logging.getLogger(__name__)
 
 
-from agent.utils.helper_agents import summarize_messages
+from agent.utils.helper_agents import extract_planner_context
 
 # Özetleme için hafif modeli tanımlıyoruz
 tool_summarizer_llm = ChatBedrockConverse(
@@ -225,17 +225,16 @@ def create_workout_plan(
     workouts_per_week = len(selected_days)
     final_goal = goal or description
 
-    # --- ADIM 3: SOHBET GEÇMİŞİNİ ÖZETLE ---
-    logger.info("📝 Tool İçinde Sohbet Özeti Çıkarılıyor...")
+    # --- ADIM 3: PLANNER BAĞLAMI ÇIKAR ---
+    logger.info("📝 Planner için kullanıcı tercihleri çıkarılıyor...")
     messages = state.get("messages", [])
-    existing_summary = state.get("summary", "") 
-    
+
     try:
-        chat_context_summary = summarize_messages(tool_summarizer_llm, messages, existing_summary)
-        logger.info(f"✅ Tool Özeti Alındı ({len(chat_context_summary)} karakter)")
+        chat_context_summary = extract_planner_context(tool_summarizer_llm, messages)
+        logger.info(f"✅ Planner Bağlamı Alındı ({len(chat_context_summary)} karakter)")
     except Exception as e:
-        logger.error(f"⚠️ Sohbet özetleme hatası (Tool İçi): {e}")
-        chat_context_summary = existing_summary
+        logger.error(f"⚠️ Planner bağlamı çıkarma hatası: {e}")
+        chat_context_summary = state.get("summary", "")
 
     # --- ADIM 4: SLOT HAVUZU ---
     available_slots = generate_available_slots(start_date, duration_weeks, selected_days)
@@ -248,39 +247,32 @@ def create_workout_plan(
         slots_payload += f"ID {i}: offset={slot['offset']}, date={slot['date']}, day={slot['day_name']}{lr_tag}, week={slot['week_num']}\n"
 
     # --- ADIM 5: LLM PROMPT ---
-    system_prompt = f"""
-    Uzman Koşu Koçu 'Spark' olarak, kullanıcıya {duration_weeks} haftalık program planla.
+    system_prompt = f"""Koşu koçu olarak {duration_weeks} haftalık antrenman programı oluştur.
 
-    KULLANICI VERİLERİ:
-    - Cinsiyet/Boy/Kilo: {gender}, {height}cm, {weight}kg
-    - Mevcut Pace: {pace_info}
-    - Max Koşulan Mesafe: {max_dist}km
-    - Hedef: {final_goal}
+KULLANICI: {gender}, {height}cm, {weight}kg | Pace: {pace_info} | Max mesafe: {max_dist}km | Hedef: {final_goal}
+BAĞLAM: {chat_context_summary}
+{beginner_warning}
+KURALLAR:
+1. Haftalık iskelet: 1 kaliteli (interval/tempo) + 1 uzun (long) + geri kalanı easy
+2. Arka arkaya zorlu antrenman (interval/tempo/long) yasak — aralarına mutlaka easy gir
+3. Easy mesafesi her zaman long/interval/tempo mesafesinden kısa olmalı (80/20)
+4. [LONG_RUN_DAY] slotu → her zaman "long" tipi; hemen sonraki slot → her zaman "easy"
+5. Haftalık mesafe artışı max %10 ({max_dist}km baz al)
+6. Antrenman başlıkları yaratıcı ve motive edici olsun
 
-    KULLANICIYLA YAPILAN GÖRÜŞMENİN ÖZETİ:
-    "{chat_context_summary}"
-    *(Lütfen antrenman başlıklarını ve ilerlemeyi bu bağlama ve kullanıcının ruh haline göre kişiselleştir.)*
-
-    PLANLAMA KURALLARI (Kesinlikle Uyulacak):
-    {beginner_warning}
-    1. Yüklenme ve Toparlanma Dengesi: İki zorlu antrenmanı ('interval', 'tempo', 'long') ASLA arka arkaya (peş peşe günlere) koyma. Zorlu bir antrenmanın hemen ertesi gününde bir koşu slotu varsa, bu koşu KESİNLİKLE 'easy' (toparlanma/recovery) olmalıdır.
-    2. Kaliteli Antrenman Kotası ve Haftalık İskelet: Bir haftada en fazla 1 veya 2 "kaliteli" antrenman ('interval' veya 'tempo') yap. Haftanın temel iskeleti şu olmalıdır: 1 Kaliteli Antrenman + 1 Uzun Koşu ('long') + Geri kalan tüm koşular 'easy'.
-    3. 'Easy' Günlerin Amacı: Kolay ('easy') günlerin mesafesi, toparlanmayı sağlamak için her zaman kaliteli ve uzun günlerin mesafesinden daha kısa tutulmalıdır (80/20 Kuralı).
-    4. Uzun Koşu Kuralı: [LONG_RUN_DAY] etiketine sahip slotu MUTLAKA 'long' (uzun koşu) tipi için kullan. Uzun koşudan sonraki ilk antrenman günü istisnasız 'easy' olmalıdır. Eğer kullanıcı özel bir uzun koşu günü seçmemişse, haftanın son koşu gününü 'long' yap.
-    5. İlerleyiş (Progressive Overload): Mesafeleri haftalık maksimum %10 artır. Kullanıcının max mesafesini ({max_dist}km) baz alarak çok kademeli ve güvenli ilerle.
-    6. Yaratıcılık: Antrenman başlıklarında ("title") yaratıcı, motive edici ve eğlenceli ol. ("Salı Koşusu" yerine "Zihni Boşaltma Temposu" gibi).
-
-    MÜSAİT SLOTLAR:
-    {slots_payload}
-
-    ÇIKTI SADECE AŞAĞIDAKİ JSON FORMATINDA OLMALI (Her hafta tam olarak {workouts_per_week} adet antrenman içermeli):
+MÜSAİT SLOTLAR:
+{slots_payload}
+ÇIKTI — Yalnızca aşağıdaki JSON, başka metin yok. Her hafta tam {workouts_per_week} antrenman:
+{{
+  "workouts": [
     {{
-    "workouts": [
-        {{ "day_offset": 0, "title": "Açılış Koşusu", "workout_type": "easy", "distance_km": 5.0 }},
-        ...
-    ]
+      "day_offset": <integer, yukarıdaki offset değerlerinden biri>,
+      "title": <string, yaratıcı Türkçe başlık>,
+      "workout_type": <"easy" | "tempo" | "interval" | "long">,
+      "distance_km": <float, örn: 5.0>
     }}
-    """
+  ]
+}}"""
 
     print('Planner LLM Prompt')
     print(system_prompt)
