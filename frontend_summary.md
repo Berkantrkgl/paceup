@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.2
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.3
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -22,23 +22,45 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır.
 ### A. Dashboard (`home/index.tsx`)
 
 - Aktif plan yoksa "İlk Adımı At" kartı + Chatbot yönlendirmesi
-- Aktif plan varsa Hero Stats + Next Workout Ticket
+- Aktif plan varsa Hero Stats + **Sıradaki Antrenman Kartı**
 - `useFocusEffect` ile her odaklanmada veri yenilenir
+- **Sıradaki Antrenman Kartı:**
+    - Full-width kart, LinearGradient arka plan (antrenman tipi rengiyle)
+    - Tip pill (solda, `alignSelf: "flex-start"`) + tarih badge (sağda, aynı satırda `space-between`)
+    - Meta bilgiler: süre, mesafe, pace (`target_pace_seconds`)
+    - **Hızlı Tamamla butonu:** Sadece `scheduled_date === today` ise gösterilir, buton rengi antrenman tipiyle uyumlu
+    - Tamamlama sonrası `fetchNextWorkout()` çağrılarak bir sonraki antrenman hemen güncellenir
+    - Timezone bug fix: `new Date("YYYY-MM-DD")` UTC parse sorununu önlemek için string karşılaştırması (`en-CA` locale)
+- Karta tıklayınca `weekly_calendar` ekranı `initialDate` parametresiyle açılır
 
-### B. Calendar (`calendar/index.tsx`)
+### B. Haftalık Takvim (`home/weekly_calendar.tsx`)
+
+- **Home tab'ından Stack navigation ile açılır** — başlık: "Haftalık Takvim"
+- `?only_active=true` parametresiyle sadece aktif programın antrenmanları çekilir
+- **Haftalık navigasyon:** Pzt–Paz haftası, `<` `>` oklarla hafta hafta geçiş
+- Bu haftadayken başlığın altında "Bu Hafta" etiketi (turuncu, statik)
+- **Antrenman listesi:** Her antrenman dikey satır olarak gösterilir
+    - Tarih sütunu (gün adı + rakam + ay) | renkli şerit | tip pill + antrenman adı + meta | durum ikonu
+    - Satıra tıklayınca `ExpandableDetail` animasyonla açılır: süre/mesafe/pace kutuları + açıklama + Tamamla butonu
+    - Expand olan satırın border rengi antrenman tipiyle vurgulanır
+- `initialDate` parametresiyle açılınca o tarihin haftasına gider ve satır otomatik expand olur
+- Hafta değişince expanded satır sıfırlanır
+- Tamamla / Geri Al mantığı: PATCH `/workouts/:id/` + POST `/results/` / DELETE `/results/:id/`
+
+### C. Calendar (`calendar/index.tsx`)
 
 - `?only_active=true` parametresiyle sadece aktif plan gösterilir
 - Antrenman tiplerine göre renk kodlaması (Tempo, Easy, Interval, Long)
 - Durum ikonu: ✅ Tamamlandı / ❌ Kaçırıldı
 - Takvim varsayılan olarak bugünün ayını gösterir; antrenmanlar gelecek aydaysa o aya geçmek gerekir
 
-### C. Plans (`plans/index.tsx`)
+### D. Plans (`plans/index.tsx`)
 
 - Aktif / Geçmiş plan kartları
 - **Reschedule Modal:** 14 günlük tarih seçici, sadece programın `running_days` listesindeki günler seçilebilir (backend format: `[0,2,4]` → 0=Pzt), backend slot-filling algoritması
 - **Plan Details Modal:** Hafta bazlı gruplandırma, tamamlanmamış ilk antrenmanına otomatik scroll
 
-### D. AI Chatbot (`plans/chatbot.tsx`)
+### E. AI Chatbot (`plans/chatbot.tsx`)
 
 - `react-native-sse` ile FastAPI'ye (`/chat-stream`) SSE bağlantısı
 - JWT token header'da taşınır
@@ -50,11 +72,11 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır.
 - **Human-in-the-Loop:** `ask_user` eventi gelince akış durur, kullanıcı formu doldurup submit edince `role: "tool"` mesajıyla devam eder
 - **3 UI Tool Widget:**
     - `RunnerProfileTool`: Fiziksel profil doğrulama
-    - `ProgramSetupTool`: Hedef/süre/başlangıç tarihi
+    - `ProgramSetupTool`: Hedef/süre/başlangıç tarihi — başlangıç tarihi için **Bugün / Yarın / Gelecek Pzt** hızlı seçenekleri
     - `AvailabilityTool`: Koşu günleri seçimi
 - **Token Yönetimi:** Stream bitince biriken token sayısı `/users/update_token_usage/` endpoint'ine POST edilir, `canUseChat` false olunca `PremiumModal` açılır
 
-### E. Profile (`profile/index.tsx`)
+### F. Profile (`profile/index.tsx`)
 
 - Profil fotoğrafı yükleme (expo-image-picker, `mediaTypes: "images"`)
 - Avatar'a tıklayınca görüntüleme modalı açılır; modaldan "Profil Fotoğrafı Ekle/Değiştir" butonu ile picker tetiklenir
@@ -164,7 +186,11 @@ export const API_URL = `${BASE_URL}/api`;             // Django Backend
 src/
 ├── app/
 │   ├── (protected)/(tabs)/
-│   │   ├── home/
+│   │   ├── (home)/
+│   │   │   ├── index.tsx           // Dashboard
+│   │   │   ├── weekly_calendar.tsx // Haftalık antrenman takvimi (Stack)
+│   │   │   ├── progress.tsx        // Detaylı analiz (Stack)
+│   │   │   └── _layout.tsx
 │   │   ├── calendar/
 │   │   ├── plans/
 │   │   │   ├── chatbot.tsx
@@ -191,7 +217,8 @@ src/
 
 ## 7. Önemli Notlar & Bilinen Davranışlar
 
-- **Takvim:** Antrenmanlar gelecek bir ayda ise takvim o aya manuel kaydırılmalıdır. Takvim her zaman bugünün ayını varsayılan olarak açar.
+- **Timezone bug (isToday):** `new Date("YYYY-MM-DD")` UTC olarak parse edilir, Türkiye (+3) saatinde yanlış güne kayabilir. Doğru yöntem: `new Date().toLocaleDateString("en-CA")` ile string karşılaştırması veya `new Date(y, m-1, d)` constructor kullanımı.
 - **Reschedule günleri:** Backend `running_days` formatı `[0,2,4]` (0=Pzt). JS `getDay()` dönüşümü için `JS_TO_BACKEND_DAY = [6, 0, 1, 2, 3, 4, 5]` mapping'i kullanılır.
 - **Image Picker (iOS):** Modal kapatıldıktan sonra picker açılması için `animationType="none"` + `setTimeout(..., 100)` gereklidir. `MediaTypeOptions` deprecated — `mediaTypes: "images"` string literal kullanılır.
 - **`current_pace` null:** Backend `null=True` ile işaretli. Frontend `null` değerini `--:--` gösterir.
+- **Haftalık Takvim hafta hesabı:** `getWeekMonday` Pazartesi bazlı çalışır. `weekOffset` ile haftalar arası geçiş. `initialDate` parametresi ile açılınca `new Date(y, m-1, d)` constructor'ı kullanılarak timezone sorunsuz hafta hesaplanır.
