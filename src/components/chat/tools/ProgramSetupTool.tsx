@@ -326,6 +326,12 @@ export const ProgramSetupTool = ({
           <View style={styles.quickDates}>
             <TouchableOpacity
               style={styles.quickDateBtn}
+              onPress={() => setStartDate(new Date())}
+            >
+              <Text style={styles.quickDateText}>Bugün</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quickDateBtn}
               onPress={() => {
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
@@ -343,7 +349,7 @@ export const ProgramSetupTool = ({
                 setStartDate(new Date(nextMonday.setDate(diff)));
               }}
             >
-              <Text style={styles.quickDateText}>Gelecek Pazartesi</Text>
+              <Text style={styles.quickDateText}>Gelecek Pzt</Text>
             </TouchableOpacity>
           </View>
 

@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useContext, useMemo, useState } from "react";
 import {
     ActivityIndicator,
+    Alert,
     Dimensions,
     ImageBackground,
     Pressable,
@@ -34,6 +35,7 @@ type Workout = {
     scheduled_date: string;
     planned_duration: number;
     planned_distance: number;
+    target_pace_seconds?: number | null;
     status: "scheduled" | "completed" | "missed" | "skipped";
     is_completed: boolean;
 };
@@ -90,6 +92,7 @@ const HomeScreen = () => {
     const { user, token, refreshUserData } = useContext(AuthContext);
     const [refreshing, setRefreshing] = useState(false);
     const [nextWorkout, setNextWorkout] = useState<Workout | null>(null);
+    const [isCompleting, setIsCompleting] = useState(false);
 
     // --- RANDOM CONTENT LOGIC ---
     // useMemo kullanarak sadece component ilk yüklendiğinde rastgele seçim yapmasını sağlıyoruz.
@@ -149,6 +152,55 @@ const HomeScreen = () => {
         }, [token])
     );
 
+    const handleQuickComplete = () => {
+        if (!nextWorkout || !token) return;
+        Alert.alert(
+            "Antrenmanı Tamamla",
+            "Tamamlandı olarak işaretlensin mi?",
+            [
+                { text: "İptal", style: "cancel" },
+                {
+                    text: "Evet, Tamamla",
+                    onPress: async () => {
+                        setIsCompleting(true);
+                        try {
+                            await fetch(`${API_URL}/workouts/${nextWorkout.id}/`, {
+                                method: "PATCH",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({ status: "completed" }),
+                            });
+                            const resultData = {
+                                workout: nextWorkout.id,
+                                completed_at: new Date().toISOString(),
+                                actual_duration: nextWorkout.planned_duration || 30,
+                                actual_distance: nextWorkout.planned_distance || 5.0,
+                                feeling: "normal",
+                            };
+                            const postRes = await fetch(`${API_URL}/results/`, {
+                                method: "POST",
+                                headers: {
+                                    Authorization: `Bearer ${token}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify(resultData),
+                            });
+                            if (!postRes.ok) throw new Error("Result failed");
+                            await Promise.all([refreshUserData(), fetchNextWorkout()]);
+                            Alert.alert("Tebrikler! 🎉", "Antrenman kaydedildi.");
+                        } catch {
+                            Alert.alert("Hata", "İşlem başarısız oldu.");
+                        } finally {
+                            setIsCompleting(false);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         await Promise.all([refreshUserData(), fetchNextWorkout()]);
@@ -156,10 +208,13 @@ const HomeScreen = () => {
     }, []);
 
     const formatWorkoutDate = (dateString: string) => {
-        const date = new Date(dateString);
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const isToday = date.getTime() === today.getTime();
+        // YYYY-MM-DD string olarak karşılaştır — timezone farkından etkilenmez
+        const todayStr = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+        const isToday = dateString === todayStr;
+
+        // Görüntüleme için tarih oluştur (sadece gün/ay)
+        const [year, month, day] = dateString.split("-").map(Number);
+        const date = new Date(year, month - 1, day); // Local timezone
 
         return {
             day: date.getDate(),
@@ -397,189 +452,253 @@ const HomeScreen = () => {
                                 </View>
                             </View>
 
-                            {/* NEXT WORKOUT TICKET */}
+                            {/* NEXT WORKOUT CARD */}
                             <View style={styles.sectionContainer}>
                                 <Text style={styles.sectionTitle}>
                                     Sıradaki Antreman
                                 </Text>
-                                <Pressable
-                                    onPress={() => {
-                                        if (nextWorkout) {
-                                            // EĞER ANTRENMAN VARSA: O TARİHE VE ANTRENMANA GİT
+                                {nextWorkout && workoutStyle && dateInfo ? (
+                                    <Pressable
+                                        onPress={() =>
                                             router.push({
                                                 pathname:
-                                                    "/(protected)/(tabs)/(home)/home_calendar",
+                                                    "/(protected)/(tabs)/(home)/weekly_calendar",
                                                 params: {
                                                     initialWorkoutId:
                                                         nextWorkout.id,
                                                     initialDate:
-                                                        nextWorkout.scheduled_date, // Tarihi de gönderiyoruz ki o haftayı açsın
+                                                        nextWorkout.scheduled_date,
                                                 },
-                                            });
-                                        } else {
-                                            // ANTRENMAN YOKSA: BUGÜNÜ AÇ
-                                            router.push(
-                                                "/(protected)/(tabs)/(home)/home_calendar"
-                                            );
+                                            })
                                         }
-                                    }}
-                                >
-                                    {nextWorkout && workoutStyle && dateInfo ? (
+                                    >
                                         <LinearGradient
-                                            colors={
-                                                workoutStyle.bgGradient as any
-                                            }
+                                            colors={[
+                                                workoutStyle.color + "22",
+                                                COLORS.card,
+                                            ]}
                                             start={{ x: 0, y: 0 }}
                                             end={{ x: 1, y: 1 }}
-                                            style={styles.workoutTicket}
+                                            style={styles.workoutCard}
                                         >
-                                            <View style={styles.ticketLeft}>
+                                            {/* TOP ROW: tip + tarih */}
+                                            <View style={styles.cardTopRow}>
+                                                {/* TİP BADGE */}
                                                 <View
                                                     style={[
-                                                        styles.ticketDateBox,
-                                                        dateInfo.isToday &&
-                                                            styles.ticketDateBoxToday,
-                                                    ]}
-                                                >
-                                                    <Text
-                                                        style={[
-                                                            styles.ticketDay,
-                                                            dateInfo.isToday && {
-                                                                color: COLORS.background,
-                                                            },
-                                                        ]}
-                                                    >
-                                                        {dateInfo.day}
-                                                    </Text>
-                                                    <Text
-                                                        style={[
-                                                            styles.ticketMonth,
-                                                            dateInfo.isToday && {
-                                                                color: COLORS.background,
-                                                            },
-                                                        ]}
-                                                    >
-                                                        {dateInfo.isToday
-                                                            ? "BUGÜN"
-                                                            : dateInfo.month}
-                                                    </Text>
-                                                </View>
-                                                <View
-                                                    style={styles.ticketIconBox}
-                                                >
-                                                    <Ionicons
-                                                        name={
-                                                            workoutStyle.icon as any
-                                                        }
-                                                        size={24}
-                                                        color={
-                                                            workoutStyle.color
-                                                        }
-                                                    />
-                                                </View>
-                                            </View>
-
-                                            <View style={styles.ticketContent}>
-                                                <Text
-                                                    style={[
-                                                        styles.ticketType,
+                                                        styles.typePill,
                                                         {
-                                                            color: workoutStyle.color,
+                                                            backgroundColor:
+                                                                workoutStyle.color + "25",
                                                         },
                                                     ]}
                                                 >
-                                                    {workoutStyle.name}
-                                                </Text>
-                                                <Text
-                                                    style={styles.ticketTitle}
-                                                    numberOfLines={2}
-                                                >
-                                                    {nextWorkout.title}
-                                                </Text>
+                                                    <Ionicons
+                                                        name={workoutStyle.icon as any}
+                                                        size={14}
+                                                        color={workoutStyle.color}
+                                                    />
+                                                    <Text
+                                                        style={[
+                                                            styles.typePillText,
+                                                            { color: workoutStyle.color },
+                                                        ]}
+                                                    >
+                                                        {workoutStyle.name.toUpperCase()}
+                                                    </Text>
+                                                </View>
+
+                                                {/* TARİH BADGE */}
                                                 <View
-                                                    style={styles.ticketMetaRow}
+                                                    style={[
+                                                        styles.cornerBadge,
+                                                        {
+                                                            backgroundColor:
+                                                                workoutStyle.color + "18",
+                                                            borderColor:
+                                                                workoutStyle.color + "40",
+                                                        },
+                                                    ]}
                                                 >
+                                                    {dateInfo.isToday && (
+                                                        <View
+                                                            style={[
+                                                                styles.todayDot,
+                                                                { backgroundColor: workoutStyle.color },
+                                                            ]}
+                                                        />
+                                                    )}
+                                                    <Text
+                                                        style={[
+                                                            styles.cornerBadgeText,
+                                                            { color: workoutStyle.color },
+                                                        ]}
+                                                    >
+                                                        {dateInfo.isToday
+                                                            ? "Bugün"
+                                                            : `${dateInfo.day} ${dateInfo.month}`}
+                                                    </Text>
+                                                </View>
+                                            </View>
+
+                                            {/* WORKOUT NAME */}
+                                            <Text
+                                                style={styles.cardWorkoutName}
+                                                numberOfLines={2}
+                                            >
+                                                {nextWorkout.title}
+                                            </Text>
+
+                                            {/* DIVIDER */}
+                                            <View style={styles.cardDivider} />
+
+                                            {/* META ROW */}
+                                            <View style={styles.cardMetaRow}>
+                                                <View style={styles.cardMetaItem}>
+                                                    <Ionicons
+                                                        name="time-outline"
+                                                        size={16}
+                                                        color={COLORS.textDim}
+                                                    />
+                                                    <Text
+                                                        style={styles.cardMetaText}
+                                                    >
+                                                        {
+                                                            nextWorkout.planned_duration
+                                                        }{" "}
+                                                        dk
+                                                    </Text>
+                                                </View>
+                                                {nextWorkout.planned_distance >
+                                                    0 && (
                                                     <View
                                                         style={
-                                                            styles.ticketMetaItem
+                                                            styles.cardMetaItem
                                                         }
                                                     >
                                                         <Ionicons
-                                                            name="time-outline"
-                                                            size={14}
-                                                            color={
-                                                                COLORS.textDim
-                                                            }
+                                                            name="location-outline"
+                                                            size={16}
+                                                            color={COLORS.textDim}
                                                         />
                                                         <Text
                                                             style={
-                                                                styles.ticketMetaText
+                                                                styles.cardMetaText
                                                             }
                                                         >
                                                             {
-                                                                nextWorkout.planned_duration
+                                                                nextWorkout.planned_distance
                                                             }{" "}
-                                                            dk
+                                                            km
                                                         </Text>
                                                     </View>
-                                                    {nextWorkout.planned_distance >
-                                                        0 && (
-                                                        <View
+                                                )}
+                                                {nextWorkout.target_pace_seconds && (
+                                                    <View
+                                                        style={
+                                                            styles.cardMetaItem
+                                                        }
+                                                    >
+                                                        <Ionicons
+                                                            name="speedometer-outline"
+                                                            size={16}
+                                                            color={COLORS.textDim}
+                                                        />
+                                                        <Text
                                                             style={
-                                                                styles.ticketMetaItem
+                                                                styles.cardMetaText
                                                             }
                                                         >
+                                                            {Math.floor(
+                                                                nextWorkout.target_pace_seconds /
+                                                                    60
+                                                            )}
+                                                            :
+                                                            {(
+                                                                nextWorkout.target_pace_seconds %
+                                                                60
+                                                            )
+                                                                .toString()
+                                                                .padStart(
+                                                                    2,
+                                                                    "0"
+                                                                )}{" "}
+                                                            /km
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                <View style={{ flex: 1 }} />
+                                                <Ionicons
+                                                    name="chevron-forward"
+                                                    size={18}
+                                                    color={COLORS.cardBorder}
+                                                />
+                                            </View>
+
+                                            {/* TAMAMLA BUTONU — sadece bugün */}
+                                            {dateInfo.isToday && (
+                                                <Pressable
+                                                    style={[
+                                                        styles.quickCompleteButton,
+                                                        { backgroundColor: workoutStyle.color },
+                                                    ]}
+                                                    onPress={(e) => {
+                                                        e.stopPropagation?.();
+                                                        handleQuickComplete();
+                                                    }}
+                                                    disabled={isCompleting}
+                                                >
+                                                    {isCompleting ? (
+                                                        <ActivityIndicator
+                                                            size="small"
+                                                            color={COLORS.white}
+                                                        />
+                                                    ) : (
+                                                        <>
                                                             <Ionicons
-                                                                name="location-outline"
-                                                                size={14}
-                                                                color={
-                                                                    COLORS.textDim
-                                                                }
+                                                                name="checkmark-circle-outline"
+                                                                size={18}
+                                                                color={COLORS.white}
                                                             />
                                                             <Text
                                                                 style={
-                                                                    styles.ticketMetaText
+                                                                    styles.quickCompleteText
                                                                 }
                                                             >
-                                                                {
-                                                                    nextWorkout.planned_distance
-                                                                }{" "}
-                                                                km
+                                                                Antrenmanı Tamamla
                                                             </Text>
-                                                        </View>
+                                                        </>
                                                     )}
-                                                </View>
-                                            </View>
-                                            <Ionicons
-                                                name="chevron-forward"
-                                                size={24}
-                                                color={COLORS.cardBorder}
-                                                style={{ alignSelf: "center" }}
-                                            />
+                                                </Pressable>
+                                            )}
                                         </LinearGradient>
-                                    ) : (
+                                    </Pressable>
+                                ) : (
+                                    <Pressable
+                                        onPress={() =>
+                                            router.push(
+                                                "/(protected)/(tabs)/(home)/weekly_calendar"
+                                            )
+                                        }
+                                    >
                                         <View style={styles.emptyWorkoutTicket}>
                                             <Ionicons
                                                 name="calendar-clear-outline"
                                                 size={32}
                                                 color={COLORS.textDim}
                                             />
-                                            <Text
-                                                style={styles.emptyTicketText}
-                                            >
+                                            <Text style={styles.emptyTicketText}>
                                                 Yaklaşan koşu planı yok.
                                             </Text>
                                             <Text
-                                                style={
-                                                    styles.emptyTicketSubText
-                                                }
+                                                style={styles.emptyTicketSubText}
                                             >
                                                 Takvimden yeni bir antrenman
                                                 ekleyebilirsin.
                                             </Text>
                                         </View>
-                                    )}
-                                </Pressable>
+                                    </Pressable>
+                                )}
                             </View>
 
                             {/* QUICK LINKS */}
@@ -856,80 +975,6 @@ const styles = StyleSheet.create({
         marginLeft: 5,
     },
 
-    // Next Workout Ticket
-    workoutTicket: {
-        borderRadius: 22,
-        padding: 15,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        flexDirection: "row",
-        minHeight: 110,
-    },
-    ticketLeft: {
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginRight: 15,
-    },
-    ticketDateBox: {
-        backgroundColor: COLORS.background,
-        borderRadius: 14,
-        width: 55,
-        height: 60,
-        justifyContent: "center",
-        alignItems: "center",
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    ticketDateBoxToday: {
-        backgroundColor: COLORS.accent,
-        borderColor: COLORS.accent,
-    },
-    ticketDay: {
-        color: COLORS.text,
-        fontSize: 20,
-        fontWeight: "800",
-    },
-    ticketMonth: {
-        color: COLORS.textDim,
-        fontSize: 10,
-        fontWeight: "700",
-    },
-    ticketIconBox: {
-        marginTop: 10,
-    },
-    ticketContent: {
-        flex: 1,
-        justifyContent: "center",
-    },
-    ticketType: {
-        fontSize: 12,
-        fontWeight: "800",
-        textTransform: "uppercase",
-        letterSpacing: 1,
-        marginBottom: 6,
-    },
-    ticketTitle: {
-        color: COLORS.text,
-        fontSize: 18,
-        fontWeight: "700",
-        marginBottom: 10,
-        lineHeight: 22,
-    },
-    ticketMetaRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 15,
-    },
-    ticketMetaItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-    },
-    ticketMetaText: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        fontWeight: "600",
-    },
     emptyWorkoutTicket: {
         backgroundColor: COLORS.cardVariant,
         borderRadius: 22,
@@ -974,5 +1019,110 @@ const styles = StyleSheet.create({
         color: COLORS.textDim,
         fontSize: 14,
         fontWeight: "600",
+    },
+    quickCompleteButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        paddingVertical: 13,
+        borderRadius: 14,
+        marginTop: 16,
+    },
+    quickCompleteText: {
+        color: COLORS.white,
+        fontSize: 15,
+        fontWeight: "700",
+    },
+
+    // --- NEW WORKOUT CARD ---
+    workoutCard: {
+        borderRadius: 22,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        overflow: "hidden",
+    },
+    cardTopRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 14,
+    },
+    typePill: {
+        flexDirection: "row",
+        alignItems: "center",
+        alignSelf: "flex-start",
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 20,
+    },
+    typePillText: {
+        fontSize: 11,
+        fontWeight: "800",
+        letterSpacing: 0.5,
+    },
+    datePill: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
+        borderRadius: 20,
+        backgroundColor: COLORS.cardVariant,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    datePillText: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: COLORS.textDim,
+    },
+    cardWorkoutName: {
+        fontSize: 22,
+        fontWeight: "800",
+        color: COLORS.text,
+        lineHeight: 28,
+        marginBottom: 14,
+    },
+    cardDivider: {
+        height: 1,
+        backgroundColor: COLORS.cardBorder,
+        marginBottom: 14,
+    },
+    cardMetaRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 16,
+    },
+    cardMetaItem: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+    },
+    cardMetaText: {
+        color: COLORS.textDim,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    cornerBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    cornerBadgeText: {
+        fontSize: 12,
+        fontWeight: "700",
+        letterSpacing: 0.3,
+    },
+    todayDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
     },
 });

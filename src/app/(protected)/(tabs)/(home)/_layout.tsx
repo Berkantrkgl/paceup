@@ -28,9 +28,9 @@ const HomeLayout = () => {
 
             {/* YENİ EKRAN: Standart Stack Geçişi (Sağdan sola) */}
             <Stack.Screen
-                name="home_calendar"
+                name="weekly_calendar"
                 options={{
-                    title: "Antrenman Takvimi",
+                    title: "Haftalık Takvim",
                     headerBackTitle: "Geri",
                 }}
             />
