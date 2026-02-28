@@ -45,19 +45,18 @@ llm = initialize_llm()
 llm_with_tools = llm.bind_tools(ui_tool_list + backend_tool_list)
 
 async def summarizer(state: State):
-    print("\n\n","-"*25, "History Summarizer", "-"*25 )
     messages = state.get('messages', [])
     last_message = messages[-1]
-    print(f"LENGTH OF MESSAGES (Before Summarization): {len(messages)}")
 
     if len(messages) >= SUMMARIZE_THRESHOLD:
+        logger.info(f"📝 Summarizer: {len(messages)} mesaj var, özetleniyor...")
         summary = state.get("summary", "")
         new_summary = summarize_messages(summarization_llm, messages, summary)
-        new_state = {"messages": [last_message, 'summarize_command'], "summary": new_summary} 
-    else: 
-        print("No summarization needed")
+        logger.info(f"✅ Özet güncellendi ({len(new_summary)} karakter)")
+        new_state = {"messages": [last_message, 'summarize_command'], "summary": new_summary}
+    else:
+        logger.info(f"📋 Summarizer: {len(messages)} mesaj, özetleme gerekmiyor")
         new_state = {"messages": messages}
-    print("-"*70, "\n\n")
     return new_state
 
 async def agent(state: State, config, writer: StreamWriter):
@@ -161,8 +160,7 @@ def route_tools(state: State) -> Literal["backend_tools", "ui_tools", "END"]:
         return "END"
     
     tool_name = last_message.tool_calls[0]["name"]
-    logger.info(f"{tool_name} çağrıldı!!")
-    
+
     if any(t.name == tool_name for t in ui_tool_list):
         return "ui_tools"
     return "backend_tools"

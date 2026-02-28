@@ -274,9 +274,8 @@ MÜSAİT SLOTLAR:
   ]
 }}"""
 
-    print('Planner LLM Prompt')
-    print(system_prompt)
-    
+    logger.info(f"📋 Planner Prompt:\n{system_prompt}")
+
     # --- ADIM 6: AI ÇAĞRISI ---
     try:
         llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name="us-east-1", disable_streaming=True)

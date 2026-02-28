@@ -171,7 +171,6 @@ async def stream_chat(req: Request, inp: StreamChatInput, user: dict = Depends(v
                         # 4. llm_output içinde token kullanımı (Bedrock alternatif konum)
                         if not usage_metadata and isinstance(output, dict) and "llm_output" in output:
                             llm_output = output["llm_output"]
-                            logger.info(f"🔍 llm_output: {llm_output}")
                             usage = llm_output.get("usage", {})
                             if usage:
                                 usage_metadata = {
