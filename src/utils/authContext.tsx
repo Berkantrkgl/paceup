@@ -81,6 +81,9 @@ const ACCESS_TOKEN_KEY = "auth-access-token";
 const REFRESH_TOKEN_KEY = "auth-refresh-token";
 const TOKEN_EXPIRY_BUFFER = 120; // Token bitimine 2 dk kala yenile
 
+// Paralel refresh isteklerini önlemek için singleton promise
+let refreshPromise: Promise<string | null> | null = null;
+
 export const AuthContext = createContext<AuthState>({
   isLoggedIn: false,
   isReady: false,
@@ -111,33 +114,47 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   const refreshAccessToken = async (): Promise<string | null> => {
-    try {
-      const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
-      if (!refreshToken) throw new Error("No refresh token");
+    // Zaten devam eden bir refresh varsa aynı promise'i bekle — yeni istek gönderme
+    if (refreshPromise) return refreshPromise;
 
-      const response = await fetch(`${API_URL}/token/refresh/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh: refreshToken }),
-      });
+    refreshPromise = (async () => {
+      try {
+        const refreshToken = await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+        if (!refreshToken) {
+          await logOut();
+          return null;
+        }
 
-      const data = await response.json();
-      if (response.ok && data.access) {
-        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
-        setToken(data.access);
-        return data.access;
-      } else {
-        await logOut();
+        const response = await fetch(`${API_URL}/token/refresh/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh: refreshToken }),
+        });
+
+        const data = await response.json();
+        if (response.ok && data.access) {
+          await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+          setToken(data.access);
+          return data.access;
+        } else {
+          // Sadece refresh token geçersizse (401) logout yap
+          if (response.status === 401) await logOut();
+          return null;
+        }
+      } catch {
+        // Network hatası veya timeout — logout etme, sadece null dön
         return null;
+      } finally {
+        refreshPromise = null;
       }
-    } catch {
-      await logOut();
-      return null;
-    }
+    })();
+
+    return refreshPromise;
   };
 
   const getValidToken = async (): Promise<string | null> => {
-    let currentToken = token || (await AsyncStorage.getItem(ACCESS_TOKEN_KEY));
+    // State yerine doğrudan AsyncStorage'dan oku — stale closure sorununu önler
+    const currentToken = await AsyncStorage.getItem(ACCESS_TOKEN_KEY);
     if (!currentToken) return null;
 
     try {
@@ -145,7 +162,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const isExpired = decoded.exp < Date.now() / 1000 + TOKEN_EXPIRY_BUFFER;
 
       if (isExpired) {
-        console.log("🔄 Token süresi azaldı, yenileniyor...");
         return await refreshAccessToken();
       }
       return currentToken;

@@ -341,14 +341,25 @@ const ProfileScreen = () => {
             style={styles.paceUnknownToggle}
             onPress={() => setPaceUnknown((prev) => !prev)}
           >
-            <View style={[styles.paceUnknownCheck, paceUnknown && styles.paceUnknownCheckActive]}>
-              {paceUnknown && <Ionicons name="checkmark" size={14} color="#000" />}
+            <View
+              style={[
+                styles.paceUnknownCheck,
+                paceUnknown && styles.paceUnknownCheckActive,
+              ]}
+            >
+              {paceUnknown && (
+                <Ionicons name="checkmark" size={14} color="#000" />
+              )}
             </View>
             <Text style={styles.paceUnknownText}>Pace'imi bilmiyorum</Text>
           </Pressable>
 
           {/* Picker — bilmiyorum seçilince soluklaş */}
-          <View style={[styles.dualPickerContainer, paceUnknown && { opacity: 0.3 }]}
+          <View
+            style={[
+              styles.dualPickerContainer,
+              paceUnknown && { opacity: 0.3 },
+            ]}
             pointerEvents={paceUnknown ? "none" : "auto"}
           >
             <View style={styles.pickerColumn}>
@@ -395,10 +406,7 @@ const ProfileScreen = () => {
               return (
                 <Pressable
                   key={index}
-                  style={[
-                    styles.dayChip,
-                    isSelected && styles.dayChipSelected,
-                  ]}
+                  style={[styles.dayChip, isSelected && styles.dayChipSelected]}
                   onPress={() => toggleDaySelection(index)}
                 >
                   <Text
@@ -414,9 +422,14 @@ const ProfileScreen = () => {
             })}
           </View>
           <View style={styles.dayInfoBox}>
-            <Ionicons name="information-circle-outline" size={14} color={COLORS.textDim} />
+            <Ionicons
+              name="information-circle-outline"
+              size={14}
+              color={COLORS.textDim}
+            />
             <Text style={styles.dayInfoText}>
-              Bu değişiklik mevcut aktif programınızı etkilemez. Yeni oluşturulacak programlarda baz alınır.
+              Bu değişiklik mevcut aktif programınızı etkilemez. Yeni
+              oluşturulacak programlarda baz alınır.
             </Text>
           </View>
         </View>
@@ -546,7 +559,10 @@ const ProfileScreen = () => {
         >
           {/* USER CARD */}
           <View style={styles.userCard}>
-            <Pressable onPress={() => setAvatarModalVisible(true)} style={styles.avatarContainer}>
+            <Pressable
+              onPress={() => setAvatarModalVisible(true)}
+              style={styles.avatarContainer}
+            >
               {user?.profile_image ? (
                 <Image
                   source={{ uri: user.profile_image }}
@@ -825,13 +841,27 @@ const ProfileScreen = () => {
       />
 
       {/* Avatar Modal */}
-      <Modal visible={avatarModalVisible} transparent animationType="none" statusBarTranslucent>
-        <Pressable style={styles.avatarModalOverlay} onPress={() => setAvatarModalVisible(false)}>
-          <Pressable style={styles.avatarModalContent} onPress={(e) => e.stopPropagation()}>
+      <Modal
+        visible={avatarModalVisible}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+      >
+        <Pressable
+          style={styles.avatarModalOverlay}
+          onPress={() => setAvatarModalVisible(false)}
+        >
+          <Pressable
+            style={styles.avatarModalContent}
+            onPress={(e) => e.stopPropagation()}
+          >
             {/* Fotoğraf veya Placeholder */}
             <View style={styles.avatarModalImageWrap}>
               {user?.profile_image ? (
-                <Image source={{ uri: user.profile_image }} style={styles.avatarModalImage} />
+                <Image
+                  source={{ uri: user.profile_image }}
+                  style={styles.avatarModalImage}
+                />
               ) : (
                 <View style={styles.avatarModalPlaceholder}>
                   <Ionicons name="person" size={64} color={COLORS.textDim} />
@@ -852,9 +882,15 @@ const ProfileScreen = () => {
                 setTimeout(() => handlePickImage(), 100);
               }}
             >
-              <Ionicons name="camera-outline" size={18} color={COLORS.background} />
+              <Ionicons
+                name="camera-outline"
+                size={18}
+                color={COLORS.background}
+              />
               <Text style={styles.avatarModalBtnText}>
-                {user?.profile_image ? "Fotoğrafı Değiştir" : "Profil Fotoğrafı Ekle"}
+                {user?.profile_image
+                  ? "Fotoğrafı Değiştir"
+                  : "Profil Fotoğrafı Ekle"}
               </Text>
             </TouchableOpacity>
           </Pressable>
