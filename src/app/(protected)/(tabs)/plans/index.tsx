@@ -409,6 +409,7 @@ const PlansScreen = () => {
         onClose={() => setIsRescheduleModalVisible(false)}
         onConfirm={onRescheduleConfirm}
         planTitle={reschedulePlan?.title || ""}
+        runningDays={(reschedulePlan?.running_days as number[]) || []}
       />
 
       {isLoading && (

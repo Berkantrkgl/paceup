@@ -48,6 +48,8 @@ const DAYS_MAP = [
   "Pazar",
 ];
 
+const DAYS_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
 const TOKEN_LIMIT_FREE = 50000;
 
 const generateNumberRange = (start: number, end: number, suffix: string) => {
@@ -80,6 +82,10 @@ const ProfileScreen = () => {
   const [tempArrayValue, setTempArrayValue] = useState<number[]>([]);
   const [dateValue, setDateValue] = useState(new Date());
   const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 });
+  const [paceUnknown, setPaceUnknown] = useState(false);
+
+  // Avatar Modal
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
 
   // Premium Modal
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
@@ -90,8 +96,8 @@ const ProfileScreen = () => {
   const formatDisplayTime = (timeStr: string) =>
     timeStr?.substring(0, 5) || "09:00";
 
-  const formatDisplayPace = (seconds: number) => {
-    if (!seconds) return "00:00";
+  const formatDisplayPace = (seconds: number | null | undefined) => {
+    if (seconds === null || seconds === undefined) return "--:--";
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s < 10 ? "0" : ""}${s}`;
@@ -127,7 +133,7 @@ const ProfileScreen = () => {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: "images",
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
@@ -177,8 +183,14 @@ const ProfileScreen = () => {
       d.setHours(parseInt(h), parseInt(m));
       setDateValue(d);
     } else if (config.type === "pace") {
-      const totalSec = (currentVal as number) || 330;
-      setPaceValue({ min: Math.floor(totalSec / 60), sec: totalSec % 60 });
+      if (currentVal === null || currentVal === undefined) {
+        setPaceUnknown(true);
+        setPaceValue({ min: 8, sec: 0 });
+      } else {
+        setPaceUnknown(false);
+        const totalSec = currentVal as number;
+        setPaceValue({ min: Math.floor(totalSec / 60), sec: totalSec % 60 });
+      }
     } else if (config.type === "multiselect") {
       setTempArrayValue((currentVal as number[]) || []);
     } else if (config.type === "picker") {
@@ -200,7 +212,7 @@ const ProfileScreen = () => {
         const m = dateValue.getMinutes();
         payloadValue = `${h < 10 ? "0" + h : h}:${m < 10 ? "0" + m : m}:00`;
       } else if (editConfig.type === "pace") {
-        payloadValue = paceValue.min * 60 + paceValue.sec;
+        payloadValue = paceUnknown ? null : paceValue.min * 60 + paceValue.sec;
       } else if (editConfig.type === "number") {
         payloadValue = Number(tempValue);
       } else if (editConfig.type === "multiselect") {
@@ -323,37 +335,53 @@ const ProfileScreen = () => {
     }
     if (editConfig.type === "pace") {
       return (
-        <View style={styles.dualPickerContainer}>
-          <View style={styles.pickerColumn}>
-            <Text style={styles.columnLabel}>Dakika</Text>
-            <Picker
-              selectedValue={paceValue.min}
-              onValueChange={(v) => setPaceValue({ ...paceValue, min: v })}
-              style={{ width: 100, color: "white" }}
-              itemStyle={{ color: "white" }}
-            >
-              {PACE_MINUTES.map((m) => (
-                <Picker.Item key={m} label={m.toString()} value={m} />
-              ))}
-            </Picker>
-          </View>
-          <Text style={styles.pickerSeparator}>:</Text>
-          <View style={styles.pickerColumn}>
-            <Text style={styles.columnLabel}>Saniye</Text>
-            <Picker
-              selectedValue={paceValue.sec}
-              onValueChange={(v) => setPaceValue({ ...paceValue, sec: v })}
-              style={{ width: 100, color: "white" }}
-              itemStyle={{ color: "white" }}
-            >
-              {PACE_SECONDS.map((s) => (
-                <Picker.Item
-                  key={s}
-                  label={s < 10 ? `0${s}` : s.toString()}
-                  value={s}
-                />
-              ))}
-            </Picker>
+        <View>
+          {/* Bilmiyorum toggle */}
+          <Pressable
+            style={styles.paceUnknownToggle}
+            onPress={() => setPaceUnknown((prev) => !prev)}
+          >
+            <View style={[styles.paceUnknownCheck, paceUnknown && styles.paceUnknownCheckActive]}>
+              {paceUnknown && <Ionicons name="checkmark" size={14} color="#000" />}
+            </View>
+            <Text style={styles.paceUnknownText}>Pace'imi bilmiyorum</Text>
+          </Pressable>
+
+          {/* Picker — bilmiyorum seçilince soluklaş */}
+          <View style={[styles.dualPickerContainer, paceUnknown && { opacity: 0.3 }]}
+            pointerEvents={paceUnknown ? "none" : "auto"}
+          >
+            <View style={styles.pickerColumn}>
+              <Text style={styles.columnLabel}>Dakika</Text>
+              <Picker
+                selectedValue={paceValue.min}
+                onValueChange={(v) => setPaceValue({ ...paceValue, min: v })}
+                style={{ width: 100, color: "white" }}
+                itemStyle={{ color: "white" }}
+              >
+                {PACE_MINUTES.map((m) => (
+                  <Picker.Item key={m} label={m.toString()} value={m} />
+                ))}
+              </Picker>
+            </View>
+            <Text style={styles.pickerSeparator}>:</Text>
+            <View style={styles.pickerColumn}>
+              <Text style={styles.columnLabel}>Saniye</Text>
+              <Picker
+                selectedValue={paceValue.sec}
+                onValueChange={(v) => setPaceValue({ ...paceValue, sec: v })}
+                style={{ width: 100, color: "white" }}
+                itemStyle={{ color: "white" }}
+              >
+                {PACE_SECONDS.map((s) => (
+                  <Picker.Item
+                    key={s}
+                    label={s < 10 ? `0${s}` : s.toString()}
+                    value={s}
+                  />
+                ))}
+              </Picker>
+            </View>
           </View>
         </View>
       );
@@ -361,35 +389,36 @@ const ProfileScreen = () => {
     if (editConfig.type === "multiselect") {
       return (
         <View style={styles.multiselectContainer}>
-          {DAYS_MAP.map((day, index) => {
-            const isSelected = tempArrayValue.includes(index);
-            return (
-              <Pressable
-                key={index}
-                style={[
-                  styles.dayButton,
-                  isSelected && styles.dayButtonSelected,
-                ]}
-                onPress={() => toggleDaySelection(index)}
-              >
-                <Text
+          <View style={styles.dayChipsRow}>
+            {DAYS_MAP.map((_, index) => {
+              const isSelected = tempArrayValue.includes(index);
+              return (
+                <Pressable
+                  key={index}
                   style={[
-                    styles.dayButtonText,
-                    isSelected && styles.dayButtonTextSelected,
+                    styles.dayChip,
+                    isSelected && styles.dayChipSelected,
                   ]}
+                  onPress={() => toggleDaySelection(index)}
                 >
-                  {day}
-                </Text>
-                {isSelected && (
-                  <Ionicons
-                    name="checkmark"
-                    size={18}
-                    color={COLORS.background}
-                  />
-                )}
-              </Pressable>
-            );
-          })}
+                  <Text
+                    style={[
+                      styles.dayChipText,
+                      isSelected && styles.dayChipTextSelected,
+                    ]}
+                  >
+                    {DAYS_SHORT[index]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.dayInfoBox}>
+            <Ionicons name="information-circle-outline" size={14} color={COLORS.textDim} />
+            <Text style={styles.dayInfoText}>
+              Bu değişiklik mevcut aktif programınızı etkilemez. Yeni oluşturulacak programlarda baz alınır.
+            </Text>
+          </View>
         </View>
       );
     }
@@ -517,7 +546,7 @@ const ProfileScreen = () => {
         >
           {/* USER CARD */}
           <View style={styles.userCard}>
-            <Pressable onPress={handlePickImage} style={styles.avatarContainer}>
+            <Pressable onPress={() => setAvatarModalVisible(true)} style={styles.avatarContainer}>
               {user?.profile_image ? (
                 <Image
                   source={{ uri: user.profile_image }}
@@ -794,6 +823,43 @@ const ProfileScreen = () => {
         onClose={() => setPremiumModalVisible(false)}
         reason="general"
       />
+
+      {/* Avatar Modal */}
+      <Modal visible={avatarModalVisible} transparent animationType="none" statusBarTranslucent>
+        <Pressable style={styles.avatarModalOverlay} onPress={() => setAvatarModalVisible(false)}>
+          <Pressable style={styles.avatarModalContent} onPress={(e) => e.stopPropagation()}>
+            {/* Fotoğraf veya Placeholder */}
+            <View style={styles.avatarModalImageWrap}>
+              {user?.profile_image ? (
+                <Image source={{ uri: user.profile_image }} style={styles.avatarModalImage} />
+              ) : (
+                <View style={styles.avatarModalPlaceholder}>
+                  <Ionicons name="person" size={64} color={COLORS.textDim} />
+                </View>
+              )}
+            </View>
+
+            {/* İsim */}
+            <Text style={styles.avatarModalName}>
+              {user?.first_name} {user?.last_name}
+            </Text>
+
+            {/* Fotoğraf ekle/değiştir butonu */}
+            <TouchableOpacity
+              style={styles.avatarModalBtn}
+              onPress={() => {
+                setAvatarModalVisible(false);
+                setTimeout(() => handlePickImage(), 100);
+              }}
+            >
+              <Ionicons name="camera-outline" size={18} color={COLORS.background} />
+              <Text style={styles.avatarModalBtnText}>
+                {user?.profile_image ? "Fotoğrafı Değiştir" : "Profil Fotoğrafı Ekle"}
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -1054,6 +1120,50 @@ const styles = StyleSheet.create({
   },
   dayButtonText: { color: COLORS.white, fontSize: 16 },
   dayButtonTextSelected: { color: COLORS.accent, fontWeight: "bold" },
+  dayChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  dayChip: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#2C2C2E",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#3A3A3C",
+  },
+  dayChipSelected: {
+    backgroundColor: COLORS.accent + "25",
+    borderColor: COLORS.accent,
+  },
+  dayChipText: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  dayChipTextSelected: {
+    color: COLORS.accent,
+    fontWeight: "700",
+  },
+  dayInfoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "rgba(255,255,255,0.04)",
+    borderRadius: 8,
+    padding: 10,
+  },
+  dayInfoText: {
+    flex: 1,
+    color: COLORS.textDim,
+    fontSize: 11,
+    lineHeight: 16,
+  },
   input: {
     backgroundColor: "#2C2C2E",
     color: COLORS.text,
@@ -1064,6 +1174,88 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#3A3A3C",
     textAlign: "center",
+  },
+  paceUnknownToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  paceUnknownCheck: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: "#3A3A3C",
+    backgroundColor: "#2C2C2E",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  paceUnknownCheckActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  paceUnknownText: {
+    color: COLORS.text,
+    fontSize: 15,
+  },
+  avatarModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarModalContent: {
+    width: 280,
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    alignItems: "center",
+    padding: 28,
+    gap: 16,
+  },
+  avatarModalImageWrap: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: "hidden",
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+  },
+  avatarModalImage: {
+    width: "100%",
+    height: "100%",
+  },
+  avatarModalPlaceholder: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: COLORS.cardVariant,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  avatarModalName: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  avatarModalBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  avatarModalBtnText: {
+    color: COLORS.background,
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
 
