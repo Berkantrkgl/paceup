@@ -8,6 +8,7 @@ import datetime
 import json
 import logging
 import math
+import re
 
 from agent.utils.helper_functions import call_api, fetch_user_info_for_program_creation
 from agent.utils.config import *
@@ -79,6 +80,38 @@ def generate_available_slots(start_date_str: str, duration_weeks: int, selected_
 # ============================================================
 # 2. PYTHON LOGIC (Güncellenmiş Pace ve Slot Mantığı)
 # ============================================================
+
+def extract_json_from_llm_response(content: str) -> dict:
+    """
+    LLM response'undan JSON'ı güvenli bir şekilde parse eder.
+    1. Önce code block içindeki JSON'ı arar (```json ... ```)
+    2. Bulamazsa ilk { ... } bloğunu dener
+    3. İkisi de başarısız olursa exception fırlatır
+    """
+    # 1. Code block içindeki JSON'ı dene (büyük/küçük harf fark etmez)
+    code_block_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", content, re.IGNORECASE)
+    if code_block_match:
+        try:
+            return json.loads(code_block_match.group(1).strip())
+        except json.JSONDecodeError:
+            pass
+
+    # 2. Ham içeriği dene (LLM direkt JSON döndürdüyse)
+    try:
+        return json.loads(content.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # 3. İlk { ... } bloğunu bul ve dene
+    brace_match = re.search(r"\{[\s\S]*\}", content)
+    if brace_match:
+        try:
+            return json.loads(brace_match.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"LLM response içinde geçerli JSON bulunamadı. Response: {content[:300]}")
+
 
 def calculate_pace_and_duration(base_pace: Optional[int], w_type: str, distance: float) -> dict:
     """
@@ -256,11 +289,13 @@ def create_workout_plan(
     try:
         llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name="us-east-1", disable_streaming=True)
         response = llm.invoke(system_prompt)
-        content = response.content.replace("```json", "").replace("```", "").strip()
-        ai_data = json.loads(content)
+        ai_data = extract_json_from_llm_response(response.content)
         raw_workouts = ai_data.get("workouts", [])
+    except ValueError as e:
+        logger.error(f"❌ AI JSON Parse Hatası: {e}")
+        return "HATA: AI planı geçerli bir formatta oluşturamadı."
     except Exception as e:
-        logger.error(f"❌ AI JSON Hatası: {e}")
+        logger.error(f"❌ AI Çağrı Hatası: {e}")
         return "HATA: AI planı oluştururken bir hata yaptı."
 
     # --- ADIM 7: MATEMATİK VE BACKEND PAYLOAD ---
