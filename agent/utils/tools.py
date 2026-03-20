@@ -113,25 +113,15 @@ def extract_json_from_llm_response(content: str) -> dict:
     raise ValueError(f"LLM response içinde geçerli JSON bulunamadı. Response: {content[:300]}")
 
 
-def calculate_pace_and_duration(base_pace: Optional[int], w_type: str, distance: float) -> dict:
+def calculate_duration(pace_seconds: int, distance: float) -> int:
     """
-    Süre ve Pace hesabını Python katmanında yaparak halüsinasyonu önler.
-    Kullanıcının hızı yoksa 480sn (8:00 dk/km) baz alınır.
+    Pace (sn/km) ve mesafe (km) ile süreyi hesaplar.
+    Sonuç 5'in katına yuvarlanır (35, 40, 45 dk gibi).
     """
-    # Fallback: Pace yoksa veya çok düşükse 8:00 (480sn) al
-    actual_base = base_pace if (base_pace and base_pace >= 180) else 480 
-
-    # Antrenman tipine göre pace çarpanları
-    multipliers = {
-        'easy': 1.20,      # Daha yavaş
-        'long': 1.15,      # Orta-yavaş
-        'tempo': 0.95,     # Hızlı
-        'interval': 0.85   # Çok hızlı
-    }
-    
-    pace = int(actual_base * multipliers.get(w_type, 1.0))
-    duration = int(math.ceil((distance * pace) / 60)) if distance > 0 else 0
-    return {"pace": pace, "duration": duration}
+    if distance <= 0 or pace_seconds <= 0:
+        return 0
+    raw_minutes = (distance * pace_seconds) / 60
+    return int(math.ceil(raw_minutes / 5) * 5)
 
 
 
@@ -203,11 +193,9 @@ def create_workout_plan(
         if not current_pace:
             pace_info = "BİLİNMİYOR (Kullanıcı hızını bilmiyor, koşuya YENİ BAŞLAYAN/ACEMİ seviyesinde.)"
             beginner_warning = "- DİKKAT: Kullanıcı acemi! İlk haftalarda mesafeleri çok kısa tut (Örn: 2-3km) ve antrenmanlara yürüyüş molaları ('easy' günlerde) ekleyebileceğini belirten başlıklar kullan."
-            actual_pace_for_math = 480
         else:
             pace_info = f"{current_pace} sn/km"
             beginner_warning = ""
-            actual_pace_for_math = current_pace
 
         max_dist = profile.get("max_distance", 0.0)
         weight = profile.get("weight")
@@ -259,6 +247,10 @@ KURALLAR:
 4. [LONG_RUN_DAY] slotu → her zaman "long" tipi; hemen sonraki slot → her zaman "easy"
 5. Haftalık mesafe artışı max %10 ({max_dist}km baz al)
 6. Antrenman başlıkları yaratıcı ve motive edici olsun
+7. "description" alanı: Sadece gerektiğinde doldur, yoksa boş string ("") gönder.
+   - interval antrenmanlarında ZORUNLU: tekrar sayısı, mesafe ve dinlenme süresi belirt (Örn: "6x200m tekrar, aralarında 90sn yürüyüş dinlenmesi")
+   - tempo antrenmanlarında opsiyonel: ısınma/ana set/soğuma yapısı varsa belirt
+   - easy ve long için boş bırak
 
 MÜSAİT SLOTLAR:
 {slots_payload}
@@ -269,7 +261,9 @@ MÜSAİT SLOTLAR:
       "day_offset": <integer, yukarıdaki offset değerlerinden biri>,
       "title": <string, yaratıcı Türkçe başlık>,
       "workout_type": <"easy" | "tempo" | "interval" | "long">,
-      "distance_km": <float, örn: 5.0>
+      "distance_km": <float, örn: 5.0>,
+      "target_pace_seconds": <integer, sn/km cinsinden hedef pace. Kullanıcının mevcut pace'i {pace_info}. Antrenman tipine göre ayarla: easy daha yavaş, tempo biraz hızlı, interval en hızlı, long orta-yavaş>,
+      "description": <string, interval/tempo detayı veya boş string>
     }}
   ]
 }}"""
@@ -296,19 +290,20 @@ MÜSAİT SLOTLAR:
     for w in raw_workouts:
         offset = w.get("day_offset")
         if offset not in valid_offsets: continue
-        
+
         dist = float(w.get("distance_km", 0))
         w_type = w.get("workout_type", "easy")
-        
-        math_data = calculate_pace_and_duration(actual_pace_for_math, w_type, dist)
-        
+        pace = int(w.get("target_pace_seconds", 480))
+        duration = calculate_duration(pace, dist)
+
         final_workout_objects.append({
             "day_offset": offset,
             "title": w.get("title", "Spark Koşusu"),
+            "description": w.get("description", ""),
             "workout_type": w_type,
             "distance_km": dist,
-            "target_pace_seconds": math_data["pace"],
-            "duration_minutes": math_data["duration"]
+            "target_pace_seconds": pace,
+            "duration_minutes": duration
         })
 
     api_payload = {
