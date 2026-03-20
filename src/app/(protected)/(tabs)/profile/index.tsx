@@ -86,7 +86,6 @@ const ProfileScreen = () => {
 
   // Avatar Modal
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
-
   // Premium Modal
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
 
@@ -844,7 +843,7 @@ const ProfileScreen = () => {
       <Modal
         visible={avatarModalVisible}
         transparent
-        animationType="none"
+        animationType="fade"
         statusBarTranslucent
       >
         <Pressable
@@ -855,42 +854,30 @@ const ProfileScreen = () => {
             style={styles.avatarModalContent}
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Fotoğraf veya Placeholder */}
-            <View style={styles.avatarModalImageWrap}>
-              {user?.profile_image ? (
-                <Image
-                  source={{ uri: user.profile_image }}
-                  style={styles.avatarModalImage}
-                />
-              ) : (
-                <View style={styles.avatarModalPlaceholder}>
-                  <Ionicons name="person" size={64} color={COLORS.textDim} />
-                </View>
-              )}
-            </View>
+            {/* Fotoğraf */}
+            {user?.profile_image ? (
+              <Image
+                source={{ uri: user.profile_image }}
+                style={styles.avatarModalImage}
+              />
+            ) : (
+              <View style={styles.avatarModalPlaceholder}>
+                <Ionicons name="person" size={80} color={COLORS.textDim} />
+              </View>
+            )}
 
-            {/* İsim */}
-            <Text style={styles.avatarModalName}>
-              {user?.first_name} {user?.last_name}
-            </Text>
-
-            {/* Fotoğraf ekle/değiştir butonu */}
+            {/* Değiştir */}
             <TouchableOpacity
               style={styles.avatarModalBtn}
-              onPress={() => {
-                setAvatarModalVisible(false);
-                setTimeout(() => handlePickImage(), 100);
-              }}
+              onPress={handlePickImage}
             >
               <Ionicons
                 name="camera-outline"
-                size={18}
-                color={COLORS.background}
+                size={16}
+                color={COLORS.text}
               />
               <Text style={styles.avatarModalBtnText}>
-                {user?.profile_image
-                  ? "Fotoğrafı Değiştir"
-                  : "Profil Fotoğrafı Ekle"}
+                {user?.profile_image ? "Fotoğrafı Değiştir" : "Fotoğraf Ekle"}
               </Text>
             </TouchableOpacity>
           </Pressable>
@@ -1239,59 +1226,46 @@ const styles = StyleSheet.create({
   },
   avatarModalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
+    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "center",
     alignItems: "center",
   },
   avatarModalContent: {
-    width: 280,
+    width: "97%",
     backgroundColor: COLORS.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
+    borderRadius: 20,
     alignItems: "center",
-    padding: 28,
-    gap: 16,
-  },
-  avatarModalImageWrap: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    overflow: "hidden",
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
+    padding: 16,
+    gap: 14,
   },
   avatarModalImage: {
     width: "100%",
-    height: "100%",
+    aspectRatio: 1,
+    borderRadius: 12,
   },
   avatarModalPlaceholder: {
     width: "100%",
-    height: "100%",
+    aspectRatio: 1,
     backgroundColor: COLORS.cardVariant,
     justifyContent: "center",
     alignItems: "center",
-  },
-  avatarModalName: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "700",
-    textAlign: "center",
+    borderRadius: 12,
   },
   avatarModalBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    backgroundColor: COLORS.accent,
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: COLORS.cardVariant,
+    paddingVertical: 10,
     paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginTop: 4,
+    borderRadius: 12,
+    width: "100%",
   },
   avatarModalBtnText: {
-    color: COLORS.background,
+    color: COLORS.text,
     fontSize: 14,
-    fontWeight: "700",
+    fontWeight: "600",
   },
 });
 
