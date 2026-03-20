@@ -229,10 +229,10 @@ def create_workout_plan(
     long_run_weekday = map_day_name_to_int(long_run_day) if long_run_day else -1
 
     slots_payload = ""
-    for i, slot in enumerate(available_slots):
+    for slot in available_slots:
         day_idx = map_day_name_to_int(slot['day_name'])
         lr_tag = " [LONG_RUN_DAY]" if day_idx == long_run_weekday else ""
-        slots_payload += f"ID {i}: offset={slot['offset']}, date={slot['date']}, day={slot['day_name']}{lr_tag}, week={slot['week_num']}\n"
+        slots_payload += f"day_offset={slot['offset']}, date={slot['date']}, day={slot['day_name']}{lr_tag}, week={slot['week_num']}\n"
 
     # --- ADIM 5: LLM PROMPT ---
     system_prompt = f"""Koşu koçu olarak {duration_weeks} haftalık antrenman programı oluştur.
@@ -276,6 +276,7 @@ MÜSAİT SLOTLAR:
         response = llm.invoke(system_prompt)
         ai_data = extract_json_from_llm_response(response.content)
         raw_workouts = ai_data.get("workouts", [])
+        logger.info(f"🤖 Planner LLM Çıktısı ({len(raw_workouts)} antrenman): {json.dumps(raw_workouts, ensure_ascii=False, indent=2)}")
     except ValueError as e:
         logger.error(f"❌ AI JSON Parse Hatası: {e}")
         return "HATA: AI planı geçerli bir formatta oluşturamadı."
