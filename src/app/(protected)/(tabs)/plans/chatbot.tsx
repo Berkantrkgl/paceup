@@ -261,7 +261,13 @@ const ChatbotScreen = () => {
     let sessionTokenAccumulator = 0;
 
     try {
-      const eventSource = new EventSource<"token" | "ask_user" | "token_usage" | "tool_use_notification" | "status">(`${FASTAPI_URL}/chat-stream`, {
+      const eventSource = new EventSource<
+        | "token"
+        | "ask_user"
+        | "token_usage"
+        | "tool_use_notification"
+        | "status"
+      >(`${FASTAPI_URL}/chat-stream`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -314,7 +320,10 @@ const ChatbotScreen = () => {
         try {
           setMessages((prev) => {
             const cleanHistory = prev
-              .filter((m) => !(m.id === activeAiMsgId && (m.text || "").trim() === ""))
+              .filter(
+                (m) =>
+                  !(m.id === activeAiMsgId && (m.text || "").trim() === ""),
+              )
               .map((m) =>
                 m.id === activeAiMsgId ? { ...m, isStreaming: false } : m,
               );
@@ -573,10 +582,15 @@ const ChatbotScreen = () => {
   // ============================================================
   // 🎨 RENDER
   // ============================================================
-  const isInputDisabled = isTyping || !!activeToolId || !canUseChat;
+  const isSendDisabled = isTyping || !!activeToolId || !canUseChat;
+  const isInputEditable = canUseChat && !activeToolId;
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 115 : 0}
+    >
       <StatusBar barStyle="light-content" />
 
       {/* Token Bloke Banner */}
@@ -641,52 +655,43 @@ const ChatbotScreen = () => {
         removeClippedSubviews={Platform.OS === "android"}
       />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
-      >
-        <View
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.textInput}
+          value={inputText}
+          onChangeText={setInputText}
+          placeholder={
+            !canUseChat
+              ? "Limit doldu..."
+              : activeToolId
+                ? "Seçimi tamamlayın..."
+                : isTyping
+                  ? "Yanıt bekleniyor..."
+                  : "Mesaj yazın..."
+          }
+          placeholderTextColor="#666"
+          editable={isInputEditable}
+          multiline
+        />
+        <TouchableOpacity
+          onPress={
+            !canUseChat ? () => setPremiumModalVisible(true) : handleUserSend
+          }
+          disabled={canUseChat && (!inputText.trim() || isSendDisabled)}
           style={[
-            styles.inputContainer,
-            { paddingBottom: Platform.OS === "ios" ? 20 : 10 },
-            isInputDisabled && { opacity: 0.6 },
+            styles.sendBtn,
+            canUseChat &&
+              (!inputText.trim() || isSendDisabled) && { opacity: 0.5 },
+            !canUseChat && { backgroundColor: COLORS.accent },
           ]}
         >
-          <TextInput
-            style={styles.textInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder={
-              !canUseChat
-                ? "Limit doldu..."
-                : activeToolId
-                  ? "Seçimi tamamlayın..."
-                  : "Mesaj yazın..."
-            }
-            placeholderTextColor="#666"
-            editable={!isInputDisabled}
-            multiline
+          <Ionicons
+            name={!canUseChat ? "flash" : "arrow-up"}
+            size={20}
+            color={COLORS.background}
           />
-          <TouchableOpacity
-            onPress={
-              !canUseChat ? () => setPremiumModalVisible(true) : handleUserSend
-            }
-            disabled={canUseChat && (!inputText.trim() || isInputDisabled)}
-            style={[
-              styles.sendBtn,
-              canUseChat &&
-                (!inputText.trim() || isInputDisabled) && { opacity: 0.5 },
-              !canUseChat && { backgroundColor: COLORS.accent },
-            ]}
-          >
-            <Ionicons
-              name={!canUseChat ? "flash" : "arrow-up"}
-              size={20}
-              color={COLORS.background}
-            />
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
+        </TouchableOpacity>
+      </View>
 
       {/* Premium Modal */}
       <PremiumModal
@@ -694,7 +699,7 @@ const ChatbotScreen = () => {
         onClose={() => setPremiumModalVisible(false)}
         reason={!canUseChat ? "token_limit" : "general"}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
