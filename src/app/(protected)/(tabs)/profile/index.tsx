@@ -504,14 +504,14 @@ const ProfileScreen = () => {
     return (
       <View style={styles.tokenCard}>
         {/* Başlık */}
-        <View style={styles.tokenCardHeader}>
+        <View style={[styles.tokenCardHeader, user?.is_premium && { marginBottom: 0 }]}>
           <View style={styles.tokenCardTitleRow}>
             <Ionicons name="flash" size={16} color={color} />
             <Text style={styles.tokenCardTitle}>Kalan AI Kullanım Hakkı</Text>
           </View>
           {user?.is_premium ? (
             <View style={styles.premiumBadge}>
-              <Text style={styles.premiumBadgeText}>💎 Sınırsız</Text>
+              <Text style={styles.premiumBadgeText}>Sınırsız</Text>
             </View>
           ) : (
             <Text style={[styles.tokenPctText, { color }]}>
@@ -740,7 +740,7 @@ const ProfileScreen = () => {
           <Section title="HESAP BİLGİLERİ">
             <InfoRow
               label="Üyelik Tipi"
-              value={user?.is_premium ? "Premium 💎" : "Standart"}
+              value={user?.is_premium ? "Premium" : "Standart"}
               isReadonly
             />
             <InfoRow
