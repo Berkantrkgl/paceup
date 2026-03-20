@@ -90,7 +90,7 @@ export const AvailabilityTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={24} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>
@@ -164,7 +164,7 @@ export const AvailabilityTool = ({
                 {/* Uzun Koşu İşareti */}
                 {isLongRun && (
                   <View style={styles.longRunBadge}>
-                    <Ionicons name="flame" size={12} color="#000" />
+                    <Ionicons name="flame" size={10} color="#000" />
                   </View>
                 )}
               </TouchableOpacity>
@@ -182,7 +182,7 @@ export const AvailabilityTool = ({
           <View style={styles.longRunHeader}>
             <View style={styles.longRunTitleRow}>
               <View style={styles.fireIconBox}>
-                <Ionicons name="flame" size={16} color={COLORS.accent} />
+                <Ionicons name="flame" size={14} color={COLORS.accent} />
               </View>
               <Text style={styles.longRunTitle}>Uzun koşu için tercihim</Text>
             </View>
@@ -259,8 +259,8 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     backgroundColor: "#1A1A1A",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
   },
 
   // Header
@@ -268,28 +268,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#888",
   },
   badge: {
     backgroundColor: COLORS.accent + "20",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.accent + "40",
   },
   badgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
     color: COLORS.accent,
   },
@@ -298,17 +298,17 @@ const styles = StyleSheet.create({
   weekContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   dayWrapper: {
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   dayBlock: {
-    width: 42,
-    height: 60,
+    width: 38,
+    height: 52,
     backgroundColor: "#252525",
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: "#2A2A2A",
     justifyContent: "center",
@@ -320,80 +320,80 @@ const styles = StyleSheet.create({
     borderColor: COLORS.accent,
   },
   dayLetterCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: "#1F1F1F",
     justifyContent: "center",
     alignItems: "center",
   },
   dayLetter: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: "#666",
   },
   selectedIndicator: {
     position: "absolute",
-    top: 6,
-    right: 6,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    top: 4,
+    right: 4,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   longRunBadge: {
     position: "absolute",
-    bottom: 4,
+    bottom: 3,
     backgroundColor: COLORS.accent,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     justifyContent: "center",
     alignItems: "center",
   },
   dayLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     color: "#666",
   },
 
   // Uzun Koşu Section
   longRunSection: {
-    marginBottom: 20,
+    marginBottom: 14,
   },
   longRunHeader: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   longRunTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
   },
   fireIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 6,
     backgroundColor: COLORS.accent + "15",
     justifyContent: "center",
     alignItems: "center",
   },
   longRunTitle: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "600",
     color: "#CCC",
   },
   longRunOptions: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 6,
   },
   longRunOption: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     backgroundColor: "#252525",
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#3A3A3C",
   },
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.accent,
   },
   longRunOptionText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: "#888",
   },
@@ -417,9 +417,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   btnDisabled: {
     backgroundColor: "#333",
@@ -428,7 +428,7 @@ const styles = StyleSheet.create({
   btnText: {
     color: "#000",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14,
   },
 
   // Submitted
@@ -436,28 +436,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#252525",
-    padding: 16,
-    borderRadius: 16,
-    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   submittedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: COLORS.accent + "20",
     justifyContent: "center",
     alignItems: "center",
   },
   submittedTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   submittedSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#999",
   },
 });

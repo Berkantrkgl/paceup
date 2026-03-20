@@ -206,7 +206,7 @@ export const ProgramSetupTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={24} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>{getGoalLabel()}</Text>
@@ -359,9 +359,9 @@ export const ProgramSetupTool = ({
           >
             <Ionicons
               name="calendar"
-              size={24}
+              size={20}
               color={COLORS.accent}
-              style={{ marginBottom: 8 }}
+              style={{ marginBottom: 6 }}
             />
             <Text style={styles.dateCardDate}>{formatDate(startDate)}</Text>
             <Text style={styles.dateCardLabel}>Tıklayarak değiştir</Text>
@@ -461,9 +461,9 @@ export const ProgramSetupTool = ({
             >
               <Ionicons
                 name="flag"
-                size={24}
+                size={20}
                 color={COLORS.accent}
-                style={{ marginBottom: 8 }}
+                style={{ marginBottom: 6 }}
               />
               <Text style={styles.dateCardDate}>{formatDate(targetDate)}</Text>
               <Text style={styles.dateCardLabel}>Hedef tarih</Text>
@@ -474,9 +474,9 @@ export const ProgramSetupTool = ({
             <View style={styles.autoInfo}>
               <Ionicons
                 name="sparkles-outline"
-                size={40}
+                size={32}
                 color={COLORS.accent}
-                style={{ marginBottom: 12 }}
+                style={{ marginBottom: 8 }}
               />
               <Text style={styles.autoText}>
                 Spark, hedefine ve profiline göre ideal program süresini
@@ -488,7 +488,7 @@ export const ProgramSetupTool = ({
           <View style={styles.infoBox}>
             <Ionicons
               name="information-circle-outline"
-              size={16}
+              size={14}
               color={COLORS.accent}
             />
             <Text style={styles.infoText}>
@@ -597,24 +597,24 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     backgroundColor: "#1A1A1A",
-    borderRadius: 20,
-    padding: 20,
-    minHeight: 400,
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 360,
   },
   stepContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 24,
+    marginBottom: 16,
   },
   stepWrapper: {
     flexDirection: "row",
     alignItems: "center",
   },
   stepDot: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: "#2A2A2A",
     justifyContent: "center",
     alignItems: "center",
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.accent,
   },
   stepNumber: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: "#666",
   },
@@ -636,10 +636,10 @@ const styles = StyleSheet.create({
     color: "#000",
   },
   stepLine: {
-    width: 40,
+    width: 32,
     height: 2,
     backgroundColor: "#3A3A3A",
-    marginHorizontal: 8,
+    marginHorizontal: 6,
   },
   stepLineActive: {
     backgroundColor: COLORS.accent,
@@ -648,34 +648,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 20,
+    paddingBottom: 16,
   },
   stepContent: {
     flex: 1,
   },
   stepTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   stepSubtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#999",
-    marginBottom: 24,
+    marginBottom: 16,
   },
 
-  // YENİ: Liste Tarzı Hedef Seçimi
+  // Liste Tarzı Hedef Seçimi
   goalsList: {
-    gap: 10,
+    gap: 8,
   },
   goalRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#252525",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 12,
+    padding: 10,
     borderWidth: 2,
     borderColor: "#2A2A2A",
   },
@@ -686,36 +686,36 @@ const styles = StyleSheet.create({
   goalLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 10,
   },
   goalIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     backgroundColor: "#1F1F1F",
     justifyContent: "center",
     alignItems: "center",
   },
   goalEmoji: {
-    fontSize: 24,
+    fontSize: 20,
   },
   goalTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     color: "#CCC",
-    marginBottom: 2,
+    marginBottom: 1,
   },
   goalTitleActive: {
     color: "#FFF",
   },
   goalSubtitle: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#777",
   },
   radioOuter: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: "#444",
     justifyContent: "center",
@@ -725,86 +725,86 @@ const styles = StyleSheet.create({
     borderColor: COLORS.accent,
   },
   radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: COLORS.accent,
   },
 
   customInput: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginTop: 12,
+    gap: 10,
+    marginTop: 10,
     backgroundColor: "#252525",
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 2,
     borderColor: COLORS.accent,
   },
   customTextInput: {
     flex: 1,
     color: "#FFF",
-    fontSize: 15,
+    fontSize: 14,
   },
   quickDates: {
     flexDirection: "row",
-    gap: 12,
-    marginBottom: 16,
+    gap: 10,
+    marginBottom: 12,
   },
   quickDateBtn: {
     flex: 1,
     backgroundColor: "#252525",
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   quickDateText: {
     color: COLORS.accent,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
   },
   dateCard: {
     backgroundColor: "#252525",
-    borderRadius: 16,
-    paddingVertical: 24,
+    borderRadius: 14,
+    paddingVertical: 18,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   dateCardDate: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   dateCardLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#777",
   },
   durationTabs: {
     flexDirection: "row",
     backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 20,
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 16,
   },
   durationTab: {
     flex: 1,
     flexDirection: "row",
-    paddingVertical: 10,
+    paddingVertical: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 8,
+    borderRadius: 7,
   },
   durationTabActive: {
     backgroundColor: "#1A1A1A",
   },
   durationTabText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: "#666",
   },
@@ -815,13 +815,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 24,
-    paddingVertical: 20,
+    gap: 20,
+    paddingVertical: 16,
   },
   weekButton: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "#252525",
     justifyContent: "center",
     alignItems: "center",
@@ -830,67 +830,67 @@ const styles = StyleSheet.create({
   },
   weekDisplay: {
     alignItems: "center",
-    minWidth: 100,
+    minWidth: 80,
   },
   weekNumber: {
-    fontSize: 48,
+    fontSize: 40,
     fontWeight: "700",
     color: "#FFF",
   },
   weekLabel: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "700",
     color: COLORS.accent,
     letterSpacing: 2,
-    marginTop: 4,
+    marginTop: 2,
   },
   autoInfo: {
     alignItems: "center",
-    paddingVertical: 32,
+    paddingVertical: 24,
   },
   autoText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#CCC",
     textAlign: "center",
-    lineHeight: 20,
-    paddingHorizontal: 20,
+    lineHeight: 18,
+    paddingHorizontal: 16,
   },
   infoBox: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255, 165, 0, 0.1)",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 10,
-    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    gap: 8,
+    marginTop: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 165, 0, 0.2)",
   },
   infoText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 11,
     color: "#DDD",
-    lineHeight: 16,
+    lineHeight: 15,
   },
   footer: {
     flexDirection: "row",
-    gap: 12,
-    paddingTop: 16,
+    gap: 10,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: "#2A2A2A",
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     backgroundColor: "#252525",
   },
   backButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
     color: "#AAA",
   },
@@ -899,16 +899,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 10,
     backgroundColor: COLORS.accent,
   },
   nextButtonDisabled: {
     opacity: 0.5,
   },
   nextButtonText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "700",
     color: "#000",
   },
@@ -916,28 +916,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#252525",
-    padding: 16,
-    borderRadius: 16,
-    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   submittedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: COLORS.accent + "20",
     justifyContent: "center",
     alignItems: "center",
   },
   submittedTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   submittedSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#999",
   },
   modalOverlay: {

@@ -255,7 +255,7 @@ export const RunnerProfileTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={24} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>Profil Onaylandı</Text>
@@ -280,7 +280,7 @@ export const RunnerProfileTool = ({
             <View style={styles.profileIconBox}>
               <Ionicons
                 name={formData.gender === "female" ? "woman" : "man"}
-                size={24}
+                size={20}
                 color={COLORS.accent}
               />
             </View>
@@ -342,7 +342,7 @@ export const RunnerProfileTool = ({
               <Text style={styles.profileValue}>{formData.height} cm</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color="#666" />
         </Pressable>
 
         {/* Kilo */}
@@ -361,7 +361,7 @@ export const RunnerProfileTool = ({
             <View style={styles.profileIconBox}>
               <Ionicons
                 name="fitness-outline"
-                size={24}
+                size={20}
                 color={COLORS.accent}
               />
             </View>
@@ -370,7 +370,7 @@ export const RunnerProfileTool = ({
               <Text style={styles.profileValue}>{formData.weight} kg</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color="#666" />
         </Pressable>
 
         {/* Pace */}
@@ -382,7 +382,7 @@ export const RunnerProfileTool = ({
             <View style={styles.profileIconBox}>
               <Ionicons
                 name="speedometer-outline"
-                size={24}
+                size={20}
                 color={COLORS.accent}
               />
             </View>
@@ -391,7 +391,7 @@ export const RunnerProfileTool = ({
               <Text style={styles.profileValue}>{displayPace()}</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color="#666" />
         </Pressable>
       </View>
 
@@ -451,56 +451,56 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     backgroundColor: "#1A1A1A",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
   },
   title: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 8,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#999",
-    marginBottom: 24,
+    marginBottom: 16,
   },
 
   // Profil Listesi
   profileList: {
-    gap: 12,
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 14,
   },
   profileRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#252525",
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
     borderColor: "#2A2A2A",
   },
   profileLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 10,
   },
   profileIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "#1F1F1F",
     justifyContent: "center",
     alignItems: "center",
   },
   profileLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#777",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   profileValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
     color: "#FFF",
   },
@@ -509,14 +509,14 @@ const styles = StyleSheet.create({
   genderToggle: {
     flexDirection: "row",
     backgroundColor: "#1F1F1F",
-    borderRadius: 10,
-    padding: 3,
-    gap: 3,
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
   },
   genderBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 7,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -530,14 +530,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   btnText: {
     color: "#000",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14,
   },
 
   // Submitted
@@ -545,28 +545,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#252525",
-    padding: 16,
-    borderRadius: 16,
-    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   submittedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: COLORS.accent + "20",
     justifyContent: "center",
     alignItems: "center",
   },
   submittedTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   submittedSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#999",
   },
 

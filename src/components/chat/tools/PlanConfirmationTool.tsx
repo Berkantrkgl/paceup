@@ -63,7 +63,7 @@ export const PlanConfirmationTool = ({
                   ? "chatbubble-ellipses"
                   : "close-circle"
             }
-            size={24}
+            size={20}
             color={isConfirmed ? COLORS.accent : "#FF5252"}
           />
         </View>
@@ -88,7 +88,7 @@ export const PlanConfirmationTool = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Ionicons name="help-circle" size={24} color={COLORS.accent} />
+        <Ionicons name="help-circle" size={20} color={COLORS.accent} />
         <Text style={styles.title}>Plan Onayı</Text>
       </View>
 
@@ -97,12 +97,12 @@ export const PlanConfirmationTool = ({
       {mode === "idle" ? (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-            <Ionicons name="checkmark" size={20} color="#000" />
+            <Ionicons name="checkmark" size={18} color="#000" />
             <Text style={styles.confirmBtnText}>Evet, Oluştur</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
-            <Ionicons name="close" size={20} color="#FF5252" />
+            <Ionicons name="close" size={18} color="#FF5252" />
             <Text style={styles.rejectBtnText}>Hayır</Text>
           </TouchableOpacity>
 
@@ -159,109 +159,109 @@ const styles = StyleSheet.create({
   container: {
     width: "100%",
     backgroundColor: "#1A1A1A",
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 8,
   },
   title: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: "#FFF",
   },
   message: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#CCC",
-    lineHeight: 20,
-    marginBottom: 20,
+    lineHeight: 18,
+    marginBottom: 14,
   },
 
   // Actions
   actions: {
-    gap: 10,
+    gap: 8,
   },
   confirmBtn: {
     backgroundColor: COLORS.accent,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
   confirmBtnText: {
     color: "#000",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14,
   },
   rejectBtn: {
     backgroundColor: "#252525",
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255,82,82,0.3)",
   },
   rejectBtnText: {
     color: "#FF5252",
     fontWeight: "700",
-    fontSize: 15,
+    fontSize: 14,
   },
   feedbackBtn: {
     backgroundColor: "#252525",
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 14,
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   feedbackBtnText: {
     color: COLORS.accent,
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 13,
   },
 
   // Feedback Section
   feedbackSection: {
-    gap: 12,
+    gap: 10,
   },
   feedbackInputRow: {
     backgroundColor: "#252525",
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: COLORS.accent,
-    padding: 14,
+    padding: 12,
   },
   feedbackInput: {
     color: "#FFF",
-    fontSize: 14,
-    minHeight: 60,
+    fontSize: 13,
+    minHeight: 50,
     textAlignVertical: "top",
   },
   feedbackActions: {
     flexDirection: "row",
-    gap: 10,
+    gap: 8,
   },
   feedbackCancelBtn: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
     backgroundColor: "#252525",
   },
   feedbackCancelText: {
     color: "#AAA",
     fontWeight: "600",
-    fontSize: 14,
+    fontSize: 13,
   },
   feedbackSendBtn: {
     flex: 1,
@@ -269,14 +269,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
     backgroundColor: COLORS.accent,
   },
   feedbackSendText: {
     color: "#000",
     fontWeight: "700",
-    fontSize: 14,
+    fontSize: 13,
   },
 
   // Submitted
@@ -284,28 +284,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#252525",
-    padding: 16,
-    borderRadius: 16,
-    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#3A3A3A",
   },
   submittedIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: COLORS.accent + "20",
     justifyContent: "center",
     alignItems: "center",
   },
   submittedTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
     color: "#FFF",
-    marginBottom: 4,
+    marginBottom: 2,
   },
   submittedSubtitle: {
-    fontSize: 13,
+    fontSize: 12,
     color: "#999",
   },
 });
