@@ -20,7 +20,7 @@ import { AuthContext } from "@/utils/authContext";
 
 const PlansScreen = () => {
   // AuthContext'ten user ve veriyi tazelemek için refreshUserData'yı da alıyoruz
-  const { token, refreshUserData } = useContext(AuthContext);
+  const { getValidToken, refreshUserData } = useContext(AuthContext);
   const [userPlans, setUserPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,10 +28,11 @@ const PlansScreen = () => {
 
   // --- 1. VERİ ÇEKME ---
   const fetchPlans = async () => {
-    if (!token) return;
+    const validToken = await getValidToken();
+    if (!validToken) return;
     try {
       const response = await fetch(`${API_URL}/programs/`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${validToken}` },
       });
       if (response.ok) {
         const data = await response.json();
@@ -52,7 +53,7 @@ const PlansScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchPlans();
-    }, [token]),
+    }, []),
   );
 
   const onRefresh = async () => {
@@ -78,9 +79,10 @@ const PlansScreen = () => {
         text: "Evet",
         onPress: async () => {
           setIsLoading(true);
+          const validToken = await getValidToken();
           const res = await fetch(`${API_URL}/programs/${plan.id}/activate/`, {
             method: "POST",
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${validToken}` },
           });
           if (res.ok) await fetchPlans();
           setIsLoading(false);
@@ -96,10 +98,11 @@ const PlansScreen = () => {
         text: "Evet",
         onPress: async () => {
           setIsLoading(true);
+          const validToken = await getValidToken();
           const res = await fetch(`${API_URL}/programs/${plan.id}/`, {
             method: "PATCH",
             headers: {
-              Authorization: `Bearer ${token}`,
+              Authorization: `Bearer ${validToken}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ status: "inactive" }),
@@ -118,9 +121,10 @@ const PlansScreen = () => {
         text: "Sil",
         style: "destructive",
         onPress: async () => {
+          const validToken = await getValidToken();
           const res = await fetch(`${API_URL}/programs/${planId}/`, {
             method: "DELETE",
-            headers: { Authorization: `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${validToken}` },
           });
           if (res.ok)
             setUserPlans((prev) => prev.filter((p) => p.id !== planId));

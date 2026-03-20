@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import React, { useContext, useState } from "react";
 import {
@@ -116,7 +115,7 @@ const ToggleRow = React.memo(({ label, value, onValueChange, isLast }: any) => (
 // ANA EKRAN
 // ============================================================
 const ProfileScreen = () => {
-  const { user, logOut, refreshUserData } = useContext(AuthContext);
+  const { user, logOut, refreshUserData, getValidToken } = useContext(AuthContext);
   const [uploading, setUploading] = useState(false);
 
   // Edit Modal
@@ -197,7 +196,7 @@ const ProfileScreen = () => {
   const uploadProfileImage = async (uri: string) => {
     setUploading(true);
     try {
-      const token = await AsyncStorage.getItem("auth-access-token");
+      const token = await getValidToken();
       const formData = new FormData();
       const filename = uri.split("/").pop();
       const match = /\.(\w+)$/.exec(filename || "");
@@ -256,7 +255,7 @@ const ProfileScreen = () => {
 
   const saveChange = async () => {
     try {
-      const token = await AsyncStorage.getItem("auth-access-token");
+      const token = await getValidToken();
       let payloadValue: any = tempValue;
       if (editConfig.type === "date") {
         payloadValue = dateValue.toISOString().split("T")[0];
@@ -307,7 +306,7 @@ const ProfileScreen = () => {
     // Optimistic: hemen local state'i güncelle
     setToggleOverrides((prev) => ({ ...prev, [key]: value }));
     try {
-      const token = await AsyncStorage.getItem("auth-access-token");
+      const token = await getValidToken();
       await fetch(`${API_URL}/users/me/`, {
         method: "PATCH",
         headers: {

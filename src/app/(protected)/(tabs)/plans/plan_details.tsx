@@ -57,7 +57,7 @@ const formatShortDate = (dateStr: string) => {
 
 const PlanDetailsScreen = () => {
   const { planId } = useLocalSearchParams<{ planId: string }>();
-  const { token } = useContext(AuthContext);
+  const { getValidToken } = useContext(AuthContext);
   const scrollViewRef = useRef<ScrollView>(null);
 
   const [plan, setPlan] = useState<any>(null);
@@ -66,10 +66,11 @@ const PlanDetailsScreen = () => {
 
   useEffect(() => {
     const fetchPlan = async () => {
-      if (!token || !planId) return;
+      const validToken = await getValidToken();
+      if (!validToken || !planId) return;
       try {
         const response = await fetch(`${API_URL}/programs/${planId}/`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${validToken}` },
         });
         if (response.ok) {
           const data = await response.json();
@@ -85,7 +86,7 @@ const PlanDetailsScreen = () => {
       }
     };
     fetchPlan();
-  }, [token, planId]);
+  }, [planId]);
 
   // Data Gruplama
   const groupedWorkouts = useMemo(() => {
