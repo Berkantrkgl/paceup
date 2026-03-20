@@ -25,6 +25,7 @@ import { ChatMessage } from "@/types/plans";
 import { AuthContext } from "@/utils/authContext";
 
 import { AvailabilityTool } from "@/components/chat/tools/AvailabilityTool";
+import { PlanConfirmationTool } from "@/components/chat/tools/PlanConfirmationTool";
 import { ProgramSetupTool } from "@/components/chat/tools/ProgramSetupTool";
 import { RunnerProfileTool } from "@/components/chat/tools/RunnerProfileTool";
 import { PremiumModal } from "@/components/PremiumModal";
@@ -515,6 +516,14 @@ const ChatbotScreen = () => {
           <AvailabilityTool
             onSubmit={(data) => handleToolSubmit(id, data)}
             submitted={submitted}
+          />
+        );
+      } else if (toolName === "request_plan_confirmation") {
+        ToolComponent = (
+          <PlanConfirmationTool
+            onSubmit={(data) => handleToolSubmit(id, data)}
+            submitted={submitted}
+            message={input?.message}
           />
         );
       }
