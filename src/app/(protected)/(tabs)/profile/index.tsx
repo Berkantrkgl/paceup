@@ -64,6 +64,55 @@ const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
 const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
 
 // ============================================================
+// SUB COMPONENTS
+// ============================================================
+const Section = ({ title, children }: any) => (
+  <View style={styles.sectionContainer}>
+    <Text style={styles.sectionHeader}>{title}</Text>
+    <View style={styles.sectionContent}>{children}</View>
+  </View>
+);
+
+const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
+  <Pressable
+    style={({ pressed }) => [
+      styles.row,
+      pressed && !isReadonly && styles.rowPressed,
+      isLast && styles.rowLast,
+    ]}
+    onPress={!isReadonly ? onPress : undefined}
+  >
+    <Text style={styles.rowLabel}>{label}</Text>
+    <View style={styles.rowRight}>
+      <Text style={[styles.rowValue, isReadonly && { color: COLORS.accent }]}>
+        {value}
+      </Text>
+      {!isReadonly && (
+        <Ionicons
+          name="chevron-forward"
+          size={16}
+          color={COLORS.textDim}
+          style={{ marginLeft: 6 }}
+          opacity={0.5}
+        />
+      )}
+    </View>
+  </Pressable>
+);
+
+const ToggleRow = React.memo(({ label, value, onValueChange, isLast }: any) => (
+  <View style={[styles.row, isLast && styles.rowLast]}>
+    <Text style={styles.rowLabel}>{label}</Text>
+    <Switch
+      value={value}
+      onValueChange={onValueChange}
+      trackColor={{ false: COLORS.cardBorder, true: COLORS.accent }}
+      thumbColor={COLORS.white}
+    />
+  </View>
+));
+
+// ============================================================
 // ANA EKRAN
 // ============================================================
 const ProfileScreen = () => {
@@ -89,6 +138,11 @@ const ProfileScreen = () => {
   // Premium Modal
   const [premiumModalVisible, setPremiumModalVisible] = useState(false);
 
+  // Toggle local state (optimistic update)
+  const [toggleOverrides, setToggleOverrides] = useState<
+    Record<string, boolean>
+  >({});
+
   // ============================================================
   // GÖRÜNTÜLEME FORMATLAYICILARI
   // ============================================================
@@ -104,7 +158,7 @@ const ProfileScreen = () => {
 
   const formatDisplayDays = (daysArray: number[]) => {
     if (!daysArray || daysArray.length === 0) return "Seçilmedi";
-    return daysArray.map((d) => DAYS_MAP[d].substring(0, 3)).join(", ");
+    return daysArray.map((d) => DAYS_SHORT[d]).join(", ");
   };
 
   const getTokenProgressPercent = () => {
@@ -244,7 +298,14 @@ const ProfileScreen = () => {
     }
   };
 
+  const getToggleValue = (key: string): boolean => {
+    if (key in toggleOverrides) return toggleOverrides[key];
+    return !!(user as any)?.[key];
+  };
+
   const toggleSwitch = async (key: string, value: boolean) => {
+    // Optimistic: hemen local state'i güncelle
+    setToggleOverrides((prev) => ({ ...prev, [key]: value }));
     try {
       const token = await AsyncStorage.getItem("auth-access-token");
       await fetch(`${API_URL}/users/me/`, {
@@ -255,60 +316,23 @@ const ProfileScreen = () => {
         },
         body: JSON.stringify({ [key]: value }),
       });
+      // Arka planda user'ı güncelle, override'ı temizle
       await refreshUserData();
+      setToggleOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
     } catch (e) {
+      // Hata olursa geri al
+      setToggleOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
       console.log(e);
     }
   };
-
-  // ============================================================
-  // SUB COMPONENTS
-  // ============================================================
-  const Section = ({ title, children }: any) => (
-    <View style={styles.sectionContainer}>
-      <Text style={styles.sectionHeader}>{title}</Text>
-      <View style={styles.sectionContent}>{children}</View>
-    </View>
-  );
-
-  const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
-    <Pressable
-      style={({ pressed }) => [
-        styles.row,
-        pressed && !isReadonly && styles.rowPressed,
-        isLast && styles.rowLast,
-      ]}
-      onPress={!isReadonly ? onPress : undefined}
-    >
-      <Text style={styles.rowLabel}>{label}</Text>
-      <View style={styles.rowRight}>
-        <Text style={[styles.rowValue, isReadonly && { color: COLORS.accent }]}>
-          {value}
-        </Text>
-        {!isReadonly && (
-          <Ionicons
-            name="chevron-forward"
-            size={16}
-            color={COLORS.textDim}
-            style={{ marginLeft: 6 }}
-            opacity={0.5}
-          />
-        )}
-      </View>
-    </Pressable>
-  );
-
-  const ToggleRow = ({ label, value, onValueChange, isLast }: any) => (
-    <View style={[styles.row, isLast && styles.rowLast]}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: COLORS.cardBorder, true: COLORS.accent }}
-        thumbColor={COLORS.white}
-      />
-    </View>
-  );
 
   // ============================================================
   // MODAL CONTENT
@@ -594,7 +618,9 @@ const ProfileScreen = () => {
                       user?.is_premium && { color: COLORS.accent },
                     ]}
                   >
-                    {user?.is_premium ? "💎 PREMIUM" : "🏃‍♂️ STANDART"}
+                    {user?.is_premium
+                      ? "Premium kullanıcı"
+                      : "Standart kullanıcı"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -686,13 +712,14 @@ const ProfileScreen = () => {
               }
             />
             <InfoRow
-              label="Maksimum Mesafe"
+              label="Maksimum Koşu Mesafesi"
               value={`${user?.max_runned_distance} km`}
               onPress={() =>
                 openEditor({
                   key: "max_runned_distance",
-                  title: "Maks. Mesafe (km)",
-                  type: "number",
+                  title: "Maksimum Koşu Mesafesi",
+                  type: "picker",
+                  options: generateNumberRange(1, 100, "km"),
                 })
               }
             />
@@ -718,7 +745,7 @@ const ProfileScreen = () => {
               isReadonly
             />
             <InfoRow
-              label="Kalan Erteleme Hakkı"
+              label="Aylık Kalan Erteleme Hakkı"
               value={
                 user?.is_premium
                   ? "Sınırsız"
@@ -744,28 +771,28 @@ const ProfileScreen = () => {
             />
             <ToggleRow
               label="Antrenman Bildirimleri"
-              value={user?.notification_workout_reminder}
+              value={getToggleValue("notification_workout_reminder")}
               onValueChange={(v: boolean) =>
                 toggleSwitch("notification_workout_reminder", v)
               }
             />
             <ToggleRow
               label="Haftalık Rapor"
-              value={user?.notification_weekly_report}
+              value={getToggleValue("notification_weekly_report")}
               onValueChange={(v: boolean) =>
                 toggleSwitch("notification_weekly_report", v)
               }
             />
             <ToggleRow
               label="Başarı Rozetleri"
-              value={user?.notification_achievements}
+              value={getToggleValue("notification_achievements")}
               onValueChange={(v: boolean) =>
                 toggleSwitch("notification_achievements", v)
               }
             />
             <ToggleRow
               label="Plan Güncellemeleri"
-              value={user?.notification_plan_updates}
+              value={getToggleValue("notification_plan_updates")}
               onValueChange={(v: boolean) =>
                 toggleSwitch("notification_plan_updates", v)
               }
