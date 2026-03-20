@@ -447,10 +447,12 @@ const ChatbotScreen = () => {
       ),
     );
     setUserScrolling(false);
+    const toolMsg = messages.find((m) => m.id === toolId);
     connectAndStream([
       {
         role: "tool",
         tool_call_id: toolId,
+        tool_name: toolMsg?.toolData?.name || "",
         content: JSON.stringify(responseJson),
       },
     ]);
