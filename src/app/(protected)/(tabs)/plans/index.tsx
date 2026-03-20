@@ -17,7 +17,6 @@ import {
 import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
-import { PlanDetailsModal } from "./plan_details";
 
 const PlansScreen = () => {
   // AuthContext'ten user ve veriyi tazelemek için refreshUserData'yı da alıyoruz
@@ -26,9 +25,6 @@ const PlansScreen = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Modal State'leri
-  const [selectedPlanDetails, setSelectedPlanDetails] = useState<any>(null);
-  const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
 
   // --- 1. VERİ ÇEKME ---
   const fetchPlans = async () => {
@@ -68,22 +64,11 @@ const PlansScreen = () => {
 
   // --- 2. AKSİYONLAR ---
 
-  const handleOpenDetails = async (plan: any) => {
-    setIsLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/programs/${plan.id}/`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response.ok) {
-        const data = await response.json();
-        setSelectedPlanDetails(data);
-        setIsDetailModalVisible(true);
-      }
-    } catch (error) {
-      Alert.alert("Hata", "Plan detayları yüklenemedi.");
-    } finally {
-      setIsLoading(false);
-    }
+  const handleOpenDetails = (plan: any) => {
+    router.push({
+      pathname: "/(protected)/(tabs)/plans/plan_details",
+      params: { planId: plan.id },
+    });
   };
 
   const handleActivatePlan = (plan: any) => {
@@ -302,13 +287,6 @@ const PlansScreen = () => {
           </View>
         )}
       </ScrollView>
-
-      {/* Plan Detay Modalı */}
-      <PlanDetailsModal
-        visible={isDetailModalVisible}
-        onClose={() => setIsDetailModalVisible(false)}
-        plan={selectedPlanDetails}
-      />
 
       {isLoading && (
         <View style={styles.loadingOverlay}>

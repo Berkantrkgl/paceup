@@ -26,6 +26,14 @@ const _layout = () => {
             />
 
             <Stack.Screen
+                name="plan_details"
+                options={{
+                    title: "Plan Detayı",
+                    headerBackTitle: "Geri",
+                }}
+            />
+
+            <Stack.Screen
                 name="chatbot"
                 options={{
                     title: "AI Koşu Koçu",
