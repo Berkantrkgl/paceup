@@ -18,27 +18,17 @@ import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 import { PlanDetailsModal } from "./plan_details";
-import { RescheduleModal } from "./reschedule_modal";
 
 const PlansScreen = () => {
   // AuthContext'ten user ve veriyi tazelemek için refreshUserData'yı da alıyoruz
-  const { token, user, refreshUserData } = useContext(AuthContext);
+  const { token, refreshUserData } = useContext(AuthContext);
   const [userPlans, setUserPlans] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Kota Bilgileri (Backend'deki isimlerle eşleşmeli)
-  const remainingReschedules = user?.remaining_reschedules ?? 0;
-  const isPremium = user?.is_premium ?? false;
-
   // Modal State'leri
   const [selectedPlanDetails, setSelectedPlanDetails] = useState<any>(null);
   const [isDetailModalVisible, setIsDetailModalVisible] = useState(false);
-
-  // Reschedule State'leri
-  const [reschedulePlan, setReschedulePlan] = useState<any>(null);
-  const [isRescheduleModalVisible, setIsRescheduleModalVisible] =
-    useState(false);
 
   // --- 1. VERİ ÇEKME ---
   const fetchPlans = async () => {
@@ -154,67 +144,6 @@ const PlansScreen = () => {
     ]);
   };
 
-  // --- YENİ: ERTELEME AKSİYONLARI (KOTA KONTROLLÜ) ---
-  const handleOpenReschedule = (plan: any) => {
-    // Kota Kontrolü
-    if (!isPremium && remainingReschedules <= 0) {
-      Alert.alert(
-        "Erteleme Hakkı Doldu",
-        "Bu ayki erteleme hakkınızı doldurdunuz. Sınırsız planlama esnekliği için Premium'a geçebilirsiniz.",
-        [
-          { text: "Vazgeç", style: "cancel" },
-          // İleride Premium ekranın varsa buraya router.push yönlendirmesi eklenebilir
-          { text: "Tamam", style: "default" },
-        ],
-      );
-      return;
-    }
-
-    setReschedulePlan(plan);
-    setIsRescheduleModalVisible(true);
-  };
-
-  const onRescheduleConfirm = async (newStartDate: string) => {
-    if (!reschedulePlan) return;
-    setIsRescheduleModalVisible(false);
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(
-        `${API_URL}/programs/${reschedulePlan.id}/reschedule/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ start_date: newStartDate }),
-        },
-      );
-
-      if (response.ok) {
-        Alert.alert("Başarılı", "Programınız yeni tarihe göre güncellendi.");
-        await fetchPlans();
-
-        // İşlem başarılıysa global User state'i tazeleyerek kotanın (Ertele (1) vs) güncellenmesini sağla
-        if (refreshUserData) {
-          await refreshUserData();
-        }
-      } else {
-        const err = await response.json();
-        Alert.alert(
-          "Hata",
-          err.error || err.detail || "Güncelleme yapılamadı.",
-        );
-      }
-    } catch (error) {
-      Alert.alert("Hata", "Sunucu hatası.");
-    } finally {
-      setIsLoading(false);
-      setReschedulePlan(null);
-    }
-  };
-
   // --- 3. UI RENDER ---
   const renderPlanCard = (plan: any) => {
     const isActive = plan.status === "active";
@@ -224,10 +153,6 @@ const PlansScreen = () => {
       Math.round(
         (plan.completed_workouts_count / plan.total_workouts_count) * 100,
       ) || 0;
-
-    // Erteleme butonu durumu
-    const isOutOfQuota = !isPremium && remainingReschedules <= 0;
-    const quotaText = isPremium ? "" : ` (${remainingReschedules})`;
 
     return (
       <Pressable
@@ -262,14 +187,6 @@ const PlansScreen = () => {
               </Text>
             </View>
           </View>
-          {!isActive && (
-            <Pressable
-              onPress={() => handleDeletePlan(plan.id)}
-              style={styles.deleteIcon}
-            >
-              <Ionicons name="trash-outline" size={18} color={COLORS.textDim} />
-            </Pressable>
-          )}
         </View>
 
         <Text
@@ -298,28 +215,6 @@ const PlansScreen = () => {
 
         {/* Butonlar Alt Kısım */}
         <View style={styles.actionRow}>
-          {/* ERTELE BUTONU (KOTA KONTROLLÜ) */}
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleOpenReschedule(plan)}
-          >
-            <Ionicons
-              name={isOutOfQuota ? "lock-closed-outline" : "calendar-outline"}
-              size={16}
-              color={isOutOfQuota ? COLORS.textDim : COLORS.text}
-            />
-            <Text
-              style={[
-                styles.actionButtonText,
-                { color: isOutOfQuota ? COLORS.textDim : COLORS.text },
-              ]}
-            >
-              Ertele{quotaText}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.verticalDivider} />
-
           {isActive ? (
             <TouchableOpacity
               style={styles.actionButton}
@@ -345,6 +240,18 @@ const PlansScreen = () => {
               </Text>
             </TouchableOpacity>
           )}
+
+          <View style={styles.verticalDivider} />
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleDeletePlan(plan.id)}
+          >
+            <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
+            <Text style={[styles.actionButtonText, { color: COLORS.danger }]}>
+              Sil
+            </Text>
+          </TouchableOpacity>
         </View>
       </Pressable>
     );
@@ -401,15 +308,6 @@ const PlansScreen = () => {
         visible={isDetailModalVisible}
         onClose={() => setIsDetailModalVisible(false)}
         plan={selectedPlanDetails}
-      />
-
-      {/* YENİ: Reschedule Modalı */}
-      <RescheduleModal
-        visible={isRescheduleModalVisible}
-        onClose={() => setIsRescheduleModalVisible(false)}
-        onConfirm={onRescheduleConfirm}
-        planTitle={reschedulePlan?.title || ""}
-        runningDays={(reschedulePlan?.running_days as number[]) || []}
       />
 
       {isLoading && (
@@ -473,7 +371,6 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   badgeText: { fontSize: 10, fontWeight: "700" },
-  deleteIcon: { padding: 4 },
   planTitle: {
     color: COLORS.text,
     fontSize: 18,
