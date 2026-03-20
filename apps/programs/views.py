@@ -71,6 +71,7 @@ class ProgramViewSet(viewsets.ModelViewSet):
                     w = Workout(
                         program=program,
                         title=w_data['title'],
+                        description=w_data.get('description', ''),
                         workout_type=w_data['workout_type'],
                         scheduled_date=real_date,
                         planned_distance=float(w_data['distance_km']),

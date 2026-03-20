@@ -10,7 +10,7 @@ class WorkoutSerializer(serializers.ModelSerializer):
     class Meta:
         model = Workout
         fields = [
-            'id', 'program', 'title', 'workout_type', 
+            'id', 'program', 'title', 'description', 'workout_type',
             'scheduled_date', 'day_of_week',
             'planned_distance', 'planned_duration', 
             'target_pace_seconds', 'pace_display', 

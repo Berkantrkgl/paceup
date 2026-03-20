@@ -69,6 +69,7 @@ class Workout(models.Model):
     program = models.ForeignKey(Program, on_delete=models.CASCADE, related_name='workouts')
     
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
     workout_type = models.CharField(max_length=20, choices=WorkoutType.choices)
     
     scheduled_date = models.DateField()
