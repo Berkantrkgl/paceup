@@ -261,7 +261,7 @@ const ChatbotScreen = () => {
     let sessionTokenAccumulator = 0;
 
     try {
-      const eventSource = new EventSource(`${FASTAPI_URL}/chat-stream`, {
+      const eventSource = new EventSource<"token" | "ask_user" | "token_usage" | "tool_use_notification" | "status">(`${FASTAPI_URL}/chat-stream`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -314,7 +314,7 @@ const ChatbotScreen = () => {
         try {
           setMessages((prev) => {
             const cleanHistory = prev
-              .filter((m) => !(m.id === activeAiMsgId && m.text.trim() === ""))
+              .filter((m) => !(m.id === activeAiMsgId && (m.text || "").trim() === ""))
               .map((m) =>
                 m.id === activeAiMsgId ? { ...m, isStreaming: false } : m,
               );
@@ -469,7 +469,7 @@ const ChatbotScreen = () => {
       const isProcessFinished =
         index < messages.length - 1 && !!hasContentStarted;
       const isError =
-        nextMsg &&
+        nextMsg?.text &&
         (nextMsg.text.startsWith("Üzgünüm") ||
           nextMsg.text.includes("hata oluştu"));
       return (

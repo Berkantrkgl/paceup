@@ -1,4 +1,4 @@
-export type MessageType = "user" | "ai" | "tool_widget";
+export type MessageType = "user" | "ai" | "tool_widget" | "system_info";
 
 export interface ChatMessage {
   id: string;
@@ -11,6 +11,7 @@ export interface ChatMessage {
     id: string; // tool_call_id
     name: string; // request_runner_profile vb.
     submitted?: boolean; // Kullanıcı butona bastı mı?
+    input?: Record<string, any>; // Tool'a gelen parametreler
   };
 }
 
