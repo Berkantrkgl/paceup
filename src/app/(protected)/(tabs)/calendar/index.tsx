@@ -6,9 +6,16 @@ import {
   useLocalSearchParams,
   useNavigation,
 } from "expo-router";
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   Dimensions,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -25,8 +32,12 @@ import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
 const CELL_WIDTH = (width - 40) / 7;
+const SLIDER_CARD_WIDTH = width * 0.78;
+const SLIDER_CARD_MARGIN = 6;
+const SLIDER_ITEM_WIDTH = SLIDER_CARD_WIDTH + SLIDER_CARD_MARGIN * 2;
+const SLIDER_PADDING = (width - SLIDER_CARD_WIDTH) / 2 - SLIDER_CARD_MARGIN;
 
-// --- 1. LOCALE SETUP ---
+// --- LOCALE SETUP ---
 LocaleConfig.locales["tr"] = {
   monthNames: [
     "Ocak",
@@ -70,7 +81,7 @@ LocaleConfig.locales["tr"] = {
 };
 LocaleConfig.defaultLocale = "tr";
 
-// --- 2. RENK PALETİ ---
+// --- RENK PALETİ ---
 const THEME_COLORS = {
   tempo: "#FF4501",
   easy: "#4ECDC4",
@@ -131,9 +142,11 @@ const getWorkoutTheme = (type: WorkoutTypeEnum) => {
 };
 
 const CalendarScreen = () => {
-  const { token } = useContext(AuthContext);
+  const { getValidToken } = useContext(AuthContext);
   const params = useLocalSearchParams();
   const navigation = useNavigation();
+  const sliderRef = useRef<FlatList>(null);
+  const isSliderScrolling = useRef(false);
 
   const todayStr = new Date().toISOString().split("T")[0];
 
@@ -143,8 +156,16 @@ const CalendarScreen = () => {
   const [allWorkouts, setAllWorkouts] = useState<any[]>([]);
   const [workoutsMap, setWorkoutsMap] = useState<any>({});
   const [refreshing, setRefreshing] = useState(false);
-
   const [currentMonth, setCurrentMonth] = useState(todayStr);
+
+  // Sorted workouts for slider (by date) — memoized to prevent re-renders
+  const sortedWorkouts = React.useMemo(
+    () =>
+      [...allWorkouts].sort((a, b) =>
+        a.scheduled_date.localeCompare(b.scheduled_date),
+      ),
+    [allWorkouts],
+  );
 
   useEffect(() => {
     if (params.initialDate) {
@@ -157,7 +178,7 @@ const CalendarScreen = () => {
   useEffect(() => {
     const parentNav = navigation.getParent();
     if (parentNav) {
-      const unsubscribe = parentNav.addListener("tabPress", (e) => {
+      const unsubscribe = (parentNav as any).addListener("tabPress", () => {
         const today = new Date().toISOString().split("T")[0];
         setSelectedDate(today);
         setCurrentMonth(today);
@@ -167,10 +188,11 @@ const CalendarScreen = () => {
   }, [navigation]);
 
   const fetchWorkouts = async () => {
-    if (!token) return;
+    const validToken = await getValidToken();
+    if (!validToken) return;
     try {
       const response = await fetch(`${API_URL}/workouts/?only_active=true`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${validToken}` },
       });
 
       if (response.ok) {
@@ -191,7 +213,7 @@ const CalendarScreen = () => {
   useFocusEffect(
     useCallback(() => {
       fetchWorkouts();
-    }, [token]),
+    }, []),
   );
 
   const onRefresh = async () => {
@@ -200,7 +222,206 @@ const CalendarScreen = () => {
     setRefreshing(false);
   };
 
-  // --- GÜNCELLENEN KISIM BURASI ---
+  // --- TWO-WAY SYNC ---
+
+  // When calendar day is tapped → scroll slider to that workout
+  const handleDayPress = (dateStr: string) => {
+    setSelectedDate(dateStr);
+
+    const idx = sortedWorkouts.findIndex((w) => w.scheduled_date === dateStr);
+    if (idx >= 0 && sliderRef.current) {
+      isSliderScrolling.current = true;
+      sliderRef.current.scrollToOffset({
+        offset: idx * SLIDER_ITEM_WIDTH,
+        animated: true,
+      });
+      setTimeout(() => {
+        isSliderScrolling.current = false;
+      }, 500);
+    }
+  };
+
+  // When slider card becomes visible → update selected date & calendar month
+  const onSliderViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (isSliderScrolling.current) return;
+    if (viewableItems.length > 0) {
+      const workout = viewableItems[0].item;
+      setSelectedDate(workout.scheduled_date);
+      setCurrentMonth(workout.scheduled_date);
+    }
+  }).current;
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 60,
+  }).current;
+
+  // Scroll slider to selected date on initial load
+  useEffect(() => {
+    if (sortedWorkouts.length > 0) {
+      const idx = sortedWorkouts.findIndex(
+        (w) => w.scheduled_date === selectedDate,
+      );
+      // Find closest workout if no exact match
+      const targetIdx = idx >= 0 ? idx : findClosestWorkoutIndex(selectedDate);
+      if (targetIdx >= 0 && sliderRef.current) {
+        setTimeout(() => {
+          sliderRef.current?.scrollToOffset({
+            offset: targetIdx * SLIDER_ITEM_WIDTH,
+            animated: false,
+          });
+        }, 300);
+      }
+    }
+  }, [sortedWorkouts.length]);
+
+  const findClosestWorkoutIndex = (date: string) => {
+    if (sortedWorkouts.length === 0) return -1;
+    let closest = 0;
+    let minDiff = Infinity;
+    sortedWorkouts.forEach((w, i) => {
+      const diff = Math.abs(
+        new Date(w.scheduled_date).getTime() - new Date(date).getTime(),
+      );
+      if (diff < minDiff) {
+        minDiff = diff;
+        closest = i;
+      }
+    });
+    return closest;
+  };
+
+  // --- SLIDER CARD ---
+  const renderSliderCard = useCallback(({ item: workout }: { item: any }) => {
+    const theme = getWorkoutTheme(workout.workout_type);
+    const isCompleted = workout.status === "completed";
+    const isMissed = workout.status === "missed";
+    const isSelected = workout.scheduled_date === selectedDate;
+
+    const dateObj = new Date(workout.scheduled_date);
+    const dayName = dateObj.toLocaleDateString("tr-TR", { weekday: "short" });
+    const dayNum = dateObj.getDate();
+    const monthName = dateObj.toLocaleDateString("tr-TR", { month: "short" });
+    const isToday = workout.scheduled_date === todayStr;
+
+    return (
+      <Pressable
+        onPress={() =>
+          router.push({
+            pathname: "/calendar/detail_modal",
+            params: { workoutId: workout.id },
+          })
+        }
+        style={({ pressed }) => [
+          styles.sliderCard,
+          isSelected && styles.sliderCardSelected,
+          pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+        ]}
+      >
+        <LinearGradient
+          colors={theme.bgGradient as any}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.sliderCardGradient}
+        >
+          {/* Left: Date column */}
+          <View style={styles.sliderDateCol}>
+            <Text
+              style={[
+                styles.sliderDayName,
+                isToday && { color: COLORS.accent },
+              ]}
+            >
+              {isToday ? "Bugün" : dayName}
+            </Text>
+            <Text style={[styles.sliderDayNum, { color: theme.color }]}>
+              {dayNum}
+            </Text>
+            <Text style={styles.sliderMonth}>{monthName}</Text>
+          </View>
+
+          {/* Vertical separator */}
+          <View
+            style={[
+              styles.sliderSeparator,
+              { backgroundColor: theme.color + "40" },
+            ]}
+          />
+
+          {/* Right: Workout info */}
+          <View style={styles.sliderInfo}>
+            <View style={styles.sliderTopRow}>
+              <View
+                style={[
+                  styles.sliderTypeBadge,
+                  { backgroundColor: theme.color + "25" },
+                ]}
+              >
+                <Ionicons
+                  name={theme.icon as any}
+                  size={14}
+                  color={theme.color}
+                />
+                <Text style={[styles.sliderTypeText, { color: theme.color }]}>
+                  {theme.name}
+                </Text>
+              </View>
+              {isCompleted && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={COLORS.success}
+                />
+              )}
+              {isMissed && (
+                <Ionicons
+                  name="close-circle"
+                  size={18}
+                  color={THEME_COLORS.missed}
+                />
+              )}
+            </View>
+
+            <Text style={styles.sliderTitle} numberOfLines={1}>
+              {workout.title}
+            </Text>
+
+            {workout.workout_type !== "rest" && (
+              <View style={styles.sliderMeta}>
+                {workout.planned_duration > 0 && (
+                  <View style={styles.sliderMetaItem}>
+                    <Ionicons
+                      name="timer-outline"
+                      size={13}
+                      color={COLORS.textDim}
+                    />
+                    <Text style={styles.sliderMetaText}>
+                      {workout.planned_duration} dk
+                    </Text>
+                  </View>
+                )}
+                {workout.planned_distance > 0 && (
+                  <View style={styles.sliderMetaItem}>
+                    <Ionicons
+                      name="location-outline"
+                      size={13}
+                      color={COLORS.textDim}
+                    />
+                    <Text style={styles.sliderMetaText}>
+                      {workout.planned_distance} km
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+
+          <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
+        </LinearGradient>
+      </Pressable>
+    );
+  }, [selectedDate, todayStr]);
+
+  // --- CALENDAR DAY ---
   const renderCustomDay = ({
     date,
     state,
@@ -218,51 +439,38 @@ const CalendarScreen = () => {
     const isCompleted = workout?.status === "completed";
     const isMissed = workout?.status === "missed";
 
-    if (isSelected) {
-      return (
-        <Pressable
-          onPress={() => setSelectedDate(dateStr)}
-          style={styles.dayContainer}
-        >
-          <LinearGradient
-            colors={[COLORS.accent, COLORS.secondary]}
-            style={styles.selectedDayBox}
-          >
-            <Text style={styles.selectedDayText}>{date.day}</Text>
-            {workout && <View style={styles.dotWhite} />}
-          </LinearGradient>
-        </Pressable>
-      );
-    }
-
     return (
       <Pressable
-        onPress={() => setSelectedDate(dateStr)}
-        style={[styles.dayContainer, !isCurrentMonth && { opacity: 0.65 }]}
+        onPress={() => handleDayPress(dateStr)}
+        style={[styles.dayContainer, !isCurrentMonth && { opacity: 0.5 }]}
       >
         <View
           style={[
             styles.dayBox,
-            // Antrenman YOKSA: Standart gri kutu
+            // Default: empty day
             !workout && {
-              backgroundColor: "#333333",
-              borderColor: "#444444",
-              borderWidth: 1,
+              backgroundColor: "#222",
+              borderColor: isSelected ? COLORS.text : "transparent",
+              borderWidth: isSelected ? 1.5 : 0,
+              ...(isSelected && { backgroundColor: "#2A2A2A" }),
             },
-            // Antrenman VARSA: Rengi koru, sadece çarpı koyacağız
+            // Workout day: use theme color
             workout && {
-              borderColor: theme?.color, // Hep kendi tema rengi
+              borderColor: theme?.color,
               borderWidth: 1.5,
-              backgroundColor: theme
-                ? theme.color + "30" // Hep kendi arka plan tonu
-                : "transparent",
+              backgroundColor: theme ? theme.color + "25" : "transparent",
             },
-            // Bugün ve boşsa: Accent rengi
+            // Selected day with workout: brighter bg + thicker border
+            isSelected &&
+              workout && {
+                backgroundColor: theme ? theme.color + "50" : "transparent",
+                borderWidth: 2,
+              },
+            // Today without workout: no special border
             isToday &&
               !workout && {
-                borderColor: COLORS.accent,
-                borderWidth: 1.5,
-                backgroundColor: "#333333",
+                borderColor: "transparent",
+                borderWidth: 0,
               },
           ]}
         >
@@ -274,32 +482,27 @@ const CalendarScreen = () => {
                   ? COLORS.accent
                   : workout
                     ? COLORS.white
-                    : "#DDDDDD",
-                fontWeight: workout || isToday ? "800" : "600",
+                    : isSelected
+                      ? COLORS.text
+                      : "#999",
+                fontWeight: workout || isToday || isSelected ? "800" : "500",
               },
             ]}
           >
             {date.day}
           </Text>
 
-          {isToday && (
-            <View
-              style={{
-                width: 16,
-                height: 3,
-                borderRadius: 2,
-                backgroundColor: COLORS.accent,
-                marginTop: 4,
-              }}
-            />
+          {/* Small colored dot for workout type */}
+          {workout && !isCompleted && !isMissed && (
+            <View style={[styles.dayDot, { backgroundColor: theme?.color }]} />
           )}
 
-          {/* İKONLAR: Durumu burada gösteriyoruz */}
+          {/* Status icons */}
           {isCompleted && (
             <View style={styles.statusIcon}>
               <Ionicons
                 name="checkmark-circle"
-                size={14}
+                size={12}
                 color={COLORS.success}
               />
             </View>
@@ -308,18 +511,18 @@ const CalendarScreen = () => {
             <View style={styles.statusIcon}>
               <Ionicons
                 name="close-circle"
-                size={14}
+                size={12}
                 color={THEME_COLORS.missed}
               />
             </View>
           )}
+
+          {/* Today underline */}
+          {isToday && <View style={styles.todayBar} />}
         </View>
       </Pressable>
     );
   };
-  // --- GÜNCELLENEN KISIM SONU ---
-
-  const selectedWorkout = workoutsMap[selectedDate];
 
   return (
     <View style={styles.container}>
@@ -329,16 +532,56 @@ const CalendarScreen = () => {
         backgroundColor="transparent"
       />
 
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Takvim</Text>
         <View style={styles.headerStats}>
-          <Ionicons name="calendar-outline" size={16} color={COLORS.accent} />
+          <Ionicons name="fitness-outline" size={14} color={COLORS.accent} />
           <Text style={styles.headerStatsText}>
-            {allWorkouts.length} Antreman
+            {allWorkouts.filter((w) => w.status === "completed").length}/
+            {allWorkouts.length}
           </Text>
         </View>
       </View>
 
+      {/* WORKOUT SLIDER */}
+      {sortedWorkouts.length > 0 ? (
+        <View style={styles.sliderSection}>
+          <FlatList
+            ref={sliderRef}
+            data={sortedWorkouts}
+            renderItem={renderSliderCard}
+            keyExtractor={(item) => item.id.toString()}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            snapToInterval={SLIDER_ITEM_WIDTH}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            contentContainerStyle={{ paddingHorizontal: SLIDER_PADDING }}
+            onViewableItemsChanged={onSliderViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            onScrollBeginDrag={() => {
+              isSliderScrolling.current = false;
+            }}
+            getItemLayout={(_, index) => ({
+              length: SLIDER_ITEM_WIDTH,
+              offset: SLIDER_ITEM_WIDTH * index,
+              index,
+            })}
+          />
+        </View>
+      ) : (
+        <View style={styles.emptySlider}>
+          <Ionicons
+            name="calendar-clear-outline"
+            size={24}
+            color={COLORS.textDim}
+          />
+          <Text style={styles.emptySliderText}>Henüz antrenman yok</Text>
+        </View>
+      )}
+
+      {/* CALENDAR */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -355,31 +598,32 @@ const CalendarScreen = () => {
             current={currentMonth}
             enableSwipeMonths={true}
             firstDay={1}
-            dayComponent={renderCustomDay}
+            hideExtraDays={true}
+            dayComponent={renderCustomDay as any}
             onMonthChange={(date: any) => setCurrentMonth(date.dateString)}
             theme={{
               calendarBackground: "transparent",
-              textSectionTitleColor: "#BBBBBB",
+              textSectionTitleColor: "#777",
               monthTextColor: COLORS.text,
-              textMonthFontSize: 22,
-              textMonthFontWeight: "800",
-              textDayHeaderFontSize: 13,
-              textDayHeaderFontWeight: "700",
+              textMonthFontSize: 18,
+              textMonthFontWeight: "700" as const,
+              textDayHeaderFontSize: 12,
+              textDayHeaderFontWeight: "600" as const,
               arrowColor: COLORS.accent,
-              "stylesheet.calendar.header": {
+              ["stylesheet.calendar.header" as any]: {
                 header: {
                   flexDirection: "row",
                   justifyContent: "space-between",
                   paddingLeft: 10,
                   paddingRight: 10,
-                  marginBottom: 20,
+                  marginBottom: 14,
                   alignItems: "center",
                 },
                 week: {
                   flexDirection: "row",
                   justifyContent: "space-around",
-                  paddingBottom: 10,
-                  marginBottom: 5,
+                  paddingBottom: 8,
+                  marginBottom: 4,
                   borderBottomWidth: 0,
                 },
               },
@@ -387,138 +631,23 @@ const CalendarScreen = () => {
           />
         </View>
 
-        {/* DETAILS SECTION */}
-        <View style={styles.detailsSection}>
-          <Text style={styles.detailsDate}>
-            {new Date(selectedDate).toLocaleDateString("tr-TR", {
-              day: "numeric",
-              month: "long",
-              weekday: "long",
-            })}
-          </Text>
-
-          {selectedWorkout ? (
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/calendar/detail_modal",
-                  params: { workoutId: selectedWorkout.id },
-                })
-              }
-            >
-              {(() => {
-                const theme = getWorkoutTheme(selectedWorkout.workout_type);
-                const isCompleted = selectedWorkout.status === "completed";
-                const isMissed = selectedWorkout.status === "missed";
-
-                return (
-                  <LinearGradient
-                    colors={theme.bgGradient as any}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.gradientTicket}
-                  >
-                    <View style={styles.ticketLeft}>
-                      <View
-                        style={[
-                          styles.iconBox,
-                          {
-                            borderColor: theme.color,
-                          },
-                        ]}
-                      >
-                        <Ionicons
-                          name={theme.icon as any}
-                          size={22}
-                          color={theme.color}
-                        />
-                      </View>
-                      <Text style={styles.ticketTime}>
-                        {selectedWorkout.scheduled_time
-                          ? selectedWorkout.scheduled_time.slice(0, 5)
-                          : "--:--"}
-                      </Text>
-                    </View>
-
-                    <View style={styles.ticketCenter}>
-                      <View style={styles.ticketHeaderRow}>
-                        <Text
-                          style={[styles.ticketType, { color: theme.color }]}
-                        >
-                          {theme.name}
-                        </Text>
-                        {isCompleted && (
-                          <View
-                            style={[
-                              styles.badge,
-                              {
-                                backgroundColor: theme.color,
-                              },
-                            ]}
-                          >
-                            <Text style={styles.badgeText}>BİTTİ</Text>
-                          </View>
-                        )}
-                        {isMissed && (
-                          <View
-                            style={[
-                              styles.badge,
-                              {
-                                backgroundColor: THEME_COLORS.missed,
-                              },
-                            ]}
-                          >
-                            <Text style={styles.badgeText}>KAÇIRILDI</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={styles.ticketTitle} numberOfLines={1}>
-                        {selectedWorkout.title}
-                      </Text>
-                      <View style={styles.ticketMetaRow}>
-                        <Ionicons
-                          name="timer-outline"
-                          size={14}
-                          color={COLORS.textDim}
-                        />
-                        <Text style={styles.ticketMetaText}>
-                          {selectedWorkout.planned_duration} dk
-                        </Text>
-                        {selectedWorkout.planned_distance > 0 && (
-                          <>
-                            <Text style={styles.ticketDivider}>•</Text>
-                            <Ionicons
-                              name="location-outline"
-                              size={14}
-                              color={COLORS.textDim}
-                            />
-                            <Text style={styles.ticketMetaText}>
-                              {selectedWorkout.planned_distance} km
-                            </Text>
-                          </>
-                        )}
-                      </View>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={24}
-                      color={COLORS.cardBorder}
-                    />
-                  </LinearGradient>
-                );
-              })()}
-            </Pressable>
-          ) : (
-            <View style={styles.emptyState}>
-              <Ionicons
-                name="calendar-clear-outline"
-                size={32}
-                color={COLORS.textDim}
-              />
-              <Text style={styles.emptyDesc}>Planlanmış antrenman yok.</Text>
-            </View>
-          )}
+        {/* LEGEND */}
+        <View style={styles.legend}>
+          {(
+            ["easy", "tempo", "interval", "long", "rest"] as WorkoutTypeEnum[]
+          ).map((type) => {
+            const theme = getWorkoutTheme(type);
+            return (
+              <View key={type} style={styles.legendItem}>
+                <View
+                  style={[styles.legendDot, { backgroundColor: theme.color }]}
+                />
+                <Text style={styles.legendText}>{theme.name}</Text>
+              </View>
+            );
+          })}
         </View>
+
         <View style={{ height: 100 }} />
       </ScrollView>
     </View>
@@ -528,153 +657,215 @@ const CalendarScreen = () => {
 export default CalendarScreen;
 
 const styles = StyleSheet.create({
-  // ... (Stiller aynı kaldı)
   container: { flex: 1, backgroundColor: COLORS.background },
+
+  // HEADER
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 20,
     paddingTop: 70,
-    paddingBottom: 20,
+    paddingBottom: 12,
   },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: "900",
     color: COLORS.text,
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   headerStats: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.card,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    gap: 5,
+  },
+  headerStatsText: { color: COLORS.textDim, fontSize: 13, fontWeight: "700" },
+
+  // SLIDER
+  sliderSection: {
+    marginTop: 10,
+    marginBottom: 30,
+  },
+  sliderCard: {
+    width: SLIDER_CARD_WIDTH,
+    marginHorizontal: SLIDER_CARD_MARGIN,
+    borderRadius: 20,
+    overflow: "hidden",
+  },
+  sliderCardSelected: {
+    shadowColor: COLORS.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  sliderCardGradient: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
-    gap: 6,
   },
-  headerStatsText: { color: COLORS.textDim, fontSize: 12, fontWeight: "700" },
-  calendarContainer: { marginHorizontal: 10, paddingVertical: 10 },
+  sliderDateCol: {
+    alignItems: "center",
+    width: 52,
+  },
+  sliderDayName: {
+    color: COLORS.textDim,
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  sliderDayNum: {
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  sliderMonth: {
+    color: COLORS.textDim,
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  sliderSeparator: {
+    width: 1,
+    height: 44,
+    marginHorizontal: 14,
+    borderRadius: 1,
+  },
+  sliderInfo: {
+    flex: 1,
+  },
+  sliderTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  sliderTypeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    gap: 4,
+  },
+  sliderTypeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  sliderTitle: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  sliderMeta: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  sliderMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+  },
+  sliderMetaText: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  // EMPTY SLIDER
+  emptySlider: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingVertical: 20,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    borderStyle: "dashed",
+  },
+  emptySliderText: {
+    color: COLORS.textDim,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+
+  // CALENDAR
+  calendarContainer: { marginHorizontal: 10, paddingVertical: 4 },
   dayContainer: {
     width: CELL_WIDTH,
     height: CELL_WIDTH,
     justifyContent: "center",
     alignItems: "center",
-    marginVertical: 4,
+    marginVertical: 3,
   },
   dayBox: {
     width: CELL_WIDTH - 6,
     height: CELL_WIDTH - 6,
     justifyContent: "center",
     alignItems: "center",
-    borderRadius: 14,
+    borderRadius: 12,
   },
-  selectedDayBox: {
-    width: CELL_WIDTH - 2,
-    height: CELL_WIDTH - 2,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 16,
-    elevation: 8,
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 8,
-  },
-  dayText: { fontSize: 14 },
-  selectedDayText: { color: COLORS.white, fontSize: 18, fontWeight: "900" },
-  dotWhite: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: COLORS.white,
-    marginTop: 4,
+  dayText: { fontSize: 13 },
+  dayDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: 3,
   },
   statusIcon: {
     position: "absolute",
-    top: -6,
-    right: -6,
+    top: -4,
+    right: -4,
     backgroundColor: COLORS.background,
-    borderRadius: 10,
+    borderRadius: 8,
     padding: 1,
     zIndex: 2,
   },
-  detailsSection: { paddingHorizontal: 20, marginTop: 15 },
-  detailsDate: {
+  todayBar: {
+    width: 14,
+    height: 2.5,
+    borderRadius: 2,
+    backgroundColor: COLORS.accent,
+    marginTop: 3,
+  },
+
+  // LEGEND
+  legend: {
+    flexDirection: "row",
+    justifyContent: "center",
+    flexWrap: "wrap",
+    gap: 14,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
     color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 15,
-    marginLeft: 5,
-  },
-  gradientTicket: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 18,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  ticketLeft: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 15,
-    width: 50,
-  },
-  iconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: COLORS.background,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    marginBottom: 6,
-  },
-  ticketTime: { color: COLORS.textDim, fontSize: 12, fontWeight: "700" },
-  ticketCenter: { flex: 1 },
-  ticketHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 6,
-    gap: 8,
-  },
-  ticketType: {
     fontSize: 11,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    fontWeight: "600",
   },
-  ticketTitle: {
-    color: COLORS.text,
-    fontSize: 17,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-  ticketMetaRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  ticketMetaText: { color: COLORS.textDim, fontSize: 13, fontWeight: "600" },
-  ticketDivider: { color: COLORS.textDim, marginHorizontal: 4, fontSize: 10 },
-  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  badgeText: { color: COLORS.background, fontSize: 9, fontWeight: "900" },
-  emptyState: {
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    padding: 25,
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 15,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    borderStyle: "dashed",
-  },
-  emptyDesc: { color: COLORS.textDim, fontSize: 14, fontWeight: "600" },
 });

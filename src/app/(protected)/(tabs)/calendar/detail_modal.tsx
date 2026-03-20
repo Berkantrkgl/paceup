@@ -96,7 +96,7 @@ const getFeelingIcon = (feeling: string) => {
 };
 
 const DetailModal = () => {
-    const { token, refreshUserData } = useContext(AuthContext);
+    const { getValidToken, refreshUserData } = useContext(AuthContext);
     const params = useLocalSearchParams();
     const { workoutId } = params;
 
@@ -121,10 +121,11 @@ const DetailModal = () => {
 
     // --- FETCH DATA ---
     const fetchWorkoutDetail = async () => {
-        if (!token || !workoutId) return;
+        const validToken = await getValidToken();
+        if (!validToken || !workoutId) return;
         try {
             const response = await fetch(`${API_URL}/workouts/${workoutId}/`, {
-                headers: { Authorization: `Bearer ${token}` },
+                headers: { Authorization: `Bearer ${validToken}` },
             });
             if (response.ok) {
                 const data = await response.json();
@@ -150,16 +151,17 @@ const DetailModal = () => {
 
     useEffect(() => {
         fetchWorkoutDetail();
-    }, [workoutId, token]);
+    }, [workoutId]);
 
     // --- SAVE CHANGES (EDIT) ---
     const handleSaveChanges = async () => {
         setIsProcessing(true);
+        const validToken = await getValidToken();
         try {
             const response = await fetch(`${API_URL}/workouts/${workoutId}/`, {
                 method: "PATCH",
                 headers: {
-                    Authorization: `Bearer ${token}`,
+                    Authorization: `Bearer ${validToken}`,
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
@@ -208,12 +210,13 @@ const DetailModal = () => {
                     text: "Tamamla",
                     onPress: async () => {
                         setIsProcessing(true);
+                        const validToken = await getValidToken();
                         try {
                             // 1. Status Update
                             await fetch(`${API_URL}/workouts/${workoutId}/`, {
                                 method: "PATCH",
                                 headers: {
-                                    Authorization: `Bearer ${token}`,
+                                    Authorization: `Bearer ${validToken}`,
                                     "Content-Type": "application/json",
                                 },
                                 body: JSON.stringify({ status: "completed" }),
@@ -232,7 +235,7 @@ const DetailModal = () => {
                             await fetch(`${API_URL}/results/`, {
                                 method: "POST",
                                 headers: {
-                                    Authorization: `Bearer ${token}`,
+                                    Authorization: `Bearer ${validToken}`,
                                     "Content-Type": "application/json",
                                 },
                                 body: JSON.stringify(resultData),
@@ -269,13 +272,14 @@ const DetailModal = () => {
                     style: "destructive",
                     onPress: async () => {
                         setIsProcessing(true);
+                        const validToken = await getValidToken();
                         try {
                             await fetch(
                                 `${API_URL}/results/${workout.result.id}/`,
                                 {
                                     method: "DELETE",
                                     headers: {
-                                        Authorization: `Bearer ${token}`,
+                                        Authorization: `Bearer ${validToken}`,
                                     },
                                 }
                             );
@@ -283,7 +287,7 @@ const DetailModal = () => {
                             await fetch(`${API_URL}/workouts/${workoutId}/`, {
                                 method: "PATCH",
                                 headers: {
-                                    Authorization: `Bearer ${token}`,
+                                    Authorization: `Bearer ${validToken}`,
                                     "Content-Type": "application/json",
                                 },
                                 body: JSON.stringify({
@@ -314,10 +318,11 @@ const DetailModal = () => {
                 text: "Sil",
                 style: "destructive",
                 onPress: async () => {
+                    const validToken = await getValidToken();
                     try {
                         await fetch(`${API_URL}/workouts/${workoutId}/`, {
                             method: "DELETE",
-                            headers: { Authorization: `Bearer ${token}` },
+                            headers: { Authorization: `Bearer ${validToken}` },
                         });
                         await refreshUserData();
                         router.back();
