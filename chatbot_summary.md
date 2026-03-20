@@ -50,11 +50,12 @@ PACEUP-GRAPH-API/
 
 Arka planda işlem yapmaz, `ask_user` SSE eventi ile Frontend'de widget açılmasını tetikler.
 
-| Tool | Açıklama | Frontend Widget |
-|---|---|---|
-| `request_runner_profile` | Fiziksel profil teyidi | Kilo/boy/cinsiyet/pace kartı, Onayla veya Düzenle |
-| `request_program_setup` | Hedef, başlangıç, süre | 3 adımlı wizard |
-| `request_availability_preferences` | Koşu günleri seçimi | Haftalık takvim, `preferred_running_days` varsa otomatik dolu gelir |
+| Tool                               | Açıklama                       | Frontend Widget                                                     |
+| ---------------------------------- | ------------------------------ | ------------------------------------------------------------------- |
+| `request_runner_profile`           | Fiziksel profil teyidi         | Kilo/boy/cinsiyet/pace kartı, Onayla veya Düzenle                   |
+| `request_program_setup`            | Hedef, başlangıç, süre         | 3 adımlı wizard                                                     |
+| `request_availability_preferences` | Koşu günleri seçimi            | Haftalık takvim, `preferred_running_days` varsa otomatik dolu gelir |
+| `request_plan_confirmation`        | Plan oluşturma öncesi son onay | Mesaj + Evet/Hayır/Custom Input widget'ı                            |
 
 **Frontend'den Gelen Response Formatları:**
 
@@ -67,6 +68,11 @@ Arka planda işlem yapmaz, `ask_user` SSE eventi ile Frontend'de widget açılma
 
 // request_availability_preferences
 { "days": ["Mon", "Wed", "Fri", "Sun"], "long_run": "Sun" }
+
+// request_plan_confirmation
+{ "confirmed": true }                    // Evet
+{ "confirmed": false }                   // Hayır
+{ "confirmed": false, "feedback": "..." } // Custom Input
 ```
 
 ### B. Backend Tools
@@ -104,13 +110,13 @@ class CreatePlanInput(BaseModel):
 
 **SSE Event Tipleri:**
 
-| Event | Açıklama |
-|---|---|
-| `token` | LLM metin parçaları (streaming) |
-| `ask_user` | UI widget tetikleyici — `name`, `id`, `input` içerir |
-| `tool_use_notification` | Backend tool başladı, loading animasyonu tetikler |
-| `token_usage` | LLM token kullanım bilgisi — `input_tokens`, `output_tokens`, `total_tokens` |
-| `status` | Stream bitti |
+| Event                   | Açıklama                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------- |
+| `token`                 | LLM metin parçaları (streaming)                                              |
+| `ask_user`              | UI widget tetikleyici — `name`, `id`, `input` içerir                         |
+| `tool_use_notification` | Backend tool başladı, loading animasyonu tetikler                            |
+| `token_usage`           | LLM token kullanım bilgisi — `input_tokens`, `output_tokens`, `total_tokens` |
+| `status`                | Stream bitti                                                                 |
 
 **`token_usage` Event Akışı:**
 
@@ -126,11 +132,11 @@ class CreatePlanInput(BaseModel):
 
 ## 5. LLM Model Stratejisi
 
-| Model | Kullanım | Neden |
-|---|---|---|
-| Claude Haiku 3.5 | Genel sohbet (Agent Node) | Hızlı, ekonomik |
-| Claude Sonnet 4 | Plan oluşturma | Güçlü, yaratıcı |
-| Nova Lite 2 | Özetleme (Summarizer + Planner Bağlamı) | Hafif, ucuz |
+| Model            | Kullanım                                | Neden           |
+| ---------------- | --------------------------------------- | --------------- |
+| Claude Haiku 3.5 | Genel sohbet (Agent Node)               | Hızlı, ekonomik |
+| Claude Sonnet 4  | Plan oluşturma                          | Güçlü, yaratıcı |
+| Nova Lite 2      | Özetleme (Summarizer + Planner Bağlamı) | Hafif, ucuz     |
 
 ---
 
@@ -146,11 +152,19 @@ class CreatePlanInput(BaseModel):
 1. `request_runner_profile`
 2. `request_program_setup`
 3. `request_availability_preferences`
-4. `create_workout_plan` (tüm bilgiler toplandıktan sonra)
+4. `request_plan_confirmation` (son onay)
+5. `create_workout_plan` (kullanıcı onayladıktan sonra)
 
 ---
 
 ## Changelog
+
+### v2.3 → v2.4
+
+- ✅ `request_plan_confirmation` UI tool eklendi — `create_workout_plan` öncesi kullanıcıdan onay alır
+- ✅ `message` parametresi ile dinamik onay sorusu frontend'e iletilir
+- ✅ Frontend widget: Evet / Hayır / Custom Input seçenekleri
+- ✅ System prompt güncellendi — metin olarak onay sormak yerine tool kullanımı zorunlu kılındı
 
 ### v2.2 → v2.3
 

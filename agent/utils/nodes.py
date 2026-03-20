@@ -17,9 +17,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 load_dotenv(".env", override=True)
 
-SUMMARIZE_THRESHOLD = 15
+SUMMARIZE_THRESHOLD = 50
 
-ui_tool_list = [request_program_setup, request_availability_preferences, request_runner_profile]
+ui_tool_list = [request_program_setup, request_availability_preferences, request_runner_profile, request_plan_confirmation]
 backend_tool_list = [create_workout_plan]
 
 summarization_llm = ChatBedrockConverse(

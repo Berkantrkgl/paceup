@@ -365,3 +365,15 @@ def request_availability_preferences():
     3. Long Run: Preferred day for the long run (Optional, selected from available days).
     """
     return "UI_TRIGGER: AVAILABILITY_MODAL"
+
+@tool
+def request_plan_confirmation(message: str) -> str:
+    """
+    FINAL STEP before creating a workout plan. Call this tool RIGHT BEFORE calling create_workout_plan.
+    Triggers a confirmation widget on the Frontend with the given message.
+    The user can respond with 'Yes', 'No', or a custom input (e.g., feedback/adjustment request).
+
+    Args:
+        message: The confirmation question to display to the user (e.g., 'Programını oluşturmaya hazır mısın?')
+    """
+    return "UI_TRIGGER: PLAN_CONFIRMATION_MODAL"

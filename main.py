@@ -25,7 +25,8 @@ security = HTTPBearer()
 ALLOWED_UI_TOOLS = [
     "request_runner_profile",
     "request_program_setup",
-    "request_availability_preferences"
+    "request_availability_preferences",
+    "request_plan_confirmation"
 ]
 
 NOTIFIABLE_BACKEND_TOOLS = [
