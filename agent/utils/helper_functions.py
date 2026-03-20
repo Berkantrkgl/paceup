@@ -2,6 +2,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
 import boto3
+import json
 import os
 import time
 import requests
@@ -266,3 +267,55 @@ def has_tools(message):
     if message.tool_calls and len(message.tool_calls) > 0:
         return True
     return False
+
+
+def format_tool_response(tool_name: str, content_raw) -> str:
+    """
+    UI tool response'unu LLM için okunabilir context'e çevirir.
+    Ham JSON yerine anlamlı metin döner.
+    """
+    try:
+        data = json.loads(content_raw) if isinstance(content_raw, str) else content_raw
+    except (json.JSONDecodeError, TypeError):
+        return str(content_raw)
+
+    if not isinstance(data, dict):
+        return str(data)
+
+    name = (tool_name or "").lower().strip()
+
+    if name == "request_runner_profile":
+        status = data.get("status", "confirmed")
+        parts = [f"Kullanıcı profil bilgilerini {'onayladı' if status == 'confirmed' else 'güncelledi'}:"]
+        if data.get("weight"): parts.append(f"- Kilo: {data['weight']} kg")
+        if data.get("height"): parts.append(f"- Boy: {data['height']} cm")
+        if data.get("gender"): parts.append(f"- Cinsiyet: {data['gender']}")
+        if data.get("pace"): parts.append(f"- Pace: {data['pace']} dk/km")
+        if data.get("is_beginner"): parts.append("- Seviye: Yeni başlayan")
+        return "\n".join(parts)
+
+    elif name == "request_program_setup":
+        parts = ["Kullanıcı program bilgilerini belirledi:"]
+        if data.get("goal"): parts.append(f"- Hedef: {data['goal']}")
+        if data.get("mode"): parts.append(f"- Mod: {data['mode']}")
+        if data.get("value"): parts.append(f"- Süre: {data['value']} hafta")
+        if data.get("start_date"): parts.append(f"- Başlangıç: {data['start_date']}")
+        return "\n".join(parts)
+
+    elif name == "request_availability_preferences":
+        parts = ["Kullanıcı müsaitlik bilgilerini belirledi:"]
+        if data.get("days"): parts.append(f"- Koşu günleri: {', '.join(data['days'])}")
+        if data.get("long_run"): parts.append(f"- Uzun koşu günü: {data['long_run']}")
+        return "\n".join(parts)
+
+    elif name == "request_plan_confirmation":
+        confirmed = data.get("confirmed")
+        if confirmed:
+            return "Kullanıcı programın oluşturulmasını ONAYLADI."
+        else:
+            feedback = data.get("feedback", "")
+            if feedback:
+                return f"Kullanıcı programı onaylamadı. Geri bildirim: {feedback}"
+            return "Kullanıcı programın oluşturulmasını REDDETTİ."
+
+    return json.dumps(data, ensure_ascii=False)

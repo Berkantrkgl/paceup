@@ -13,7 +13,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
 from agent.utils.prompts import AGENT_SYSTEM_PROMPT_TEMPLATE
-from agent.utils.helper_functions import fetch_user_context_data, get_checkpointer
+from agent.utils.helper_functions import fetch_user_context_data, get_checkpointer, format_tool_response
 from agent.agent import build_workflow
 
 logging.basicConfig(level=logging.INFO)
@@ -92,7 +92,8 @@ async def stream_chat(req: Request, inp: StreamChatInput, user: dict = Depends(v
                     logger.info(f"🛠️ Tool Response: {inp.thread_id}")
                     
                     content_raw = last_msg["content"]
-                    content_str = json.dumps(content_raw) if not isinstance(content_raw, str) else content_raw
+                    tool_name = last_msg.get("tool_name", "")
+                    content_str = format_tool_response(tool_name, content_raw)
                     
                     state = await graph.aget_state(config)
                     tid = last_msg.get("tool_call_id")
