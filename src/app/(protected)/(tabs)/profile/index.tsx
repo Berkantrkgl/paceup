@@ -475,9 +475,8 @@ const ProfileScreen = () => {
   // ============================================================
   const TokenCard = () => {
     const pct = getTokenProgressPercent();
+    const remainingPct = Math.max(0, 100 - Math.round(pct));
     const color = getTokenProgressColor();
-    const used = user?.total_tokens_used || 0;
-    const remaining = user?.remaining_tokens;
 
     return (
       <View style={styles.tokenCard}>
@@ -485,7 +484,7 @@ const ProfileScreen = () => {
         <View style={styles.tokenCardHeader}>
           <View style={styles.tokenCardTitleRow}>
             <Ionicons name="flash" size={16} color={color} />
-            <Text style={styles.tokenCardTitle}>AI Token Kullanımı</Text>
+            <Text style={styles.tokenCardTitle}>Kalan AI Kullanım Hakkı</Text>
           </View>
           {user?.is_premium ? (
             <View style={styles.premiumBadge}>
@@ -493,7 +492,7 @@ const ProfileScreen = () => {
             </View>
           ) : (
             <Text style={[styles.tokenPctText, { color }]}>
-              %{Math.round(pct)}
+              %{remainingPct}
             </Text>
           )}
         </View>
@@ -508,16 +507,6 @@ const ProfileScreen = () => {
                   { width: `${pct}%` as any, backgroundColor: color },
                 ]}
               />
-            </View>
-            <View style={styles.tokenCardFooter}>
-              <Text style={styles.tokenUsedText}>
-                {used.toLocaleString()} kullanıldı
-              </Text>
-              <Text style={[styles.tokenRemainingText, { color }]}>
-                {remaining !== null && remaining !== undefined
-                  ? `${remaining.toLocaleString()} kaldı`
-                  : "—"}
-              </Text>
             </View>
           </>
         )}
@@ -871,11 +860,7 @@ const ProfileScreen = () => {
               style={styles.avatarModalBtn}
               onPress={handlePickImage}
             >
-              <Ionicons
-                name="camera-outline"
-                size={16}
-                color={COLORS.text}
-              />
+              <Ionicons name="camera-outline" size={16} color={COLORS.text} />
               <Text style={styles.avatarModalBtnText}>
                 {user?.profile_image ? "Fotoğrafı Değiştir" : "Fotoğraf Ekle"}
               </Text>
@@ -986,9 +971,9 @@ const styles = StyleSheet.create({
   progressBarBg: {
     height: 6,
     backgroundColor: "rgba(255,255,255,0.08)",
+    marginBottom: 16,
     borderRadius: 3,
     overflow: "hidden",
-    marginBottom: 8,
   },
   progressBarFill: { height: "100%", borderRadius: 3 },
   tokenCardFooter: {
