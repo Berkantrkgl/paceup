@@ -172,6 +172,42 @@ const CalendarScreen = () => {
     string | null
   >(null);
   const rescheduleChecked = useRef(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  const handleTouchStart = (e: any) => {
+    touchStart.current = {
+      x: e.nativeEvent.pageX,
+      y: e.nativeEvent.pageY,
+    };
+  };
+
+  const handleTouchEnd = (e: any) => {
+    if (!touchStart.current) return;
+    const deltaX = e.nativeEvent.pageX - touchStart.current.x;
+    const deltaY = e.nativeEvent.pageY - touchStart.current.y;
+    // Only trigger if horizontal swipe is dominant and exceeds threshold
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      changeMonth(deltaX < 0 ? 1 : -1);
+    }
+    touchStart.current = null;
+  };
+
+  const changeMonth = (direction: 1 | -1) => {
+    const [y, m] = currentMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + direction, 1);
+    const newMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setCurrentMonth(newMonth);
+  };
+
+  const currentMonthLabel = (() => {
+    const [y, m] = currentMonth.split("-").map(Number);
+    const months = [
+      "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+      "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
+    ];
+    return `${months[m - 1]} ${y}`;
+  })();
 
   // Sorted workouts for slider (by date) — memoized to prevent re-renders
   const sortedWorkouts = React.useMemo(
@@ -721,11 +757,36 @@ const CalendarScreen = () => {
           />
         }
       >
-        <View style={styles.calendarContainer}>
+        <View
+          style={styles.calendarContainer}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Custom Month Header */}
+          <View style={styles.monthHeader}>
+            <Pressable
+              onPress={() => changeMonth(-1)}
+              hitSlop={12}
+              style={styles.monthArrow}
+            >
+              <Ionicons name="chevron-back" size={22} color={COLORS.accent} />
+            </Pressable>
+            <Text style={styles.monthTitle}>{currentMonthLabel}</Text>
+            <Pressable
+              onPress={() => changeMonth(1)}
+              hitSlop={12}
+              style={styles.monthArrow}
+            >
+              <Ionicons name="chevron-forward" size={22} color={COLORS.accent} />
+            </Pressable>
+          </View>
+
           <Calendar
             key={currentMonth}
             current={currentMonth}
-            enableSwipeMonths={true}
+            enableSwipeMonths={false}
+            hideArrows={true}
+            renderHeader={() => null}
             firstDay={1}
             hideExtraDays={true}
             dayComponent={renderCustomDay as any}
@@ -733,21 +794,9 @@ const CalendarScreen = () => {
             theme={{
               calendarBackground: "transparent",
               textSectionTitleColor: "#777",
-              monthTextColor: COLORS.text,
-              textMonthFontSize: 18,
-              textMonthFontWeight: "700" as const,
               textDayHeaderFontSize: 12,
               textDayHeaderFontWeight: "600" as const,
-              arrowColor: COLORS.accent,
               ["stylesheet.calendar.header" as any]: {
-                header: {
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  paddingLeft: 10,
-                  paddingRight: 10,
-                  marginBottom: 14,
-                  alignItems: "center",
-                },
                 week: {
                   flexDirection: "row",
                   justifyContent: "space-around",
@@ -1166,6 +1215,28 @@ const styles = StyleSheet.create({
 
   // CALENDAR
   calendarContainer: { marginHorizontal: 10, paddingVertical: 4 },
+  monthHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 10,
+    marginBottom: 14,
+  },
+  monthTitle: {
+    color: COLORS.text,
+    fontSize: 18,
+    fontWeight: "700",
+  },
+  monthArrow: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: COLORS.card,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
   dayContainer: {
     width: CELL_WIDTH,
     height: CELL_WIDTH,
