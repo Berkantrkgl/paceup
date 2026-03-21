@@ -89,9 +89,9 @@ const getWorkoutTypeStyle = (type: WorkoutTypeEnum) => {
 };
 
 const HomeScreen = () => {
-    const { user, token, refreshUserData } = useContext(AuthContext);
+    const { user, getValidToken, refreshUserData } = useContext(AuthContext);
     const [refreshing, setRefreshing] = useState(false);
-    const [nextWorkout, setNextWorkout] = useState<Workout | null>(null);
+    const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
     const [isCompleting, setIsCompleting] = useState(false);
 
     // --- RANDOM CONTENT LOGIC ---
@@ -110,35 +110,25 @@ const HomeScreen = () => {
     }, []);
 
     // --- DATA FETCHING ---
-    const fetchNextWorkout = async () => {
-        if (!token) return;
+    const fetchTodayWorkout = async () => {
+        const validToken = await getValidToken();
+        if (!validToken) return;
         try {
-            const response = await fetch(`${API_URL}/workouts/`, {
-                headers: { Authorization: `Bearer ${token}` },
-            });
+            const response = await fetch(
+                `${API_URL}/workouts/?only_active=true`,
+                { headers: { Authorization: `Bearer ${validToken}` } }
+            );
 
             if (response.ok) {
-                const workouts: Workout[] = await response.json();
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-
-                const upcomingWorkouts = workouts.filter((w) => {
-                    const wDate = new Date(w.scheduled_date);
-                    return (
-                        wDate >= today &&
-                        !w.is_completed &&
-                        w.status !== "completed"
-                    );
-                });
-
-                upcomingWorkouts.sort(
-                    (a, b) =>
-                        new Date(a.scheduled_date).getTime() -
-                        new Date(b.scheduled_date).getTime()
+                const json = await response.json();
+                const workouts: Workout[] = Array.isArray(json)
+                    ? json
+                    : json.results || [];
+                const todayStr = new Date().toLocaleDateString("en-CA");
+                const today = workouts.find(
+                    (w) => w.scheduled_date === todayStr
                 );
-                setNextWorkout(
-                    upcomingWorkouts.length > 0 ? upcomingWorkouts[0] : null
-                );
+                setTodayWorkout(today || null);
             }
         } catch (error) {
             console.log("Workout fetch error:", error);
@@ -147,13 +137,13 @@ const HomeScreen = () => {
 
     useFocusEffect(
         useCallback(() => {
-            fetchNextWorkout();
+            fetchTodayWorkout();
             refreshUserData();
-        }, [token])
+        }, [])
     );
 
     const handleQuickComplete = () => {
-        if (!nextWorkout || !token) return;
+        if (!todayWorkout) return;
         Alert.alert(
             "Antrenmanı Tamamla",
             "Tamamlandı olarak işaretlensin mi?",
@@ -163,33 +153,34 @@ const HomeScreen = () => {
                     text: "Evet, Tamamla",
                     onPress: async () => {
                         setIsCompleting(true);
+                        const validToken = await getValidToken();
                         try {
-                            await fetch(`${API_URL}/workouts/${nextWorkout.id}/`, {
+                            await fetch(`${API_URL}/workouts/${todayWorkout.id}/`, {
                                 method: "PATCH",
                                 headers: {
-                                    Authorization: `Bearer ${token}`,
+                                    Authorization: `Bearer ${validToken}`,
                                     "Content-Type": "application/json",
                                 },
                                 body: JSON.stringify({ status: "completed" }),
                             });
                             const resultData = {
-                                workout: nextWorkout.id,
+                                workout: todayWorkout.id,
                                 completed_at: new Date().toISOString(),
-                                actual_duration: nextWorkout.planned_duration || 30,
-                                actual_distance: nextWorkout.planned_distance || 5.0,
+                                actual_duration: todayWorkout.planned_duration || 30,
+                                actual_distance: todayWorkout.planned_distance || 5.0,
                                 feeling: "normal",
                             };
                             const postRes = await fetch(`${API_URL}/results/`, {
                                 method: "POST",
                                 headers: {
-                                    Authorization: `Bearer ${token}`,
+                                    Authorization: `Bearer ${validToken}`,
                                     "Content-Type": "application/json",
                                 },
                                 body: JSON.stringify(resultData),
                             });
                             if (!postRes.ok) throw new Error("Result failed");
-                            await Promise.all([refreshUserData(), fetchNextWorkout()]);
-                            Alert.alert("Tebrikler! 🎉", "Antrenman kaydedildi.");
+                            await Promise.all([refreshUserData(), fetchTodayWorkout()]);
+                            Alert.alert("Tebrikler!", "Antrenman kaydedildi.");
                         } catch {
                             Alert.alert("Hata", "İşlem başarısız oldu.");
                         } finally {
@@ -203,7 +194,7 @@ const HomeScreen = () => {
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
-        await Promise.all([refreshUserData(), fetchNextWorkout()]);
+        await Promise.all([refreshUserData(), fetchTodayWorkout()]);
         setRefreshing(false);
     }, []);
 
@@ -239,13 +230,13 @@ const HomeScreen = () => {
     const totalDistance = user.total_distance?.toFixed(1) || "0.0";
     const streak = user.current_streak || 0;
 
-    const hasExistingPlan = totalWorkouts > 0 || nextWorkout !== null;
+    const hasExistingPlan = totalWorkouts > 0 || todayWorkout !== null;
 
-    const workoutStyle = nextWorkout
-        ? getWorkoutTypeStyle(nextWorkout.workout_type)
+    const workoutStyle = todayWorkout
+        ? getWorkoutTypeStyle(todayWorkout.workout_type)
         : null;
-    const dateInfo = nextWorkout
-        ? formatWorkoutDate(nextWorkout.scheduled_date)
+    const dateInfo = todayWorkout
+        ? formatWorkoutDate(todayWorkout.scheduled_date)
         : null;
 
     return (
@@ -311,7 +302,7 @@ const HomeScreen = () => {
                                 programı hemen oluştur.
                             </Text>
 
-                            <Link href={"/chatbot"} asChild>
+                            <Link href={"/(protected)/(tabs)/plans/chatbot"} asChild>
                                 <Pressable style={styles.createPlanButtonLarge}>
                                     <LinearGradient
                                         colors={[
@@ -455,19 +446,17 @@ const HomeScreen = () => {
                             {/* NEXT WORKOUT CARD */}
                             <View style={styles.sectionContainer}>
                                 <Text style={styles.sectionTitle}>
-                                    Sıradaki Antreman
+                                    Bugünün Antrenmanı
                                 </Text>
-                                {nextWorkout && workoutStyle && dateInfo ? (
+                                {todayWorkout && workoutStyle && dateInfo ? (
                                     <Pressable
                                         onPress={() =>
                                             router.push({
                                                 pathname:
-                                                    "/(protected)/(tabs)/(home)/weekly_calendar",
+                                                    "/(protected)/(tabs)/calendar/workout-detail",
                                                 params: {
-                                                    initialWorkoutId:
-                                                        nextWorkout.id,
-                                                    initialDate:
-                                                        nextWorkout.scheduled_date,
+                                                    workoutId:
+                                                        todayWorkout.id,
                                                 },
                                             })
                                         }
@@ -508,37 +497,65 @@ const HomeScreen = () => {
                                                     </Text>
                                                 </View>
 
-                                                {/* TARİH BADGE */}
-                                                <View
-                                                    style={[
-                                                        styles.cornerBadge,
-                                                        {
-                                                            backgroundColor:
-                                                                workoutStyle.color + "18",
-                                                            borderColor:
-                                                                workoutStyle.color + "40",
-                                                        },
-                                                    ]}
-                                                >
-                                                    {dateInfo.isToday && (
-                                                        <View
-                                                            style={[
-                                                                styles.todayDot,
-                                                                { backgroundColor: workoutStyle.color },
-                                                            ]}
-                                                        />
-                                                    )}
-                                                    <Text
+                                                {/* STATUS BADGE */}
+                                                {todayWorkout.status === "completed" ? (
+                                                    <View
                                                         style={[
-                                                            styles.cornerBadgeText,
-                                                            { color: workoutStyle.color },
+                                                            styles.cornerBadge,
+                                                            {
+                                                                backgroundColor:
+                                                                    COLORS.success + "18",
+                                                                borderColor:
+                                                                    COLORS.success + "40",
+                                                            },
                                                         ]}
                                                     >
-                                                        {dateInfo.isToday
-                                                            ? "Bugün"
-                                                            : `${dateInfo.day} ${dateInfo.month}`}
-                                                    </Text>
-                                                </View>
+                                                        <Ionicons
+                                                            name="checkmark-circle"
+                                                            size={14}
+                                                            color={COLORS.success}
+                                                        />
+                                                        <Text
+                                                            style={[
+                                                                styles.cornerBadgeText,
+                                                                { color: COLORS.success },
+                                                            ]}
+                                                        >
+                                                            Tamamlandı
+                                                        </Text>
+                                                    </View>
+                                                ) : (
+                                                    <View
+                                                        style={[
+                                                            styles.cornerBadge,
+                                                            {
+                                                                backgroundColor:
+                                                                    workoutStyle.color + "18",
+                                                                borderColor:
+                                                                    workoutStyle.color + "40",
+                                                            },
+                                                        ]}
+                                                    >
+                                                        {dateInfo.isToday && (
+                                                            <View
+                                                                style={[
+                                                                    styles.todayDot,
+                                                                    { backgroundColor: workoutStyle.color },
+                                                                ]}
+                                                            />
+                                                        )}
+                                                        <Text
+                                                            style={[
+                                                                styles.cornerBadgeText,
+                                                                { color: workoutStyle.color },
+                                                            ]}
+                                                        >
+                                                            {dateInfo.isToday
+                                                                ? "Bugün"
+                                                                : `${dateInfo.day} ${dateInfo.month}`}
+                                                        </Text>
+                                                    </View>
+                                                )}
                                             </View>
 
                                             {/* WORKOUT NAME */}
@@ -546,7 +563,7 @@ const HomeScreen = () => {
                                                 style={styles.cardWorkoutName}
                                                 numberOfLines={2}
                                             >
-                                                {nextWorkout.title}
+                                                {todayWorkout.title}
                                             </Text>
 
                                             {/* DIVIDER */}
@@ -564,12 +581,12 @@ const HomeScreen = () => {
                                                         style={styles.cardMetaText}
                                                     >
                                                         {
-                                                            nextWorkout.planned_duration
+                                                            todayWorkout.planned_duration
                                                         }{" "}
                                                         dk
                                                     </Text>
                                                 </View>
-                                                {nextWorkout.planned_distance >
+                                                {todayWorkout.planned_distance >
                                                     0 && (
                                                     <View
                                                         style={
@@ -587,13 +604,13 @@ const HomeScreen = () => {
                                                             }
                                                         >
                                                             {
-                                                                nextWorkout.planned_distance
+                                                                todayWorkout.planned_distance
                                                             }{" "}
                                                             km
                                                         </Text>
                                                     </View>
                                                 )}
-                                                {nextWorkout.target_pace_seconds && (
+                                                {todayWorkout.target_pace_seconds && (
                                                     <View
                                                         style={
                                                             styles.cardMetaItem
@@ -610,12 +627,12 @@ const HomeScreen = () => {
                                                             }
                                                         >
                                                             {Math.floor(
-                                                                nextWorkout.target_pace_seconds /
+                                                                todayWorkout.target_pace_seconds /
                                                                     60
                                                             )}
                                                             :
                                                             {(
-                                                                nextWorkout.target_pace_seconds %
+                                                                todayWorkout.target_pace_seconds %
                                                                 60
                                                             )
                                                                 .toString()
@@ -635,8 +652,8 @@ const HomeScreen = () => {
                                                 />
                                             </View>
 
-                                            {/* TAMAMLA BUTONU — sadece bugün */}
-                                            {dateInfo.isToday && (
+                                            {/* TAMAMLA BUTONU — sadece bugün ve tamamlanmamışsa */}
+                                            {dateInfo.isToday && todayWorkout.status !== "completed" && (
                                                 <Pressable
                                                     style={[
                                                         styles.quickCompleteButton,
@@ -677,7 +694,7 @@ const HomeScreen = () => {
                                     <Pressable
                                         onPress={() =>
                                             router.push(
-                                                "/(protected)/(tabs)/(home)/weekly_calendar"
+                                                "/(protected)/(tabs)/calendar"
                                             )
                                         }
                                     >
@@ -688,7 +705,7 @@ const HomeScreen = () => {
                                                 color={COLORS.textDim}
                                             />
                                             <Text style={styles.emptyTicketText}>
-                                                Yaklaşan koşu planı yok.
+                                                Bugün antrenman yok.
                                             </Text>
                                             <Text
                                                 style={styles.emptyTicketSubText}
@@ -701,33 +718,43 @@ const HomeScreen = () => {
                                 )}
                             </View>
 
-                            {/* QUICK LINKS */}
-                            <View style={styles.quickLinksRow}>
-                                <Link href={"/plans"} asChild push>
-                                    <Pressable style={styles.quickLinkButton}>
+                            {/* PROGRESS LINK */}
+                            <Link href={"/progress"} asChild push>
+                                <Pressable>
+                                    <LinearGradient
+                                        colors={[
+                                            COLORS.accent + "20",
+                                            COLORS.card,
+                                        ]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={styles.progressLinkCard}
+                                    >
+                                        <View style={styles.progressLinkLeft}>
+                                            <View style={styles.progressLinkIconWrap}>
+                                                <Ionicons
+                                                    name="stats-chart"
+                                                    size={22}
+                                                    color={COLORS.accent}
+                                                />
+                                            </View>
+                                            <View>
+                                                <Text style={styles.progressLinkTitle}>
+                                                    İstatistikleri Görüntüle
+                                                </Text>
+                                                <Text style={styles.progressLinkDesc}>
+                                                    Koşu istatistiklerini incele
+                                                </Text>
+                                            </View>
+                                        </View>
                                         <Ionicons
-                                            name="list-outline"
-                                            size={22}
-                                            color={COLORS.textDim}
+                                            name="chevron-forward"
+                                            size={20}
+                                            color={COLORS.accent}
                                         />
-                                        <Text style={styles.quickLinkText}>
-                                            Tüm Planlar
-                                        </Text>
-                                    </Pressable>
-                                </Link>
-                                <Link href={"/progress"} asChild push>
-                                    <Pressable style={styles.quickLinkButton}>
-                                        <Ionicons
-                                            name="stats-chart-outline"
-                                            size={22}
-                                            color={COLORS.textDim}
-                                        />
-                                        <Text style={styles.quickLinkText}>
-                                            Detaylı Analiz
-                                        </Text>
-                                    </Pressable>
-                                </Link>
-                            </View>
+                                    </LinearGradient>
+                                </Pressable>
+                            </Link>
                         </>
                     )}
                 </View>
@@ -997,28 +1024,39 @@ const styles = StyleSheet.create({
         marginTop: 5,
     },
 
-    // Quick Links
-    quickLinksRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 20,
-        marginTop: 10,
-    },
-    quickLinkButton: {
+    // Progress Link
+    progressLinkCard: {
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: COLORS.card,
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 20,
+        justifyContent: "space-between",
+        padding: 16,
+        borderRadius: 16,
         borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        gap: 8,
+        borderColor: COLORS.accent + "30",
+        marginTop: 10,
     },
-    quickLinkText: {
+    progressLinkLeft: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+    },
+    progressLinkIconWrap: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: COLORS.accent + "18",
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    progressLinkTitle: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    progressLinkDesc: {
         color: COLORS.textDim,
-        fontSize: 14,
-        fontWeight: "600",
+        fontSize: 12,
+        marginTop: 2,
     },
     quickCompleteButton: {
         flexDirection: "row",

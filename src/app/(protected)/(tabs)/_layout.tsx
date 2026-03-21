@@ -15,10 +15,10 @@ export default function TabLayout() {
         tabBarInactiveTintColor: 'rgba(255,255,255,0.3)',
         tabBarStyle: {
           backgroundColor: '#111111',
-          height: Platform.OS === 'ios' ? 88 : 68,
+          height: Platform.OS === 'ios' ? 96 : 72,
           borderTopWidth: 0,
           borderTopColor: 'transparent',
-          paddingBottom: Platform.OS === 'ios' ? 28 : 10,
+          paddingBottom: Platform.OS === 'ios' ? 34 : 12,
           paddingTop: 10,
           elevation: 0,
           shadowOpacity: 0,
@@ -51,9 +51,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name='plans'
         options={{
-          title: 'Planlarım',
+          title: 'Planlama',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "layers" : "layers-outline"} size={22} color={color} />
+            <Ionicons name={focused ? "sparkles" : "sparkles-outline"} size={22} color={color} />
           ),
         }}
       />
@@ -62,7 +62,7 @@ export default function TabLayout() {
         options={{
           title: 'Profil',
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons name={focused ? "person-circle" : "person-circle-outline"} size={24} color={color} />
+            <Ionicons name={focused ? "walk" : "walk-outline"} size={24} color={color} />
           ),
         }}
       />

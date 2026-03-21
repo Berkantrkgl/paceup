@@ -1,29 +1,30 @@
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient"; // Gradient eklendi
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Dimensions,
+    Pressable,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
     View,
 } from "react-native";
-import { LineChart } from "react-native-chart-kit";
+import { BarChart } from "react-native-chart-kit";
 
 import { COLORS } from "@/constants/Colors";
-import { API_URL } from "@/constants/Config"; // Config'den çekiyoruz
+import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
 
 const ProgressScreen = () => {
-    const { user, token, refreshUserData } = useContext(AuthContext);
+    const { user, getValidToken, refreshUserData } = useContext(AuthContext);
     const [refreshing, setRefreshing] = useState(false);
     const [loading, setLoading] = useState(true);
+    const [activeChart, setActiveChart] = useState<"distance" | "pace">("distance");
 
-    // Initial Data
     const [chartData, setChartData] = useState<number[]>([0]);
     const [chartLabels, setChartLabels] = useState<string[]>(["-"]);
     const [paceHistory, setPaceHistory] = useState<number[]>([0]);
@@ -35,38 +36,37 @@ const ProgressScreen = () => {
         calories_burned: 0,
         current_streak: 0,
         days_active: 1,
+        weekly_progress: 0,
     });
 
     const [activeProgram, setActiveProgram] = useState<any>(null);
     const [recentAchievements, setRecentAchievements] = useState<any[]>([]);
 
     const fetchStatsData = async () => {
-        if (!token) return;
+        const validToken = await getValidToken();
+        if (!validToken) return;
 
         try {
-            // Paralel fetch yapalım, daha hızlı olsun
             const [summaryRes, chartRes, progRes, achRes] = await Promise.all([
                 fetch(`${API_URL}/stats/summary/`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                    headers: { Authorization: `Bearer ${validToken}` },
                 }),
-                fetch(`${API_URL}/stats/charts/?period=week`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                fetch(`${API_URL}/stats/charts/?period=month`, {
+                    headers: { Authorization: `Bearer ${validToken}` },
                 }),
                 fetch(`${API_URL}/stats/program/`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                    headers: { Authorization: `Bearer ${validToken}` },
                 }),
                 fetch(`${API_URL}/achievements/`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                    headers: { Authorization: `Bearer ${validToken}` },
                 }),
             ]);
 
-            // 1. SUMMARY
             if (summaryRes.ok) {
                 const data = await summaryRes.json();
                 setSummaryStats(data);
             }
 
-            // 2. CHARTS
             if (chartRes.ok) {
                 const data = await chartRes.json();
                 if (data.datasets && data.datasets[0].data.length > 0) {
@@ -76,13 +76,11 @@ const ProgressScreen = () => {
                 }
             }
 
-            // 3. PROGRAM
             if (progRes.ok) {
                 const data = await progRes.json();
                 setActiveProgram(data);
             }
 
-            // 4. ACHIEVEMENTS
             if (achRes.ok) {
                 const data = await achRes.json();
                 setRecentAchievements(data.slice(0, 3));
@@ -96,7 +94,7 @@ const ProgressScreen = () => {
 
     useEffect(() => {
         fetchStatsData();
-    }, [token]);
+    }, []);
 
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
@@ -105,31 +103,6 @@ const ProgressScreen = () => {
         setRefreshing(false);
     }, []);
 
-    // --- CHART CONFIG (DARK THEME) ---
-    const chartConfig = {
-        backgroundColor: "transparent",
-        backgroundGradientFrom: "transparent",
-        backgroundGradientTo: "transparent",
-        decimalPlaces: 1, // Virgülden sonra tek hane
-        color: (opacity = 1) => COLORS.accent, // Çizgi rengi
-        labelColor: (opacity = 1) => COLORS.textDim, // Yazı rengi
-        style: { borderRadius: 16 },
-        propsForDots: {
-            r: "5",
-            strokeWidth: "2",
-            stroke: COLORS.card, // Nokta içi
-            fill: COLORS.accent,
-        },
-        propsForBackgroundLines: {
-            strokeDasharray: "", // Düz çizgi
-            stroke: COLORS.cardBorder, // Izgara rengi silik
-            strokeOpacity: 0.5,
-        },
-        fillShadowGradient: COLORS.accent,
-        fillShadowGradientOpacity: 0.3,
-    };
-
-    // Zaman Formatlama
     const formatTime = (minutes: number) => {
         const hours = Math.floor(minutes / 60);
         const mins = minutes % 60;
@@ -137,7 +110,48 @@ const ProgressScreen = () => {
         return `${mins}dk`;
     };
 
+    const formatPace = (seconds: number | null | undefined) => {
+        if (!seconds) return "0:00";
+        const m = Math.floor(seconds / 60);
+        const s = Math.round(seconds % 60);
+        return `${m}:${s.toString().padStart(2, "0")}`;
+    };
+
     const progPercent = activeProgram?.progress_percent || 0;
+
+    const distanceBarChartConfig = {
+        backgroundColor: "transparent",
+        backgroundGradientFrom: COLORS.card,
+        backgroundGradientTo: COLORS.card,
+        decimalPlaces: 1,
+        color: (opacity = 1) => `rgba(255, 69, 1, ${opacity})`,
+        labelColor: () => COLORS.textDim,
+        barPercentage: 0.5,
+        propsForBackgroundLines: {
+            strokeDasharray: "",
+            stroke: COLORS.cardBorder,
+            strokeOpacity: 0.3,
+        },
+        fillShadowGradient: COLORS.accent,
+        fillShadowGradientOpacity: 1,
+    };
+
+    const paceBarChartConfig = {
+        backgroundColor: "transparent",
+        backgroundGradientFrom: COLORS.card,
+        backgroundGradientTo: COLORS.card,
+        decimalPlaces: 1,
+        color: (opacity = 1) => `rgba(40, 199, 111, ${opacity})`,
+        labelColor: () => COLORS.textDim,
+        barPercentage: 0.5,
+        propsForBackgroundLines: {
+            strokeDasharray: "",
+            stroke: COLORS.cardBorder,
+            strokeOpacity: 0.3,
+        },
+        fillShadowGradient: COLORS.success,
+        fillShadowGradientOpacity: 1,
+    };
 
     if (loading && !refreshing) {
         return (
@@ -168,313 +182,388 @@ const ProgressScreen = () => {
                     />
                 }
             >
-                {/* HEADER */}
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>İlerleme & Analiz</Text>
-                    <Text style={styles.headerSubtitle}>
-                        Performansını takip et
-                    </Text>
-                </View>
-
-                {/* 1. HERO STATS (GRID) */}
-                <View style={styles.statsGrid}>
-                    {/* Toplam Mesafe (Büyük Kart) */}
-                    <View style={[styles.statCard, styles.statCardLarge]}>
-                        <View style={styles.statHeaderRow}>
-                            <View
-                                style={[
-                                    styles.iconBox,
-                                    { backgroundColor: COLORS.accent + "20" },
-                                ]}
-                            >
-                                <Ionicons
-                                    name="map"
-                                    size={20}
-                                    color={COLORS.accent}
-                                />
-                            </View>
-                            <Text style={styles.statLabel}>Toplam Mesafe</Text>
+                {/* HERO HEADER */}
+                <View style={styles.heroHeader}>
+                    {/* HERO STAT — Toplam Mesafe */}
+                    <View style={styles.heroStatRow}>
+                        <View style={styles.heroStatMain}>
+                            <Text style={styles.heroStatValue}>
+                                {summaryStats.total_distance}
+                            </Text>
+                            <Text style={styles.heroStatUnit}>km</Text>
                         </View>
-                        <Text style={styles.statValueLarge}>
-                            {summaryStats.total_distance}{" "}
-                            <Text style={styles.unitText}>km</Text>
-                        </Text>
+                        <Text style={styles.heroStatLabel}>Toplam Mesafe</Text>
                     </View>
 
-                    {/* Sağ Sütun */}
-                    <View style={styles.statsColumn}>
-                        {/* 1. KART: AKTİF SERİ (Current Streak) */}
-                        <View style={styles.statCardSmall}>
+                    {/* MINI STATS */}
+                    <View style={styles.miniStatsRow}>
+                        <View style={styles.miniStat}>
                             <View
                                 style={[
-                                    styles.iconBoxSmall,
-                                    {
-                                        backgroundColor:
-                                            COLORS.secondary + "20",
-                                    },
+                                    styles.miniStatIcon,
+                                    { backgroundColor: COLORS.secondary + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="flame"
-                                    size={20}
+                                    size={16}
                                     color={COLORS.secondary}
                                 />
                             </View>
-                            <View>
-                                {/* Veriyi user.current_streak'ten çekiyoruz */}
-                                <Text style={styles.statValueSmall}>
-                                    {summaryStats.current_streak} Gün
-                                </Text>
-                                <Text style={styles.statLabelSmall}>
-                                    Aktif Seri
-                                </Text>
-                            </View>
+                            <Text style={styles.miniStatValue}>
+                                {summaryStats.current_streak}
+                            </Text>
+                            <Text style={styles.miniStatLabel}>Seri</Text>
                         </View>
-
-                        {/* 2. KART: TOPLAM KOŞU (Total Workouts) */}
-                        <View style={styles.statCardSmall}>
+                        <View style={styles.miniStatDivider} />
+                        <View style={styles.miniStat}>
                             <View
                                 style={[
-                                    styles.iconBoxSmall,
-                                    { backgroundColor: COLORS.warning + "20" },
+                                    styles.miniStatIcon,
+                                    { backgroundColor: COLORS.accent + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="fitness"
-                                    size={20}
+                                    size={16}
+                                    color={COLORS.accent}
+                                />
+                            </View>
+                            <Text style={styles.miniStatValue}>
+                                {summaryStats.total_workouts}
+                            </Text>
+                            <Text style={styles.miniStatLabel}>Koşu</Text>
+                        </View>
+                        <View style={styles.miniStatDivider} />
+                        <View style={styles.miniStat}>
+                            <View
+                                style={[
+                                    styles.miniStatIcon,
+                                    { backgroundColor: COLORS.info + "20" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="time"
+                                    size={16}
+                                    color={COLORS.info}
+                                />
+                            </View>
+                            <Text style={styles.miniStatValue}>
+                                {formatTime(summaryStats.total_duration_mins)}
+                            </Text>
+                            <Text style={styles.miniStatLabel}>Süre</Text>
+                        </View>
+                        <View style={styles.miniStatDivider} />
+                        <View style={styles.miniStat}>
+                            <View
+                                style={[
+                                    styles.miniStatIcon,
+                                    { backgroundColor: COLORS.warning + "20" },
+                                ]}
+                            >
+                                <Ionicons
+                                    name="trophy"
+                                    size={16}
                                     color={COLORS.warning}
                                 />
                             </View>
-                            <View>
-                                <Text style={styles.statValueSmall}>
-                                    {summaryStats.total_workouts}
-                                </Text>
-                                <Text style={styles.statLabelSmall}>
-                                    Toplam Koşu
-                                </Text>
-                            </View>
+                            <Text style={styles.miniStatValue}>
+                                {user?.longest_streak || 0}
+                            </Text>
+                            <Text style={styles.miniStatLabel}>Max Seri</Text>
                         </View>
                     </View>
                 </View>
 
-                {/* 2. PROGRAM PROGRESS (GRADIENT CARD) */}
-                {activeProgram?.has_active_program && (
-                    <View style={styles.sectionContainer}>
-                        <Text style={styles.sectionTitle}>Aktif Program</Text>
+                {/* PROGRAM PROGRESS */}
+                {activeProgram?.has_active_program && (() => {
+                    const total =
+                        activeProgram.total_workouts_count ||
+                        activeProgram.total_workouts ||
+                        0;
+                    const completed =
+                        activeProgram.completed_workouts ||
+                        activeProgram.completed_workouts_count ||
+                        0;
+                    const remaining =
+                        activeProgram.remaining_workouts !== undefined
+                            ? activeProgram.remaining_workouts
+                            : Math.max(0, total - completed);
 
-                        {/* --- GÜNCELLEME: HESAPLAMA MANTIĞI --- */}
-                        {(() => {
-                            // Backend farklı isimlendirmeler kullanabilir diye önlem alıyoruz
-                            const total =
-                                activeProgram.total_workouts_count ||
-                                activeProgram.total_workouts ||
-                                0;
-                            const completed =
-                                activeProgram.completed_workouts ||
-                                activeProgram.completed_workouts_count ||
-                                0;
-
-                            // Eğer backend 'remaining' yollamazsa biz hesaplarız
-                            const remaining =
-                                activeProgram.remaining_workouts !== undefined
-                                    ? activeProgram.remaining_workouts
-                                    : Math.max(0, total - completed);
-
-                            return (
-                                <LinearGradient
-                                    colors={[COLORS.card, COLORS.cardVariant]}
-                                    style={styles.programCard}
-                                >
-                                    <View style={styles.programHeader}>
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.programTitle}>
-                                                {activeProgram.title}
-                                            </Text>
-                                            <Text style={styles.programWeek}>
-                                                Hafta{" "}
-                                                {activeProgram.current_week} /{" "}
-                                                {activeProgram.total_weeks}
-                                            </Text>
-                                        </View>
-                                        <View style={styles.percentBadge}>
-                                            <Text style={styles.percentText}>
-                                                %{progPercent}
-                                            </Text>
-                                        </View>
+                    return (
+                        <View style={styles.sectionContainer}>
+                            <Text style={styles.sectionTitle}>Aktif Program</Text>
+                            <View style={styles.programCard}>
+                                <View style={styles.programHeader}>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.programTitle}>
+                                            {activeProgram.title}
+                                        </Text>
+                                        <Text style={styles.programWeek}>
+                                            Hafta {activeProgram.current_week} /{" "}
+                                            {activeProgram.total_weeks}
+                                        </Text>
                                     </View>
+                                    <View style={styles.percentBadge}>
+                                        <Text style={styles.percentText}>
+                                            %{progPercent}
+                                        </Text>
+                                    </View>
+                                </View>
 
-                                    {/* Custom Progress Bar */}
-                                    <View style={styles.progressBarBg}>
-                                        <LinearGradient
-                                            colors={[
-                                                COLORS.accent,
-                                                COLORS.secondary,
-                                            ]}
-                                            start={{ x: 0, y: 0 }}
-                                            end={{ x: 1, y: 0 }}
-                                            style={[
-                                                styles.progressBarFill,
-                                                { width: `${progPercent}%` },
-                                            ]}
+                                <View style={styles.progressBarBg}>
+                                    <LinearGradient
+                                        colors={[COLORS.accent, COLORS.secondary]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 0 }}
+                                        style={[
+                                            styles.progressBarFill,
+                                            {
+                                                width: `${Math.min(progPercent, 100)}%`,
+                                            },
+                                        ]}
+                                    />
+                                </View>
+
+                                <View style={styles.programFooter}>
+                                    <View style={styles.programFooterItem}>
+                                        <Ionicons
+                                            name="checkmark-circle"
+                                            size={14}
+                                            color={COLORS.success}
                                         />
-                                    </View>
-
-                                    <View style={styles.programFooter}>
                                         <Text style={styles.footerText}>
-                                            <Ionicons
-                                                name="checkmark-circle-outline"
-                                                size={14}
-                                            />{" "}
                                             {completed} Tamamlandı
                                         </Text>
-
-                                        {/* BURASI DÜZELDİ: Hesaplanan 'remaining' değişkenini kullanıyoruz */}
+                                    </View>
+                                    <View style={styles.programFooterItem}>
+                                        <Ionicons
+                                            name="hourglass-outline"
+                                            size={14}
+                                            color={COLORS.textDim}
+                                        />
                                         <Text style={styles.footerText}>
-                                            <Ionicons
-                                                name="hourglass-outline"
-                                                size={14}
-                                            />{" "}
                                             {remaining} Kaldı
                                         </Text>
                                     </View>
-                                </LinearGradient>
-                            );
-                        })()}
-                    </View>
-                )}
+                                </View>
+                            </View>
+                        </View>
+                    );
+                })()}
 
-                {/* 3. CHARTS */}
+                {/* CHARTS WITH TABS */}
                 <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>
-                        Haftalık Mesafe (km)
-                    </Text>
+                    <View style={styles.chartTabRow}>
+                        <Pressable
+                            onPress={() => setActiveChart("distance")}
+                            style={[
+                                styles.chartTab,
+                                activeChart === "distance" && styles.chartTabActive,
+                            ]}
+                        >
+                            <Ionicons
+                                name="trending-up"
+                                size={16}
+                                color={
+                                    activeChart === "distance"
+                                        ? COLORS.accent
+                                        : COLORS.textDim
+                                }
+                            />
+                            <Text
+                                style={[
+                                    styles.chartTabText,
+                                    activeChart === "distance" &&
+                                        styles.chartTabTextActive,
+                                ]}
+                            >
+                                Mesafe
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            onPress={() => setActiveChart("pace")}
+                            style={[
+                                styles.chartTab,
+                                activeChart === "pace" && styles.chartTabActive,
+                            ]}
+                        >
+                            <Ionicons
+                                name="speedometer"
+                                size={16}
+                                color={
+                                    activeChart === "pace"
+                                        ? COLORS.success
+                                        : COLORS.textDim
+                                }
+                            />
+                            <Text
+                                style={[
+                                    styles.chartTabText,
+                                    activeChart === "pace" &&
+                                        styles.chartTabTextActive,
+                                ]}
+                            >
+                                Tempo
+                            </Text>
+                        </Pressable>
+                    </View>
+
                     <View style={styles.chartCard}>
-                        <LineChart
-                            data={{
-                                labels: chartLabels,
-                                datasets: [{ data: chartData }],
-                            }}
-                            width={width - 40} // Ekran genişliği - padding
-                            height={220}
-                            chartConfig={chartConfig}
-                            bezier
-                            withDots={true}
-                            withInnerLines={true}
-                            withOuterLines={false}
-                            withVerticalLines={false}
-                            style={{ marginVertical: 8, borderRadius: 16 }}
-                        />
+                        <Text style={styles.chartLabel}>
+                            {activeChart === "distance"
+                                ? "Aylık Mesafe (km)"
+                                : "Aylık Tempo (dk/km)"}
+                        </Text>
+                        {activeChart === "distance" ? (
+                            <BarChart
+                                data={{
+                                    labels: chartLabels.filter((_, i) => i % 5 === 0),
+                                    datasets: [{ data: chartData }],
+                                }}
+                                width={width - 72}
+                                height={210}
+                                yAxisSuffix=""
+                                yAxisLabel=""
+                                chartConfig={distanceBarChartConfig}
+                                withInnerLines={true}
+                                showValuesOnTopOfBars={false}
+                                fromZero
+                                style={styles.chartStyle}
+                            />
+                        ) : (
+                            <BarChart
+                                data={{
+                                    labels: chartLabels.filter((_, i) => i % 5 === 0),
+                                    datasets: [{ data: paceHistory }],
+                                }}
+                                width={width - 72}
+                                height={210}
+                                yAxisSuffix=""
+                                yAxisLabel=""
+                                chartConfig={paceBarChartConfig}
+                                withInnerLines={true}
+                                showValuesOnTopOfBars={false}
+                                fromZero
+                                style={styles.chartStyle}
+                            />
+                        )}
                     </View>
                 </View>
 
-                {/* 4. PACE CHART (Secondary Color) */}
+                {/* DETAILED STATS */}
                 <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>
-                        Tempo Analizi (dk/km)
-                    </Text>
-                    <View style={styles.chartCard}>
-                        <LineChart
-                            data={{
-                                labels: chartLabels,
-                                datasets: [{ data: paceHistory }],
-                            }}
-                            width={width - 40}
-                            height={220}
-                            chartConfig={{
-                                ...chartConfig,
-                                color: (opacity = 1) => COLORS.success, // Yeşil tonu
-                                fillShadowGradient: COLORS.success,
-                            }}
-                            bezier
-                            withVerticalLines={false}
-                            style={{ marginVertical: 8, borderRadius: 16 }}
-                        />
+                    <Text style={styles.sectionTitle}>Detaylı İstatistikler</Text>
+                    <View style={styles.detailStatsCard}>
+                        <View style={styles.detailStatRow}>
+                            <View style={styles.detailStatLeft}>
+                                <Ionicons
+                                    name="speedometer-outline"
+                                    size={20}
+                                    color={COLORS.success}
+                                />
+                                <Text style={styles.detailStatLabel}>
+                                    Güncel Tempo
+                                </Text>
+                            </View>
+                            <Text style={styles.detailStatValue}>
+                                {formatPace(user?.current_pace)}{" "}
+                                <Text style={styles.detailStatUnit}>/km</Text>
+                            </Text>
+                        </View>
+                        <View style={styles.detailStatSeparator} />
+                        <View style={styles.detailStatRow}>
+                            <View style={styles.detailStatLeft}>
+                                <Ionicons
+                                    name="calendar-outline"
+                                    size={20}
+                                    color={COLORS.info}
+                                />
+                                <Text style={styles.detailStatLabel}>
+                                    Aktif Gün
+                                </Text>
+                            </View>
+                            <Text style={styles.detailStatValue}>
+                                {summaryStats.days_active}{" "}
+                                <Text style={styles.detailStatUnit}>gün</Text>
+                            </Text>
+                        </View>
+                        <View style={styles.detailStatSeparator} />
+                        <View style={styles.detailStatRow}>
+                            <View style={styles.detailStatLeft}>
+                                <Ionicons
+                                    name="walk-outline"
+                                    size={20}
+                                    color={COLORS.accent}
+                                />
+                                <Text style={styles.detailStatLabel}>
+                                    Bu Hafta
+                                </Text>
+                            </View>
+                            <Text style={styles.detailStatValue}>
+                                {summaryStats.weekly_progress || 0}{" "}
+                                <Text style={styles.detailStatUnit}>antrenman</Text>
+                            </Text>
+                        </View>
                     </View>
                 </View>
 
-                {/* 5. SECONDARY STATS ROW */}
-                <View style={styles.statsRowTriple}>
-                    <View style={styles.statCardTriple}>
-                        <Ionicons
-                            name="time-outline"
-                            size={24}
-                            color={COLORS.info}
-                        />
-                        <Text style={styles.statValueTriple}>
-                            {formatTime(summaryStats.total_duration_mins)}
-                        </Text>
-                        <Text style={styles.statLabelTriple}>Toplam Süre</Text>
-                    </View>
-                    <View style={styles.statCardTriple}>
-                        <Ionicons
-                            name="flame-outline"
-                            size={24}
-                            color={COLORS.secondary}
-                        />
-                        <Text style={styles.statValueTriple}>
-                            {summaryStats.calories_burned}
-                        </Text>
-                        <Text style={styles.statLabelTriple}>Kalori</Text>
-                    </View>
-                    <View style={styles.statCardTriple}>
-                        <Ionicons
-                            name="trophy-outline"
-                            size={24}
-                            color={COLORS.warning}
-                        />
-                        <Text style={styles.statValueTriple}>
-                            {user?.longest_streak || 0}
-                        </Text>
-                        <Text style={styles.statLabelTriple}>Max Seri</Text>
-                    </View>
-                </View>
-
-                {/* 6. ACHIEVEMENTS */}
+                {/* ACHIEVEMENTS */}
                 <View style={styles.sectionContainer}>
-                    <Text style={styles.sectionTitle}>Son Rozetler</Text>
+                    <Text style={styles.sectionTitle}>Rozetler</Text>
                     {recentAchievements.length > 0 ? (
                         recentAchievements.map((ach, index) => (
                             <View key={index} style={styles.achievementCard}>
-                                <View
-                                    style={[
-                                        styles.achIconBox,
-                                        {
-                                            backgroundColor:
-                                                (ach.icon_color ||
-                                                    COLORS.warning) + "20",
-                                        },
+                                <LinearGradient
+                                    colors={[
+                                        (ach.icon_color || COLORS.warning) + "15",
+                                        "transparent",
                                     ]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 1, y: 0 }}
+                                    style={styles.achievementGradient}
                                 >
-                                    <Ionicons
-                                        name={ach.icon_name || "trophy"}
-                                        size={24}
-                                        color={ach.icon_color || COLORS.warning}
-                                    />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.achTitle}>
-                                        {ach.title}
-                                    </Text>
-                                    <Text style={styles.achDesc}>
-                                        {ach.description}
-                                    </Text>
-                                </View>
-                                <Ionicons
-                                    name="chevron-forward"
-                                    size={20}
-                                    color={COLORS.cardBorder}
-                                />
+                                    <View
+                                        style={[
+                                            styles.achIconBox,
+                                            {
+                                                backgroundColor:
+                                                    (ach.icon_color ||
+                                                        COLORS.warning) + "20",
+                                            },
+                                        ]}
+                                    >
+                                        <Ionicons
+                                            name={ach.icon_name || "trophy"}
+                                            size={22}
+                                            color={
+                                                ach.icon_color || COLORS.warning
+                                            }
+                                        />
+                                    </View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.achTitle}>
+                                            {ach.title}
+                                        </Text>
+                                        <Text style={styles.achDesc}>
+                                            {ach.description}
+                                        </Text>
+                                    </View>
+                                </LinearGradient>
                             </View>
                         ))
                     ) : (
                         <View style={styles.emptyStateCard}>
                             <Ionicons
                                 name="lock-closed-outline"
-                                size={32}
+                                size={28}
                                 color={COLORS.inactive}
                             />
                             <Text style={styles.emptyStateText}>
                                 Henüz kazanılmış rozet yok.
+                            </Text>
+                            <Text style={styles.emptyStateSubText}>
+                                Koşmaya devam et, rozetler seni bekliyor!
                             </Text>
                         </View>
                     )}
@@ -491,174 +580,265 @@ export default ProgressScreen;
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.background },
     scrollView: { flex: 1 },
-    scrollContent: { padding: 20, paddingTop: 60 }, // Header için boşluk
+    scrollContent: { paddingBottom: 20 },
 
-    // HEADER
-    header: { marginBottom: 24 },
-    headerTitle: {
-        color: COLORS.text,
-        fontSize: 32,
-        fontWeight: "800",
-        letterSpacing: 0.5,
+    // HERO HEADER
+    heroHeader: {
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: 8,
     },
-    headerSubtitle: { color: COLORS.textDim, fontSize: 16, marginTop: 4 },
+    heroStatRow: {
+        marginTop: 24,
+        alignItems: "center",
+    },
+    heroStatMain: {
+        flexDirection: "row",
+        alignItems: "flex-end",
+    },
+    heroStatValue: {
+        color: COLORS.text,
+        fontSize: 56,
+        fontWeight: "900",
+        letterSpacing: -2,
+    },
+    heroStatUnit: {
+        color: COLORS.accent,
+        fontSize: 22,
+        fontWeight: "700",
+        marginBottom: 10,
+        marginLeft: 4,
+    },
+    heroStatLabel: {
+        color: COLORS.textDim,
+        fontSize: 13,
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: 1.5,
+        marginTop: 4,
+    },
 
-    // SECTION COMMON
-    sectionContainer: { marginBottom: 24 },
+    // MINI STATS
+    miniStatsRow: {
+        flexDirection: "row",
+        backgroundColor: COLORS.card,
+        borderRadius: 16,
+        padding: 16,
+        marginTop: 20,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        alignItems: "center",
+    },
+    miniStat: {
+        flex: 1,
+        alignItems: "center",
+    },
+    miniStatIcon: {
+        width: 32,
+        height: 32,
+        borderRadius: 10,
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 6,
+    },
+    miniStatValue: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: "800",
+    },
+    miniStatLabel: {
+        color: COLORS.textDim,
+        fontSize: 10,
+        fontWeight: "600",
+        marginTop: 2,
+    },
+    miniStatDivider: {
+        width: 1,
+        height: 36,
+        backgroundColor: COLORS.cardBorder,
+    },
+
+    // SECTION
+    sectionContainer: {
+        marginTop: 24,
+        paddingHorizontal: 20,
+    },
     sectionTitle: {
         color: COLORS.text,
         fontSize: 18,
         fontWeight: "700",
         marginBottom: 12,
-        marginLeft: 4,
     },
 
-    // STATS GRID (Hero)
-    statsGrid: { flexDirection: "row", gap: 12, marginBottom: 24 },
-    statsColumn: { flex: 1, gap: 12, justifyContent: "space-between" },
-
-    statCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 20,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    statCardLarge: { flex: 1.2, height: 150, justifyContent: "space-between" },
-    statCardSmall: {
-        flex: 1,
-        backgroundColor: COLORS.card,
-        borderRadius: 16,
-        padding: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-
-    statHeaderRow: { flexDirection: "row", alignItems: "center", gap: 8 },
-    iconBox: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    statLabel: {
-        color: COLORS.textDim,
-        fontSize: 12,
-        fontWeight: "600",
-        textTransform: "uppercase",
-    },
-    statValueLarge: { color: COLORS.text, fontSize: 36, fontWeight: "900" },
-    unitText: { color: COLORS.accent, fontSize: 18, fontWeight: "600" },
-
-    statValueSmall: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
-    statLabelSmall: { color: COLORS.textDim, fontSize: 12 },
-
-    iconBoxSmall: {
-        width: 36,
-        height: 36,
-        borderRadius: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        marginRight: 10,
-    },
-
-    // PROGRAM CARD
+    // PROGRAM
     programCard: {
         borderRadius: 20,
         padding: 20,
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
+        backgroundColor: COLORS.card,
     },
     programHeader: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "flex-start",
-        marginBottom: 15,
+        marginBottom: 16,
     },
-    programTitle: { color: COLORS.text, fontSize: 18, fontWeight: "bold" },
+    programTitle: { color: COLORS.text, fontSize: 17, fontWeight: "bold" },
     programWeek: { color: COLORS.textDim, fontSize: 13, marginTop: 2 },
     percentBadge: {
-        backgroundColor: COLORS.background,
+        backgroundColor: COLORS.accent + "15",
         paddingHorizontal: 10,
-        paddingVertical: 4,
+        paddingVertical: 5,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: COLORS.cardBorder,
+        borderColor: COLORS.accent + "30",
     },
-    percentText: { color: COLORS.accent, fontWeight: "bold", fontSize: 12 },
-
+    percentText: { color: COLORS.accent, fontWeight: "800", fontSize: 13 },
     progressBarBg: {
-        height: 8,
+        height: 6,
         backgroundColor: COLORS.background,
-        borderRadius: 4,
+        borderRadius: 3,
         overflow: "hidden",
-        marginBottom: 15,
+        marginBottom: 16,
     },
-    progressBarFill: { height: "100%", borderRadius: 4 },
-
+    progressBarFill: { height: "100%", borderRadius: 3 },
     programFooter: {
         flexDirection: "row",
         justifyContent: "space-between",
-        marginTop: 5,
+    },
+    programFooterItem: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
     },
     footerText: { color: COLORS.textDim, fontSize: 12, fontWeight: "600" },
 
-    // CHARTS
+    // CHART TABS
+    chartTabRow: {
+        flexDirection: "row",
+        gap: 8,
+        marginBottom: 12,
+    },
+    chartTab: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        backgroundColor: COLORS.card,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+    },
+    chartTabActive: {
+        borderColor: COLORS.accent + "50",
+        backgroundColor: COLORS.accent + "10",
+    },
+    chartTabText: {
+        color: COLORS.textDim,
+        fontSize: 13,
+        fontWeight: "600",
+    },
+    chartTabTextActive: {
+        color: COLORS.text,
+    },
+
+    // CHART
     chartCard: {
         backgroundColor: COLORS.card,
         borderRadius: 20,
-        padding: 10, // Chart padding
+        paddingTop: 18,
+        paddingBottom: 10,
+        paddingHorizontal: 12,
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        overflow: "hidden", // Taşmaları engelle
+        overflow: "hidden",
+        alignItems: "center",
+    },
+    chartLabel: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "600",
+        marginBottom: 12,
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+        alignSelf: "flex-start",
+        marginLeft: 6,
+    },
+    chartStyle: {
+        borderRadius: 16,
     },
 
-    // TRIPLE STATS ROW
-    statsRowTriple: { flexDirection: "row", gap: 10, marginBottom: 24 },
-    statCardTriple: {
-        flex: 1,
+    // DETAIL STATS
+    detailStatsCard: {
         backgroundColor: COLORS.card,
-        borderRadius: 16,
-        padding: 15,
-        alignItems: "center",
+        borderRadius: 20,
+        padding: 4,
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
     },
-    statValueTriple: {
+    detailStatRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+    },
+    detailStatLeft: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+    },
+    detailStatLabel: {
+        color: COLORS.text,
+        fontSize: 14,
+        fontWeight: "500",
+    },
+    detailStatValue: {
         color: COLORS.text,
         fontSize: 16,
-        fontWeight: "bold",
-        marginTop: 8,
+        fontWeight: "800",
     },
-    statLabelTriple: { color: COLORS.textDim, fontSize: 11, marginTop: 2 },
+    detailStatUnit: {
+        color: COLORS.textDim,
+        fontSize: 12,
+        fontWeight: "500",
+    },
+    detailStatSeparator: {
+        height: 1,
+        backgroundColor: COLORS.cardBorder,
+        marginHorizontal: 16,
+    },
 
     // ACHIEVEMENTS
     achievementCard: {
-        backgroundColor: COLORS.card,
-        flexDirection: "row",
-        alignItems: "center",
-        padding: 16,
         borderRadius: 16,
-        marginBottom: 10,
+        marginBottom: 8,
+        overflow: "hidden",
         borderWidth: 1,
         borderColor: COLORS.cardBorder,
-        gap: 15,
+        backgroundColor: COLORS.card,
+    },
+    achievementGradient: {
+        flexDirection: "row",
+        alignItems: "center",
+        padding: 14,
+        gap: 12,
     },
     achIconBox: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+        width: 42,
+        height: 42,
+        borderRadius: 14,
         justifyContent: "center",
         alignItems: "center",
     },
-    achTitle: { color: COLORS.text, fontSize: 15, fontWeight: "bold" },
+    achTitle: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
     achDesc: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
 
+    // EMPTY STATE
     emptyStateCard: {
-        padding: 20,
+        padding: 24,
         backgroundColor: COLORS.card,
         borderRadius: 16,
         alignItems: "center",
@@ -666,5 +846,15 @@ const styles = StyleSheet.create({
         borderColor: COLORS.cardBorder,
         borderStyle: "dashed",
     },
-    emptyStateText: { color: COLORS.textDim, marginTop: 8 },
+    emptyStateText: {
+        color: COLORS.textDim,
+        marginTop: 10,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    emptyStateSubText: {
+        color: COLORS.inactive,
+        marginTop: 4,
+        fontSize: 12,
+    },
 });
