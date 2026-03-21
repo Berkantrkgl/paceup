@@ -21,7 +21,7 @@ const _layout = () => {
             <Stack.Screen
                 name="index"
                 options={{
-                    title: "Planlarım",
+                    headerShown: false,
                 }}
             />
 

@@ -18,7 +18,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
@@ -115,7 +114,8 @@ const ToggleRow = React.memo(({ label, value, onValueChange, isLast }: any) => (
 // ANA EKRAN
 // ============================================================
 const ProfileScreen = () => {
-  const { user, logOut, refreshUserData, getValidToken } = useContext(AuthContext);
+  const { user, logOut, refreshUserData, getValidToken } =
+    useContext(AuthContext);
   const [uploading, setUploading] = useState(false);
 
   // Edit Modal
@@ -504,7 +504,12 @@ const ProfileScreen = () => {
     return (
       <View style={styles.tokenCard}>
         {/* Başlık */}
-        <View style={[styles.tokenCardHeader, user?.is_premium && { marginBottom: 0 }]}>
+        <View
+          style={[
+            styles.tokenCardHeader,
+            user?.is_premium && { marginBottom: 0 },
+          ]}
+        >
           <View style={styles.tokenCardTitleRow}>
             <Ionicons name="flash" size={16} color={color} />
             <Text style={styles.tokenCardTitle}>Kalan AI Kullanım Hakkı</Text>
@@ -559,255 +564,247 @@ const ProfileScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
-      <SafeAreaView edges={["top"]} style={{ flex: 1 }}>
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Profil</Text>
-        </View>
-
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* USER CARD */}
-          <View style={styles.userCard}>
-            <Pressable
-              onPress={() => setAvatarModalVisible(true)}
-              style={styles.avatarContainer}
-            >
-              {user?.profile_image ? (
-                <Image
-                  source={{ uri: user.profile_image }}
-                  style={styles.avatar}
-                />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Text style={styles.avatarInitial}>
-                    {user?.first_name?.[0] || "U"}
-                  </Text>
-                </View>
-              )}
-              {uploading && (
-                <ActivityIndicator
-                  size="small"
-                  color={COLORS.accent}
-                  style={StyleSheet.absoluteFill}
-                />
-              )}
-              <View style={styles.editBadge}>
-                <Text style={styles.editBadgeText}>Fotoğraf</Text>
-              </View>
-            </Pressable>
-            <View style={styles.userInfo}>
-              <Text style={styles.userName}>
-                {user?.first_name} {user?.last_name}
-              </Text>
-              <View style={styles.statsRow}>
-                <Text style={styles.statText}>
-                  🔥 {user?.current_streak} Gün Seri
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* USER CARD */}
+        <View style={styles.userCard}>
+          <Pressable
+            onPress={() => setAvatarModalVisible(true)}
+            style={styles.avatarContainer}
+          >
+            {user?.profile_image ? (
+              <Image
+                source={{ uri: user.profile_image }}
+                style={styles.avatar}
+              />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitial}>
+                  {user?.first_name?.[0] || "U"}
                 </Text>
-                <Text style={styles.statDot}>•</Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    !user?.is_premium && setPremiumModalVisible(true)
-                  }
-                >
-                  <Text
-                    style={[
-                      styles.statText,
-                      user?.is_premium && { color: COLORS.accent },
-                    ]}
-                  >
-                    {user?.is_premium
-                      ? "Premium kullanıcı"
-                      : "Standart kullanıcı"}
-                  </Text>
-                </TouchableOpacity>
               </View>
+            )}
+            {uploading && (
+              <ActivityIndicator
+                size="small"
+                color={COLORS.accent}
+                style={StyleSheet.absoluteFill}
+              />
+            )}
+            <View style={styles.editBadge}>
+              <Text style={styles.editBadgeText}>Fotoğraf</Text>
+            </View>
+          </Pressable>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>
+              {user?.first_name} {user?.last_name}
+            </Text>
+            <View style={styles.statsRow}>
+              <Text style={styles.statText}>
+                🔥 {user?.current_streak} Gün Seri
+              </Text>
+              <Text style={styles.statDot}>•</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  !user?.is_premium && setPremiumModalVisible(true)
+                }
+              >
+                <Text
+                  style={[
+                    styles.statText,
+                    user?.is_premium && { color: COLORS.accent },
+                  ]}
+                >
+                  {user?.is_premium
+                    ? "Premium kullanıcı"
+                    : "Standart kullanıcı"}
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
+        </View>
 
-          {/* TOKEN KARTI */}
-          <TokenCard />
+        {/* TOKEN KARTI */}
+        <TokenCard />
 
-          {/* SECTION 1: KİMLİK & FİZİKSEL */}
-          <Section title="KİMLİK VE FİZİKSEL">
-            <InfoRow
-              label="Ad"
-              value={user?.first_name}
-              onPress={() =>
-                openEditor({ key: "first_name", title: "Ad", type: "text" })
-              }
-            />
-            <InfoRow
-              label="Soyad"
-              value={user?.last_name}
-              onPress={() =>
-                openEditor({ key: "last_name", title: "Soyad", type: "text" })
-              }
-            />
-            <InfoRow
-              label="Cinsiyet"
-              value={
-                GENDER_OPTIONS.find((o) => o.value === user?.gender)?.label
-              }
-              onPress={() =>
-                openEditor({
-                  key: "gender",
-                  title: "Cinsiyet",
-                  type: "picker",
-                  options: GENDER_OPTIONS,
-                })
-              }
-            />
-            <InfoRow
-              label="Doğum Tarihi"
-              value={user?.date_of_birth}
-              onPress={() =>
-                openEditor({
-                  key: "date_of_birth",
-                  title: "Doğum Tarihi",
-                  type: "date",
-                })
-              }
-            />
-            <InfoRow
-              label="Boy"
-              value={user?.height ? `${user.height} cm` : ""}
-              onPress={() =>
-                openEditor({
-                  key: "height",
-                  title: "Boy",
-                  type: "picker",
-                  options: generateNumberRange(140, 230, "cm"),
-                })
-              }
-            />
-            <InfoRow
-              label="Kilo"
-              value={user?.weight ? `${user.weight} kg` : ""}
-              onPress={() =>
-                openEditor({
-                  key: "weight",
-                  title: "Kilo",
-                  type: "picker",
-                  options: generateNumberRange(40, 160, "kg"),
-                })
-              }
-              isLast
-            />
-          </Section>
+        {/* SECTION 1: KİMLİK & FİZİKSEL */}
+        <Section title="KİMLİK VE FİZİKSEL">
+          <InfoRow
+            label="Ad"
+            value={user?.first_name}
+            onPress={() =>
+              openEditor({ key: "first_name", title: "Ad", type: "text" })
+            }
+          />
+          <InfoRow
+            label="Soyad"
+            value={user?.last_name}
+            onPress={() =>
+              openEditor({ key: "last_name", title: "Soyad", type: "text" })
+            }
+          />
+          <InfoRow
+            label="Cinsiyet"
+            value={GENDER_OPTIONS.find((o) => o.value === user?.gender)?.label}
+            onPress={() =>
+              openEditor({
+                key: "gender",
+                title: "Cinsiyet",
+                type: "picker",
+                options: GENDER_OPTIONS,
+              })
+            }
+          />
+          <InfoRow
+            label="Doğum Tarihi"
+            value={user?.date_of_birth}
+            onPress={() =>
+              openEditor({
+                key: "date_of_birth",
+                title: "Doğum Tarihi",
+                type: "date",
+              })
+            }
+          />
+          <InfoRow
+            label="Boy"
+            value={user?.height ? `${user.height} cm` : ""}
+            onPress={() =>
+              openEditor({
+                key: "height",
+                title: "Boy",
+                type: "picker",
+                options: generateNumberRange(140, 230, "cm"),
+              })
+            }
+          />
+          <InfoRow
+            label="Kilo"
+            value={user?.weight ? `${user.weight} kg` : ""}
+            onPress={() =>
+              openEditor({
+                key: "weight",
+                title: "Kilo",
+                type: "picker",
+                options: generateNumberRange(40, 160, "kg"),
+              })
+            }
+            isLast
+          />
+        </Section>
 
-          {/* SECTION 2: KOŞU PROFİLİ */}
-          <Section title="KOŞU PROFİLİ">
-            <InfoRow
-              label="Ortalama Pace"
-              value={`${formatDisplayPace(user?.current_pace)} /km`}
-              onPress={() =>
-                openEditor({
-                  key: "current_pace",
-                  title: "Pace Seçimi",
-                  type: "pace",
-                })
-              }
-            />
-            <InfoRow
-              label="Maksimum Koşu Mesafesi"
-              value={`${user?.max_runned_distance} km`}
-              onPress={() =>
-                openEditor({
-                  key: "max_runned_distance",
-                  title: "Maksimum Koşu Mesafesi",
-                  type: "picker",
-                  options: generateNumberRange(1, 100, "km"),
-                })
-              }
-            />
-            <InfoRow
-              label="Koşu Günleri"
-              value={formatDisplayDays(user?.preferred_running_days || [])}
-              onPress={() =>
-                openEditor({
-                  key: "preferred_running_days",
-                  title: "Koşu Günleri Seçimi",
-                  type: "multiselect",
-                })
-              }
-              isLast
-            />
-          </Section>
+        {/* SECTION 2: KOŞU PROFİLİ */}
+        <Section title="KOŞU PROFİLİ">
+          <InfoRow
+            label="Ortalama Pace"
+            value={`${formatDisplayPace(user?.current_pace)} /km`}
+            onPress={() =>
+              openEditor({
+                key: "current_pace",
+                title: "Pace Seçimi",
+                type: "pace",
+              })
+            }
+          />
+          <InfoRow
+            label="Maksimum Koşu Mesafesi"
+            value={`${user?.max_runned_distance} km`}
+            onPress={() =>
+              openEditor({
+                key: "max_runned_distance",
+                title: "Maksimum Koşu Mesafesi",
+                type: "picker",
+                options: generateNumberRange(1, 100, "km"),
+              })
+            }
+          />
+          <InfoRow
+            label="Koşu Günleri"
+            value={formatDisplayDays(user?.preferred_running_days || [])}
+            onPress={() =>
+              openEditor({
+                key: "preferred_running_days",
+                title: "Koşu Günleri Seçimi",
+                type: "multiselect",
+              })
+            }
+            isLast
+          />
+        </Section>
 
-          {/* SECTION 3: HESAP BİLGİLERİ */}
-          <Section title="HESAP BİLGİLERİ">
-            <InfoRow
-              label="Üyelik Tipi"
-              value={user?.is_premium ? "Premium" : "Standart"}
-              isReadonly
-            />
-            <InfoRow
-              label="Aylık Kalan Erteleme Hakkı"
-              value={
-                user?.is_premium
-                  ? "Sınırsız"
-                  : `${user?.remaining_reschedules} / 2`
-              }
-              isReadonly
-              isLast
-            />
-          </Section>
+        {/* SECTION 3: HESAP BİLGİLERİ */}
+        <Section title="HESAP BİLGİLERİ">
+          <InfoRow
+            label="Üyelik Tipi"
+            value={user?.is_premium ? "Premium" : "Standart"}
+            isReadonly
+          />
+          <InfoRow
+            label="Aylık Kalan Erteleme Hakkı"
+            value={
+              user?.is_premium
+                ? "Sınırsız"
+                : `${user?.remaining_reschedules} / 2`
+            }
+            isReadonly
+            isLast
+          />
+        </Section>
 
-          {/* SECTION 4: BİLDİRİM TERCİHLERİ */}
-          <Section title="BİLDİRİM TERCİHLERİ">
-            <InfoRow
-              label="Hatırlatma Saati"
-              value={formatDisplayTime(user?.preferred_reminder_time ?? "")}
-              onPress={() =>
-                openEditor({
-                  key: "preferred_reminder_time",
-                  title: "Hatırlatma Saati",
-                  type: "time",
-                })
-              }
-            />
-            <ToggleRow
-              label="Antrenman Bildirimleri"
-              value={getToggleValue("notification_workout_reminder")}
-              onValueChange={(v: boolean) =>
-                toggleSwitch("notification_workout_reminder", v)
-              }
-            />
-            <ToggleRow
-              label="Haftalık Rapor"
-              value={getToggleValue("notification_weekly_report")}
-              onValueChange={(v: boolean) =>
-                toggleSwitch("notification_weekly_report", v)
-              }
-            />
-            <ToggleRow
-              label="Başarı Rozetleri"
-              value={getToggleValue("notification_achievements")}
-              onValueChange={(v: boolean) =>
-                toggleSwitch("notification_achievements", v)
-              }
-            />
-            <ToggleRow
-              label="Plan Güncellemeleri"
-              value={getToggleValue("notification_plan_updates")}
-              onValueChange={(v: boolean) =>
-                toggleSwitch("notification_plan_updates", v)
-              }
-              isLast
-            />
-          </Section>
+        {/* SECTION 4: BİLDİRİM TERCİHLERİ */}
+        <Section title="BİLDİRİM TERCİHLERİ">
+          <InfoRow
+            label="Hatırlatma Saati"
+            value={formatDisplayTime(user?.preferred_reminder_time ?? "")}
+            onPress={() =>
+              openEditor({
+                key: "preferred_reminder_time",
+                title: "Hatırlatma Saati",
+                type: "time",
+              })
+            }
+          />
+          <ToggleRow
+            label="Antrenman Bildirimleri"
+            value={getToggleValue("notification_workout_reminder")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_workout_reminder", v)
+            }
+          />
+          <ToggleRow
+            label="Haftalık Rapor"
+            value={getToggleValue("notification_weekly_report")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_weekly_report", v)
+            }
+          />
+          <ToggleRow
+            label="Başarı Rozetleri"
+            value={getToggleValue("notification_achievements")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_achievements", v)
+            }
+          />
+          <ToggleRow
+            label="Plan Güncellemeleri"
+            value={getToggleValue("notification_plan_updates")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_plan_updates", v)
+            }
+            isLast
+          />
+        </Section>
 
-          {/* FOOTER */}
-          <View style={styles.footer}>
-            <Pressable style={styles.logoutBtn} onPress={logOut}>
-              <Text style={styles.logoutText}>Oturumu Kapat</Text>
-            </Pressable>
-            <Text style={styles.versionText}>PaceUp v2.3.0</Text>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
+        {/* FOOTER */}
+        <View style={styles.footer}>
+          <Pressable style={styles.logoutBtn} onPress={logOut}>
+            <Text style={styles.logoutText}>Oturumu Kapat</Text>
+          </Pressable>
+          <Text style={styles.versionText}>PaceUp v2.3.0</Text>
+        </View>
+      </ScrollView>
 
       {/* Edit Modal */}
       <Modal visible={modalVisible} transparent animationType="fade">
@@ -905,17 +902,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   header: {
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.cardBorder,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: "800",
     color: COLORS.text,
-    letterSpacing: -0.5,
+    letterSpacing: 0.3,
   },
-  scrollContent: { paddingBottom: 80 },
+  scrollContent: { paddingTop: 70, paddingBottom: 60 },
 
   // User Card
   userCard: {
