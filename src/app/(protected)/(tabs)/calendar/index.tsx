@@ -32,7 +32,7 @@ import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
 const CELL_WIDTH = (width - 40) / 7;
-const SLIDER_CARD_WIDTH = width * 0.78;
+const SLIDER_CARD_WIDTH = width * 0.82;
 const SLIDER_CARD_MARGIN = 6;
 const SLIDER_ITEM_WIDTH = SLIDER_CARD_WIDTH + SLIDER_CARD_MARGIN * 2;
 const SLIDER_PADDING = (width - SLIDER_CARD_WIDTH) / 2 - SLIDER_CARD_MARGIN;
@@ -101,28 +101,28 @@ const getWorkoutTheme = (type: WorkoutTypeEnum) => {
         color: THEME_COLORS.tempo,
         name: "Tempo",
         icon: "speedometer",
-        bgGradient: [THEME_COLORS.tempo + "50", COLORS.card],
+        bgGradient: [THEME_COLORS.tempo + "65", COLORS.card],
       };
     case "easy":
       return {
         color: THEME_COLORS.easy,
         name: "Hafif",
         icon: "leaf",
-        bgGradient: [THEME_COLORS.easy + "50", COLORS.card],
+        bgGradient: [THEME_COLORS.easy + "65", COLORS.card],
       };
     case "interval":
       return {
         color: THEME_COLORS.interval,
         name: "İnterval",
         icon: "flash",
-        bgGradient: [THEME_COLORS.interval + "50", COLORS.card],
+        bgGradient: [THEME_COLORS.interval + "65", COLORS.card],
       };
     case "long":
       return {
         color: THEME_COLORS.long,
         name: "Uzun",
         icon: "infinite",
-        bgGradient: [THEME_COLORS.long + "50", COLORS.card],
+        bgGradient: [THEME_COLORS.long + "65", COLORS.card],
       };
     case "rest":
       return {
@@ -291,135 +291,138 @@ const CalendarScreen = () => {
   };
 
   // --- SLIDER CARD ---
-  const renderSliderCard = useCallback(({ item: workout }: { item: any }) => {
-    const theme = getWorkoutTheme(workout.workout_type);
-    const isCompleted = workout.status === "completed";
-    const isMissed = workout.status === "missed";
-    const isSelected = workout.scheduled_date === selectedDate;
+  const renderSliderCard = useCallback(
+    ({ item: workout }: { item: any }) => {
+      const theme = getWorkoutTheme(workout.workout_type);
+      const isCompleted = workout.status === "completed";
+      const isMissed = workout.status === "missed";
+      const isSelected = workout.scheduled_date === selectedDate;
 
-    const dateObj = new Date(workout.scheduled_date);
-    const dayName = dateObj.toLocaleDateString("tr-TR", { weekday: "short" });
-    const dayNum = dateObj.getDate();
-    const monthName = dateObj.toLocaleDateString("tr-TR", { month: "short" });
-    const isToday = workout.scheduled_date === todayStr;
+      const dateObj = new Date(workout.scheduled_date);
+      const dayName = dateObj.toLocaleDateString("tr-TR", { weekday: "short" });
+      const dayNum = dateObj.getDate();
+      const monthName = dateObj.toLocaleDateString("tr-TR", { month: "short" });
+      const isToday = workout.scheduled_date === todayStr;
 
-    return (
-      <Pressable
-        onPress={() =>
-          router.push({
-            pathname: "/calendar/workout-detail",
-            params: { workoutId: workout.id },
-          })
-        }
-        style={({ pressed }) => [
-          styles.sliderCard,
-          isSelected && styles.sliderCardSelected,
-          pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
-        ]}
-      >
-        <LinearGradient
-          colors={theme.bgGradient as any}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.sliderCardGradient}
+      return (
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: "/calendar/workout-detail",
+              params: { workoutId: workout.id },
+            })
+          }
+          style={({ pressed }) => [
+            styles.sliderCard,
+            isSelected && styles.sliderCardSelected,
+            pressed && { opacity: 0.9, transform: [{ scale: 0.98 }] },
+          ]}
         >
-          {/* Left: Date column */}
-          <View style={styles.sliderDateCol}>
-            <Text
-              style={[
-                styles.sliderDayName,
-                isToday && { color: COLORS.accent },
-              ]}
-            >
-              {isToday ? "Bugün" : dayName}
-            </Text>
-            <Text style={[styles.sliderDayNum, { color: theme.color }]}>
-              {dayNum}
-            </Text>
-            <Text style={styles.sliderMonth}>{monthName}</Text>
-          </View>
-
-          {/* Vertical separator */}
-          <View
-            style={[
-              styles.sliderSeparator,
-              { backgroundColor: theme.color + "40" },
-            ]}
-          />
-
-          {/* Right: Workout info */}
-          <View style={styles.sliderInfo}>
-            <View style={styles.sliderTopRow}>
-              <View
+          <LinearGradient
+            colors={theme.bgGradient as any}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.sliderCardGradient}
+          >
+            {/* Left: Date column */}
+            <View style={styles.sliderDateCol}>
+              <Text
                 style={[
-                  styles.sliderTypeBadge,
-                  { backgroundColor: theme.color + "25" },
+                  styles.sliderDayName,
+                  isToday && { color: COLORS.accent },
                 ]}
               >
-                <Ionicons
-                  name={theme.icon as any}
-                  size={14}
-                  color={theme.color}
-                />
-                <Text style={[styles.sliderTypeText, { color: theme.color }]}>
-                  {theme.name}
-                </Text>
+                {isToday ? "Bugün" : dayName}
+              </Text>
+              <Text style={[styles.sliderDayNum, { color: theme.color }]}>
+                {dayNum}
+              </Text>
+              <Text style={styles.sliderMonth}>{monthName}</Text>
+            </View>
+
+            {/* Vertical separator */}
+            <View
+              style={[
+                styles.sliderSeparator,
+                { backgroundColor: theme.color + "40" },
+              ]}
+            />
+
+            {/* Right: Workout info */}
+            <View style={styles.sliderInfo}>
+              <View style={styles.sliderTopRow}>
+                <View
+                  style={[
+                    styles.sliderTypeBadge,
+                    { backgroundColor: theme.color + "25" },
+                  ]}
+                >
+                  <Ionicons
+                    name={theme.icon as any}
+                    size={14}
+                    color={theme.color}
+                  />
+                  <Text style={[styles.sliderTypeText, { color: theme.color }]}>
+                    {theme.name}
+                  </Text>
+                </View>
+                {isCompleted && (
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={18}
+                    color={COLORS.success}
+                  />
+                )}
+                {isMissed && (
+                  <Ionicons
+                    name="close-circle"
+                    size={18}
+                    color={THEME_COLORS.missed}
+                  />
+                )}
               </View>
-              {isCompleted && (
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color={COLORS.success}
-                />
-              )}
-              {isMissed && (
-                <Ionicons
-                  name="close-circle"
-                  size={18}
-                  color={THEME_COLORS.missed}
-                />
+
+              <Text style={styles.sliderTitle} numberOfLines={1}>
+                {workout.title}
+              </Text>
+
+              {workout.workout_type !== "rest" && (
+                <View style={styles.sliderMeta}>
+                  {workout.planned_duration > 0 && (
+                    <View style={styles.sliderMetaItem}>
+                      <Ionicons
+                        name="timer-outline"
+                        size={13}
+                        color={COLORS.textDim}
+                      />
+                      <Text style={styles.sliderMetaText}>
+                        {workout.planned_duration} dk
+                      </Text>
+                    </View>
+                  )}
+                  {workout.planned_distance > 0 && (
+                    <View style={styles.sliderMetaItem}>
+                      <Ionicons
+                        name="location-outline"
+                        size={13}
+                        color={COLORS.textDim}
+                      />
+                      <Text style={styles.sliderMetaText}>
+                        {workout.planned_distance} km
+                      </Text>
+                    </View>
+                  )}
+                </View>
               )}
             </View>
 
-            <Text style={styles.sliderTitle} numberOfLines={1}>
-              {workout.title}
-            </Text>
-
-            {workout.workout_type !== "rest" && (
-              <View style={styles.sliderMeta}>
-                {workout.planned_duration > 0 && (
-                  <View style={styles.sliderMetaItem}>
-                    <Ionicons
-                      name="timer-outline"
-                      size={13}
-                      color={COLORS.textDim}
-                    />
-                    <Text style={styles.sliderMetaText}>
-                      {workout.planned_duration} dk
-                    </Text>
-                  </View>
-                )}
-                {workout.planned_distance > 0 && (
-                  <View style={styles.sliderMetaItem}>
-                    <Ionicons
-                      name="location-outline"
-                      size={13}
-                      color={COLORS.textDim}
-                    />
-                    <Text style={styles.sliderMetaText}>
-                      {workout.planned_distance} km
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-
-          <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
-        </LinearGradient>
-      </Pressable>
-    );
-  }, [selectedDate, todayStr]);
+            <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
+          </LinearGradient>
+        </Pressable>
+      );
+    },
+    [selectedDate, todayStr],
+  );
 
   // --- CALENDAR DAY ---
   const renderCustomDay = ({
@@ -442,28 +445,28 @@ const CalendarScreen = () => {
     return (
       <Pressable
         onPress={() => handleDayPress(dateStr)}
-        style={[styles.dayContainer, !isCurrentMonth && { opacity: 0.5 }]}
+        style={[styles.dayContainer]}
       >
         <View
           style={[
             styles.dayBox,
             // Default: empty day
             !workout && {
-              backgroundColor: "#222",
+              backgroundColor: "#1C1C1C",
               borderColor: isSelected ? COLORS.text : "transparent",
               borderWidth: isSelected ? 1.5 : 0,
-              ...(isSelected && { backgroundColor: "#2A2A2A" }),
+              ...(isSelected && { backgroundColor: "#2E2E2E" }),
             },
             // Workout day: use theme color
             workout && {
               borderColor: theme?.color,
               borderWidth: 1.5,
-              backgroundColor: theme ? theme.color + "25" : "transparent",
+              backgroundColor: theme ? theme.color + "38" : "transparent",
             },
             // Selected day with workout: brighter bg + thicker border
             isSelected &&
               workout && {
-                backgroundColor: theme ? theme.color + "50" : "transparent",
+                backgroundColor: theme ? theme.color + "99" : "transparent",
                 borderWidth: 2,
               },
             // Today without workout: no special border
@@ -484,7 +487,7 @@ const CalendarScreen = () => {
                     ? COLORS.white
                     : isSelected
                       ? COLORS.text
-                      : "#999",
+                      : "#AAA",
                 fontWeight: workout || isToday || isSelected ? "800" : "500",
               },
             ]}
@@ -708,34 +711,34 @@ const styles = StyleSheet.create({
   sliderCardGradient: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
+    padding: 18,
     borderRadius: 20,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
   },
   sliderDateCol: {
     alignItems: "center",
-    width: 52,
+    width: 56,
   },
   sliderDayName: {
     color: COLORS.textDim,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     textTransform: "uppercase",
     marginBottom: 2,
   },
   sliderDayNum: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: "900",
   },
   sliderMonth: {
     color: COLORS.textDim,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
   },
   sliderSeparator: {
     width: 1,
-    height: 44,
+    height: 48,
     marginHorizontal: 14,
     borderRadius: 1,
   },
@@ -757,15 +760,15 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   sliderTypeText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
   },
   sliderTitle: {
     color: COLORS.text,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   sliderMeta: {
     flexDirection: "row",
@@ -778,7 +781,7 @@ const styles = StyleSheet.create({
   },
   sliderMetaText: {
     color: COLORS.textDim,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "600",
   },
 
