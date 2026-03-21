@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "runAI",
-    "slug": "runAI",
+    "name": "PaceUp",
+    "slug": "PaceUp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./src/assets/images/icon.png",
-    "scheme": "runai",
+    "scheme": "paceup",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
