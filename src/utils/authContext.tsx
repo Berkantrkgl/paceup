@@ -67,6 +67,7 @@ export type UserData = {
   // hesap bilgileri.
   remaining_tokens: number | null;
   can_use_chat: boolean;
+  is_onboarded: boolean;
 };
 
 type AuthState = {
@@ -319,13 +320,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!isReady) return;
     const inProtected = segments[0] === "(protected)";
+    const inOnboarding = segments[0] === "onboarding";
 
-    if (isLoggedIn && !inProtected) {
+    if (isLoggedIn && user?.is_onboarded === false && !inOnboarding) {
+      // Onboarding tamamlanmamış → onboarding ekranına yönlendir
+      router.replace("/onboarding");
+    } else if (isLoggedIn && user?.is_onboarded !== false && !inProtected) {
+      // Onboarding tamam, ana ekrana yönlendir
       router.replace("/");
-    } else if (!isLoggedIn && inProtected) {
+    } else if (!isLoggedIn && (inProtected || inOnboarding)) {
       router.replace("/login");
     }
-  }, [isLoggedIn, segments, isReady]);
+  }, [isLoggedIn, segments, isReady, user?.is_onboarded]);
 
   return (
     <AuthContext.Provider

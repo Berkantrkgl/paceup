@@ -32,6 +32,7 @@ function RootLayoutNav() {
   return (
     <Stack screenOptions={{ headerShown: false, animation: "none" }}>
       <Stack.Screen name="(protected)" />
+      <Stack.Screen name="onboarding" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
     </Stack>

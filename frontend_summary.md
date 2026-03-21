@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.6
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.7
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -31,8 +31,7 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
 
 ### A. Dashboard (`home/index.tsx`)
 
-- Aktif plan yoksa "İlk Adımı At" kartı + Chatbot yönlendirmesi
-- Aktif plan varsa Hero Stats + **Bugünün Antrenmanı Kartı**
+- Her zaman Hero Stats + **Bugünün Antrenmanı Kartı** gösterilir (eski "İlk Adımı At" onboarding kartı kaldırıldı)
 - `useFocusEffect` ile her odaklanmada veri yenilenir, `getValidToken()` kullanılır
 - **Bugünün Antrenmanı Kartı** (eski adı: "Sıradaki Antreman"):
   - Full-width kart, LinearGradient arka plan (antrenman tipi rengiyle)
@@ -143,6 +142,23 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
 - `login.tsx`: Email + şifre ile `POST /api/token/` → JWT access + refresh token
 - `register.tsx`: Ad, soyad, email, şifre ile `POST /api/users/` → otomatik login
 
+### Onboarding (`onboarding.tsx`)
+
+- **Tetiklenme:** İlk kez giriş yapan kullanıcılar (`is_onboarded === false`) otomatik yönlendirilir
+- **Navigation guard:** `authContext.tsx`'deki `useEffect` — login sonrası `user.is_onboarded === false` ise `/onboarding`'e replace
+- **Root layout:** `_layout.tsx`'de `onboarding` screen tanımlı (protected dışında, login/register ile aynı seviyede)
+- **7 Step (FlatList + horizontal paging):**
+  1. **Cinsiyet** — 3 kart (Erkek/Kadın/Diğer), tek seçim
+  2. **Doğum Tarihi** — `DateTimePicker` spinner mode, dark theme
+  3. **Boy** — `@react-native-picker/picker` ile kaydırmalı seçim (120-220 cm)
+  4. **Kilo** — `@react-native-picker/picker` ile kaydırmalı seçim (30-200 kg)
+  5. **Ortalama Pace** — Dakika:Saniye dual picker + "Pace'imi bilmiyorum" checkbox
+  6. **Maksimum Koşu Mesafesi** — Picker (1-100 km) + "Bilmiyorum" checkbox
+  7. **Koşu Günleri** — Haftalık gün chip seçimi (çoklu seçim)
+- **Bilmiyorum seçenekleri:** Pace ve Max Mesafe için — seçildiğinde picker soluklaşır (`opacity: 0.3`, `pointerEvents: "none"`), ilgili alan backend'e gönderilmez (default değerler geçerli: pace=480sn, max_distance=0)
+- **Tamamlama:** Son adımda `PATCH /api/users/me/` ile tüm bilgiler + `is_onboarded: true` gönderilir → `refreshUserData()` → navigation guard otomatik olarak ana ekrana yönlendirir
+- **Progress bar:** Animated üst çubuk, step ilerledikçe dolur
+
 ### Google Sign-In (Native)
 
 - **Paket:** `@react-native-google-signin/google-signin` (development build gerektirir)
@@ -172,6 +188,7 @@ isReady: boolean;
 **`UserData` Kritik Alanlar:**
 
 ```ts
+is_onboarded: boolean                      // false = onboarding tamamlanmamış
 is_premium: boolean
 premium_type?: "monthly" | "yearly" | null
 premium_expires_at?: string | null          // ISO datetime, backend lazy check ile expire kontrolü
@@ -268,6 +285,7 @@ src/
 │   ├── _layout.tsx                          # Root layout
 │   ├── login.tsx                            # Giriş ekranı
 │   ├── register.tsx                         # Kayıt ekranı
+│   ├── onboarding.tsx                       # Onboarding (7-step, ilk giriş)
 │   └── (protected)/
 │       ├── _layout.tsx                      # Auth guard layout
 │       ├── premium.tsx                      # Premium satın alma ekranı (modal presentation)
