@@ -21,7 +21,7 @@ import { AuthContext } from "@/utils/authContext";
 
 const RegisterScreen = () => {
     const router = useRouter();
-    const { register } = useContext(AuthContext);
+    const { register, googleSignIn } = useContext(AuthContext);
 
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
@@ -269,9 +269,7 @@ const RegisterScreen = () => {
                                     styles.oauthButton,
                                     pressed && { opacity: 0.75 },
                                 ]}
-                                onPress={() => {
-                                    // TODO: Google OAuth
-                                }}
+                                onPress={googleSignIn}
                             >
                                 <Ionicons
                                     name="logo-google"

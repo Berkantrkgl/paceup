@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.5
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.6
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -6,7 +6,7 @@ Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp m
 
 ## 1. Application Structure & Navigation
 
-Expo Router (dosya tabanlı yönlendirme) kullanılır.
+Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`npx expo run:ios`) ile çalıştırılır — native modüller (Google Sign-In vb.) desteklenir.
 
 **Tab Navigation — 4 Sekme:**
 
@@ -136,7 +136,29 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır.
 
 ---
 
-## 3. Global State — `AuthContext`
+## 3. Authentication & Social Login
+
+### Email/Şifre Giriş
+
+- `login.tsx`: Email + şifre ile `POST /api/token/` → JWT access + refresh token
+- `register.tsx`: Ad, soyad, email, şifre ile `POST /api/users/` → otomatik login
+
+### Google Sign-In (Native)
+
+- **Paket:** `@react-native-google-signin/google-signin` (development build gerektirir)
+- **Konfigürasyon:** `GoogleSignin.configure()` — `iosClientId` (iOS client) + `webClientId` (backend doğrulama için)
+- **`app.json` plugin:** `@react-native-google-signin/google-signin` ile `iosUrlScheme` otomatik eklenir
+- **Google Cloud Console:** 2 OAuth client — iOS tipi (native SDK için) + Web tipi (backend token doğrulama için)
+- **Akış:**
+  1. `GoogleSignin.signIn()` → native Google hesap seçim ekranı açılır
+  2. `idToken` alınır
+  3. `POST /api/auth/google/` → `{ id_token: "..." }` gönderilir
+  4. Backend token'ı doğrular, kullanıcı yoksa oluşturur, JWT access + refresh döner
+  5. Token'lar AsyncStorage'a kaydedilir, profil çekilir, giriş tamamlanır
+- **Hata yönetimi:** `SIGN_IN_CANCELLED` kodu sessizce yok sayılır (kullanıcı iptal etti)
+- Login ve Register ekranlarında aynı `googleSignIn` metodu kullanılır (AuthContext'ten)
+
+### AuthContext — Global State
 
 **Tutulan State:**
 
@@ -168,6 +190,7 @@ pace_display?: string
 - **Race condition koruması:** Birden fazla ekran aynı anda `getValidToken()` çağırsa bile tek bir `/token/refresh/` isteği gönderilir (singleton promise pattern)
 - **Network hatasında logout yok:** Sadece refresh token gerçekten geçersizse (HTTP 401) logout tetiklenir; network hatası / timeout durumunda null döner, kullanıcı oturumu korunur
 - `refreshUserData()`: `/users/me/` çekerek user state'i günceller — chatbot token güncellemesinden sonra çağrılır
+- `googleSignIn()`: Native Google Sign-In SDK ile giriş, backend'e id_token gönderir
 
 **API isteklerinde doğru kullanım:**
 
@@ -303,3 +326,5 @@ src/
 - **`current_pace` null:** Backend `null=True` ile işaretli. Frontend `null` değerini `--:--` gösterir.
 - **CalendarList horizontal sorunları:** `CalendarList` ile horizontal scroll, `ScrollView` içinde dikey kaydırmayla gesture çakışması yaratır. Bu nedenle `Calendar` + özel ok butonları + manuel swipe gesture tercih edildi.
 - **Premium ekranı mimari notu:** Eski `PremiumModal` (RN `Modal` + `PanResponder` ile swipe-to-dismiss) gesture çakışmaları nedeniyle terk edildi. Yerine `(protected)/premium.tsx` stack screen + `presentation: "modal"` kullanıldı — iOS native swipe-down gesture otomatik çalışır, ekstra kod gerektirmez.
+- **Development build zorunluluğu:** `@react-native-google-signin/google-signin` native modül gerektirdiğinden Expo Go'da çalışmaz. `npx expo run:ios` ile build alınır. JS kod değişiklikleri hot reload ile yansır, native değişikliklerde (yeni paket, plugin, `app.json`) tekrar build gerekir.
+- **Google OAuth client tipleri:** iOS client (native SDK, bundle ID: `com.anonymous.PaceUp`) ve Web client (backend'de `id_token` doğrulama) ayrı tutulur. `expo-auth-session` proxy yöntemi Expo Go'da sorunlu olduğundan terk edildi.

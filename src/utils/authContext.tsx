@@ -1,5 +1,6 @@
 import { API_URL } from "@/constants/Config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { useRouter, useSegments } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import {
@@ -10,6 +11,13 @@ import {
   useState,
 } from "react";
 import { Alert } from "react-native";
+
+GoogleSignin.configure({
+  iosClientId:
+    "your-google-ios-client-id.apps.googleusercontent.com",
+  webClientId:
+    "your-google-web-client-id.apps.googleusercontent.com",
+});
 
 // --- TİPLER ---
 export type UserData = {
@@ -73,9 +81,10 @@ type AuthState = {
     email: string,
     password: string,
   ) => Promise<void>;
+  googleSignIn: () => Promise<void>;
   logOut: () => void;
   refreshUserData: () => Promise<void>;
-  getValidToken: () => Promise<string | null>; // Chatbot için kritik ekleme
+  getValidToken: () => Promise<string | null>;
 };
 
 // --- CONSTANTS ---
@@ -93,6 +102,7 @@ export const AuthContext = createContext<AuthState>({
   user: null,
   logIn: async () => {},
   register: async () => {},
+  googleSignIn: async () => {},
   logOut: () => {},
   refreshUserData: async () => {},
   getValidToken: async () => null,
@@ -192,6 +202,43 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (validToken) await fetchUserProfile(validToken);
   };
 
+  // --- GOOGLE SIGN IN ---
+  const googleSignIn = async () => {
+    try {
+      await GoogleSignin.hasPlayServices();
+      const response = await GoogleSignin.signIn();
+
+      const idToken = response.data?.idToken;
+      if (!idToken) {
+        Alert.alert("Hata", "Google'dan token alınamadı.");
+        return;
+      }
+
+      // Backend'e id_token gönder — kullanıcı oluşturur/bulur, JWT döner
+      const res = await fetch(`${API_URL}/auth/google/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id_token: idToken }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.access && data.refresh) {
+        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+        await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+        setToken(data.access);
+        setIsLoggedIn(true);
+        await fetchUserProfile(data.access);
+      } else {
+        Alert.alert("Hata", data.detail || "Google ile giriş başarısız.");
+      }
+    } catch (e: any) {
+      if (e.code !== "SIGN_IN_CANCELLED") {
+        console.error("Google Sign-In error:", e);
+        Alert.alert("Hata", "Google ile giriş sırasında bir sorun oluştu.");
+      }
+    }
+  };
+
   // --- ACTIONS ---
   const logIn = async (email: string, password: string) => {
     try {
@@ -289,6 +336,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         user,
         logIn,
         register,
+        googleSignIn,
         logOut,
         refreshUserData,
         getValidToken, // Dışarıya açıldı!

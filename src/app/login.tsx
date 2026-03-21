@@ -19,7 +19,7 @@ import { COLORS } from "@/constants/Colors";
 import { AuthContext } from "@/utils/authContext";
 
 const LoginScreen = () => {
-    const { logIn } = useContext(AuthContext);
+    const { logIn, googleSignIn } = useContext(AuthContext);
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -204,9 +204,7 @@ const LoginScreen = () => {
                                     styles.oauthButton,
                                     pressed && { opacity: 0.75 },
                                 ]}
-                                onPress={() => {
-                                    // TODO: Google OAuth
-                                }}
+                                onPress={googleSignIn}
                             >
                                 <Ionicons
                                     name="logo-google"
