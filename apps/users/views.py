@@ -1,13 +1,24 @@
+import uuid
+import requests as http_requests
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from datetime import timedelta
 from django.utils import timezone
 
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+
 from apps.users.models import User
 from apps.users.serializers import UserSerializer, TOKEN_LIMIT_FREE
+
+import os
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -102,3 +113,75 @@ class UserViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
+
+
+class GoogleSignInView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        code = request.data.get("code")
+        redirect_uri = request.data.get("redirect_uri")
+        id_token_str = request.data.get("id_token")
+
+        # Code flow: code + redirect_uri geldiyse token exchange yap
+        if code:
+            if not redirect_uri:
+                return Response({"error": "redirect_uri gerekli."}, status=status.HTTP_400_BAD_REQUEST)
+
+            token_response = http_requests.post(
+                "https://oauth2.googleapis.com/token",
+                data={
+                    "code": code,
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "redirect_uri": redirect_uri,
+                    "grant_type": "authorization_code",
+                },
+            )
+
+            if token_response.status_code != 200:
+                return Response(
+                    {"error": "Google token exchange başarısız.", "details": token_response.json()},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+
+            id_token_str = token_response.json().get("id_token")
+
+        # id_token doğrulama (hem code flow hem eski flow için ortak)
+        if not id_token_str:
+            return Response({"error": "code veya id_token gerekli."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            idinfo = google_id_token.verify_oauth2_token(
+                id_token_str, google_requests.Request(), GOOGLE_CLIENT_ID
+            )
+        except ValueError:
+            return Response({"error": "Geçersiz Google token."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        email = idinfo.get("email")
+        first_name = idinfo.get("given_name", "")
+        last_name = idinfo.get("family_name", "")
+
+        if not email:
+            return Response({"error": "Google hesabında email bulunamadı."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "username": email.split("@")[0],
+                "first_name": first_name,
+                "last_name": last_name,
+                "password": uuid.uuid4().hex,
+            }
+        )
+
+        if created:
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "created": created,
+        })

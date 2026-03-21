@@ -1,4 +1,4 @@
-# 🛠️ PaceUp Backend Technical Architecture Documentation v2.6
+# 🛠️ PaceUp Backend Technical Architecture Documentation v2.7
 
 Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Design (DDD)** prensiplerine göre modüler PaceUp backend mimarisini tanımlar.
 
@@ -91,6 +91,19 @@ PACEUP-BACKEND/
 - Diğer tüm endpoint'ler `IsAuthenticated` gerektirir
 - Header: `Authorization: Bearer <access_token>`
 
+**Google Sign-In** (`POST /api/auth/google/`):
+
+İki flow desteklenir (backward compatible):
+
+1. **Authorization Code Flow (önerilen):** `{ "code": "...", "redirect_uri": "..." }` → Backend Google'a token exchange yapar → id_token doğrular → JWT döner
+2. **id_token Flow (eski):** `{ "id_token": "..." }` → Direkt doğrular → JWT döner
+
+- Google `id_token`'dan `email`, `given_name`, `family_name` çıkarılır
+- Email ile kullanıcı varsa → mevcut kullanıcı bulunur
+- Yoksa → yeni kullanıcı oluşturulur (`set_unusable_password`, username otomatik)
+- Response: `{ "access": "...", "refresh": "...", "created": true/false }`
+- Paket: `google-auth` (`google.oauth2.id_token`, `google.auth.transport.requests`)
+
 **REST Framework Config:**
 
 ```python
@@ -111,10 +124,11 @@ REST_FRAMEWORK = {
 | ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `POST /api/token/`                    | Login → `{ access, refresh }` JWT döner                                                                      |
 | `POST /api/token/refresh/`            | Refresh token → yeni access token                                                                            |
+| `POST /api/auth/google/`             | Google Sign-In: code flow veya id_token flow → `{ access, refresh, created }` döner                          |
 | `POST /api/users/`                    | Register (AllowAny) → user + JWT token döner                                                                 |
 | `GET/PATCH /api/users/me/`            | Profil + computed alanlar (`remaining_reschedules`, `active_program_id`, `remaining_tokens`, `can_use_chat`) |
 | `POST /api/users/update_token_usage/` | Chat sonrası token sayacını günceller, `can_use_chat` döner                                                  |
-| `POST /api/users/activate_premium/`   | Premium aktifle: `{ premium_type: "monthly" \| "yearly" }` alır, expire tarihi hesaplar                     |
+| `POST /api/users/activate_premium/`   | Premium aktifle: `{ premium_type: "monthly" \| "yearly" }` alır, expire tarihi hesaplar                      |
 | `POST /api/users/cancel_premium/`     | Premium iptal: `is_premium=False`, `premium_type=null`, `premium_expires_at=null` yapar                      |
 
 ### Programs & Workouts
