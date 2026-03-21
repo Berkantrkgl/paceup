@@ -219,8 +219,6 @@ const HomeScreen = () => {
   const totalDistance = user.total_distance?.toFixed(1) || "0.0";
   const streak = user.current_streak || 0;
 
-  const hasExistingPlan = totalWorkouts > 0 || todayWorkout !== null;
-
   const workoutStyle = todayWorkout
     ? getWorkoutTypeStyle(todayWorkout.workout_type)
     : null;
@@ -270,47 +268,7 @@ const HomeScreen = () => {
         </View>
 
         <View style={styles.contentOverlappingContainer}>
-          {/* --- PLAN YOKSA --- */}
-          {!hasExistingPlan ? (
-            <View style={styles.noPlanContainer}>
-              <View style={styles.noPlanIconCircle}>
-                <Ionicons name="footsteps" size={48} color={COLORS.accent} />
-              </View>
-              <Text style={styles.noPlanTitle}>İlk Adımı At</Text>
-              <Text style={styles.noPlanDesc}>
-                Henüz aktif bir koşu planın görünmüyor. Yapay zeka koçunla tanış
-                ve hedefine uygun sana özel programı hemen oluştur.
-              </Text>
-
-              <Link href={"/(protected)/(tabs)/plans/chatbot"} asChild>
-                <Pressable style={styles.createPlanButtonLarge}>
-                  <LinearGradient
-                    colors={[COLORS.accent, COLORS.secondary]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.createPlanGradient}
-                  >
-                    <Text style={styles.createPlanButtonText}>
-                      AI ile Plan Oluştur
-                    </Text>
-                    <Ionicons
-                      name="arrow-forward-circle"
-                      size={28}
-                      color={COLORS.white}
-                    />
-                  </LinearGradient>
-                </Pressable>
-              </Link>
-              <View style={styles.emptyStatsRow}>
-                <Text style={styles.emptyStatsText}>
-                  0 km Mesafe • 0 Antrenman
-                </Text>
-              </View>
-            </View>
-          ) : (
-            /* --- PLAN VARSA --- */
-            <>
-              {/* FLOATING STATS ROW */}
+          {/* FLOATING STATS ROW */}
               <View style={styles.floatingStatsContainer}>
                 {/* Distance (SOL) */}
                 <Link href={"/progress"} asChild push>
@@ -635,8 +593,6 @@ const HomeScreen = () => {
                   </LinearGradient>
                 </Pressable>
               </Link>
-            </>
-          )}
         </View>
         <View style={{ height: 100 }} />
       </ScrollView>
