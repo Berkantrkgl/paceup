@@ -1,0 +1,263 @@
+# 🛠️ PaceUp Backend Technical Architecture Documentation v2.5
+
+Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Design (DDD)** prensiplerine göre modüler PaceUp backend mimarisini tanımlar.
+
+---
+
+## 0. Project Structure
+
+```
+PACEUP-BACKEND/
+├── manage.py
+├── paceupbackend/          # Main Settings & URL Routing
+└── apps/
+    ├── users/              # Auth, User Model, Token & Kota Yönetimi
+    ├── programs/           # Program & Workout Modelleri
+    ├── activity/           # WorkoutResult & Signals (Business Logic)
+    ├── gamification/       # Achievement & Ödül Mantığı
+    ├── notifications/      # Notification Modeli
+    └── analytics/          # Sadece View Katmanı (Dashboard)
+```
+
+---
+
+## 1. Domain Models
+
+### A. `users` — User Model (AbstractUser)
+
+| Alan Grubu  | Alanlar                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------- |
+| Identity      | `id` (UUID), `email` (login), `username` (auto-generated), `profile_image`, `phone`, `date_of_birth` |
+| Physical      | `weight` (kg), `height` (cm), `gender` (male/female/other), `max_runned_distance`, `current_pace` (sn/km, nullable) |
+| Preferences   | `preferred_running_days` (JSON: `[0,2,4]` → 0=Pzt, 6=Paz)                                 |
+| SaaS          | `is_premium`, `total_tokens_used`, `reschedules_used_this_month`, `last_reschedule_reset` |
+| Stats         | `total_distance`, `total_workouts`, `total_time`, `current_streak`, `longest_streak`      |
+| Notifications | `push_token`, `timezone` (default UTC), `preferred_reminder_time`, `notification_workout_reminder`, `notification_weekly_report`, `notification_achievements`, `notification_plan_updates` |
+| Dynamic       | `active_program_id` — DB'de tutulmaz, Serializer'da anlık hesaplanır                      |
+| Computed      | `remaining_tokens`, `can_use_chat`, `remaining_reschedules`, `pace_display` — Serializer'da hesaplanır |
+
+**Model Metodları:**
+
+- `get_remaining_reschedules()` — Lazy Reset ile aylık hakkı döner
+- `use_reschedule()` — Hak varsa kullanır, yoksa False döner
+- `pace_display` (property) — `current_pace` saniyeyi `"5:30"` formatına çevirir
+
+### B. `programs`
+
+| Model   | Kritik Alanlar                                                                                                                                                                    |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Program | `title`, `description`, `goal`, `start_date`, `end_date`, `duration_weeks`, `running_days` (JSON), `status` (ACTIVE/INACTIVE/COMPLETED), `total_workouts_count`, `completed_workouts_count` |
+| Workout | `program` (FK), `title`, `description` (TextField, blank), `workout_type` (easy/tempo/interval/long), `scheduled_date`, `day_of_week` (auto), `planned_distance`, `planned_duration`, `target_pace_seconds`, `status` (SCHEDULED/COMPLETED/MISSED), `is_completed` |
+
+**Kurallar:**
+- Kullanıcı başına aynı anda yalnızca 1 ACTIVE program olabilir
+- `Workout.save()` otomatik olarak `day_of_week`'i `scheduled_date.weekday()`'den hesaplar
+- `Program.current_week_calculated` (property): Bugünün tarihine göre kaçıncı haftada olduğunu hesaplar
+- `Program.progress_percent` (property): `(completed / total) * 100`
+
+### C. `activity`
+
+| Model         | Kritik Alanlar                                                                                                                                  |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| WorkoutResult | `user` (FK), `workout` (OneToOne, opsiyonel), `actual_distance`, `actual_duration`, `actual_pace`, `calories_burned`, `feeling`, `completed_at` |
+
+### D. `gamification` & `notifications`
+
+- `Achievement`: `achievement_type`, `icon_name`, `icon_color`
+- `Notification`: `notification_type`, `related_workout`, `related_program`
+
+---
+
+## 2. Authentication & Authorization
+
+**JWT Authentication** (`rest_framework_simplejwt`):
+
+- `AUTH_USER_MODEL = 'users.User'` — Custom User, email ile login
+- `USERNAME_FIELD = 'email'`, `REQUIRED_FIELDS = ['username']`
+- `username` otomatik üretilir (`email.split('@')[0]`, çakışma varsa UUID suffix eklenir)
+
+**Token Akışı:**
+
+| Endpoint | Açıklama |
+| --- | --- |
+| `POST /api/token/` | Email + password → `{ access, refresh }` JWT token çifti döner |
+| `POST /api/token/refresh/` | Refresh token → yeni access token döner |
+
+**Register Akışı:**
+- `POST /api/users/` (AllowAny) → User oluşturur + otomatik JWT token çifti döner (`access` + `refresh`)
+- Diğer tüm endpoint'ler `IsAuthenticated` gerektirir
+- Header: `Authorization: Bearer <access_token>`
+
+**REST Framework Config:**
+
+```python
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    )
+}
+```
+
+---
+
+## 3. API Endpoints
+
+### Auth & Users (`/api/users/`)
+
+| Endpoint                              | Açıklama                                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `POST /api/token/`                    | Login → `{ access, refresh }` JWT döner                                                                      |
+| `POST /api/token/refresh/`            | Refresh token → yeni access token                                                                            |
+| `POST /api/users/`                    | Register (AllowAny) → user + JWT token döner                                                                 |
+| `GET/PATCH /api/users/me/`            | Profil + computed alanlar (`remaining_reschedules`, `active_program_id`, `remaining_tokens`, `can_use_chat`) |
+| `POST /api/users/update_token_usage/` | Chat sonrası token sayacını günceller, `can_use_chat` döner                                                  |
+| `POST /api/users/activate_premium/`   | Demo: `is_premium=True` yapar, güncel user serializer döner                                                  |
+
+### Programs & Workouts
+
+| Endpoint                              | Açıklama                                                      |
+| ------------------------------------- | ------------------------------------------------------------- |
+| `GET/POST /api/programs/`             | Kullanıcının programlarını listele / yeni program oluştur     |
+| `GET/PATCH/DELETE /api/programs/{id}/`| Program detay / güncelle / sil                                |
+| `POST /api/programs/create_ai_plan/`  | Eski aktif planı pasife çeker, yeni AI planı oluşturur        |
+| `POST /api/programs/{id}/activate/`   | Arşivden plan aktifleştirir                                   |
+| `POST /api/programs/{id}/reschedule/` | Kota kontrollü akıllı erteleme                                |
+| `GET /api/workouts/?only_active=true` | Takvim için filtreli veri, geçmiş yapılmamışları MISSED yapar |
+| `GET/PATCH /api/workouts/{id}/`       | Workout detay / güncelle                                      |
+| `GET/POST /api/results/`             | Antrenman sonuçlarını listele / yeni sonuç kaydet             |
+| `GET/PATCH/DELETE /api/results/{id}/`| Sonuç detay / güncelle / sil                                  |
+| `GET /api/achievements/`             | Kullanıcının rozetlerini listele                               |
+| `GET/PATCH /api/notifications/`      | Bildirimleri listele / okundu işaretle                         |
+
+### Analytics
+
+| Endpoint                  | Açıklama                             |
+| ------------------------- | ------------------------------------ |
+| `GET /api/stats/summary/` | Hero kartları, streak, haftalık özet |
+| `GET /api/stats/charts/`  | Grafik verisi (`?period=week/month`) |
+| `GET /api/stats/program/` | Aktif program özeti + Next Workout   |
+
+### `create_ai_plan` Payload Formatı
+
+```json
+{
+  "title": "5K Hızlandırma",
+  "description": "Opsiyonel program açıklaması",
+  "start_date": "2026-03-23",
+  "duration_weeks": 6,
+  "running_days": [0, 2, 4],
+  "goal": "5K",
+  "workouts": [
+    {
+      "title": "Kolay Koşu",
+      "description": "Isınma temposuyla rahat bir koşu",
+      "workout_type": "easy",
+      "day_offset": 0,
+      "distance_km": 3.0,
+      "duration_minutes": 24,
+      "target_pace_seconds": 480
+    }
+  ]
+}
+```
+
+- `day_offset`: `start_date`'den itibaren gün farkı (0 = ilk gün)
+- `running_days`: Backend'de program'a kaydedilir, reschedule'da kullanılır
+- Workout `description`: AI tarafından üretilen antrenman açıklaması (ısınma, tempo hedefi vb.)
+
+---
+
+## 4. Serializer — `UserSerializer`
+
+`SerializerMethodField` ile hesaplanan alanlar:
+
+```python
+TOKEN_LIMIT_FREE = 50000  # serializers.py'de tanımlı, views.py import eder
+
+get_remaining_reschedules → obj.get_remaining_reschedules()
+get_active_program_id     → obj.programs.filter(status='active').first()
+get_remaining_tokens      → None (premium) | max(0, 50000 - total_tokens_used)
+get_can_use_chat          → True (premium) | total_tokens_used < 50000
+```
+
+---
+
+## 5. Token & Premium Sistemi
+
+**Token Kullanım Mantığı:**
+
+- `total_tokens_used` her chat stream'inden sonra birikimli artar
+- Sıfırlama yok — üyelik başından itibaren toplam 50.000 token hakkı
+- `is_premium=True` olunca `total_tokens_used` güncellenmez, tüm kontroller bypass edilir
+
+**`update_token_usage` Akışı:**
+
+1. Frontend stream bitince `POST /users/update_token_usage/` → `{ tokens_used: N }`
+2. Premium değilse `total_tokens_used += N` güncellenir
+3. Response: `{ remaining_tokens, can_use_chat }`
+
+**`activate_premium` (Demo):**
+
+- `is_premium = True` kaydeder, serializer ile güncel user döner
+
+---
+
+## 6. Event-Driven Architecture (Signals)
+
+| Signal                  | Tetikleyici               | Aksiyon                                                                                                 |
+| ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `activity.signals`      | WorkoutResult save/delete | Workout → COMPLETED, program ilerlemesi güncellenir, user stats güncellenir, streak sıfırdan hesaplanır |
+| `gamification.signals`  | User update               | Eşik kontrolü, Achievement oluşturulur                                                                  |
+| `notifications.signals` | Achievement create        | Kullanıcıya bildirim oluşturulur                                                                        |
+
+**Signal Zinciri:** `WorkoutResult.save()` → activity signal (user stats güncelle + `user.save()`) → gamification signal (achievement kontrol) → notifications signal (bildirim oluştur)
+
+**WorkoutResult Auto-Calculations (save override):**
+- `actual_pace_seconds = (actual_duration * 60) / actual_distance`
+- `calories_burned = actual_distance * weight * burn_factor` (female: 0.97, male: 1.05)
+
+**Achievement Eşikleri:**
+- `total_workouts >= 1` → "İlk Adım" (footsteps, #4ECDC4)
+- `current_streak >= 3` → "Alev Modu 🔥" (flame, #FF4501)
+- `current_streak >= 7` → "Haftanın Yıldızı" (star, #FFD93D)
+- `total_distance >= 10` → "Şehir Gezgini" (map, #FF6B6B)
+
+---
+
+## 7. Teknik Notlar
+
+**Lazy Reset (Erteleme Kotası):** Cron job yok. `get_remaining_reschedules()` her çağrıda ay/yıl değişmişse o an sıfırlar.
+
+**Smart Rescheduling:** Geçmişte yapılmamış antrenmanları zincirin başına ekler, tüm zinciri kullanıcının aktif günlerine yeniden dağıtır.
+
+**Rest Day Optimization:** DB'de dinlenme günü tutulmaz, boş günler dinlenme kabul edilir.
+
+**AI Integration:** LangGraph sadece `/api/programs/create_ai_plan/` endpoint'i üzerinden konuşur, doğrudan DB erişimi yoktur.
+
+**Cross-App Relations:** Circular import'u önlemek için string reference kullanılır. Örn: `ForeignKey('programs.Workout', ...)`
+
+**Dynamic Fields:** `active_program_id`, `remaining_tokens`, `can_use_chat` DB'de tutulmaz, her `/me/` isteğinde Serializer hesaplar.
+
+**Auto-Missed Update:** `WorkoutViewSet.get_queryset()` her çağrıda geçmiş tarihli, tamamlanmamış antrenmanları otomatik `missed` yapar.
+
+**Workout Filtering:** `?only_active=true` (aktif program), `?start_date=` ve `?end_date=` query parametreleri desteklenir.
+
+**Database:** SQLite3 (development). Production için PostgreSQL önerilir.
+
+**Storage:** AWS S3 (`your-s3-bucket-name`, eu-central-1) — profil fotoğrafları için. `custom_storages.MediaStorage` kullanılır.
+
+---
+
+## Changelog
+
+### v2.4 → v2.5
+
+- ✅ Workout modeline `description` alanı eklendi (TextField, blank, default="")
+- ✅ `WorkoutSerializer`'a `description` eklendi
+- ✅ `create_ai_plan` view'da workout oluştururken `description` payload'dan okunuyor
+- ✅ Authentication & Authorization bölümü eklendi (JWT akışı, register, token refresh)
+- ✅ User model tablosuna eksik alanlar eklendi (Notifications grubu, phone, date_of_birth vb.)
+- ✅ Tüm endpoint'ler eklendi (achievements, notifications, workout CRUD, result CRUD)
+- ✅ `create_ai_plan` payload formatı dokümante edildi
+- ✅ Signal zinciri, auto-calculations ve achievement eşikleri detaylandırıldı
+- ✅ Auto-missed, workout filtering, storage notları eklendi
