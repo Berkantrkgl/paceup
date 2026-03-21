@@ -294,8 +294,6 @@ const CalendarScreen = () => {
   const renderSliderCard = useCallback(
     ({ item: workout }: { item: any }) => {
       const theme = getWorkoutTheme(workout.workout_type);
-      const isCompleted = workout.status === "completed";
-      const isMissed = workout.status === "missed";
       const isSelected = workout.scheduled_date === selectedDate;
 
       const dateObj = new Date(workout.scheduled_date);
@@ -366,20 +364,6 @@ const CalendarScreen = () => {
                     {theme.name}
                   </Text>
                 </View>
-                {isCompleted && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={18}
-                    color={COLORS.success}
-                  />
-                )}
-                {isMissed && (
-                  <Ionicons
-                    name="close-circle"
-                    size={18}
-                    color={THEME_COLORS.missed}
-                  />
-                )}
               </View>
 
               <Text style={styles.sliderTitle} numberOfLines={1}>
