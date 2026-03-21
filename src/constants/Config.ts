@@ -10,7 +10,7 @@ const getLocalIP = () => {
   const debuggerHost =
     Constants.expoConfig?.hostUri ??
     Constants.manifest2?.extra?.expoGo?.debuggerHost;
-  return debuggerHost?.split(":")[0] ?? "127.0.0.1";
+  return debuggerHost?.split(":")[0] ?? "192.168.1.7";
 };
 
 const HOST = USE_PHYSICAL_DEVICE ? getLocalIP() : "127.0.0.1";
