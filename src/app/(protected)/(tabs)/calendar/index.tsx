@@ -307,7 +307,7 @@ const CalendarScreen = () => {
       <Pressable
         onPress={() =>
           router.push({
-            pathname: "/calendar/detail_modal",
+            pathname: "/calendar/workout-detail",
             params: { workoutId: workout.id },
           })
         }

@@ -25,9 +25,9 @@ const _layout = () => {
                 }}
             />
             <Stack.Screen
-                name="detail_modal"
+                name="workout-detail"
                 options={{
-                    title: "Etkinlik Detayi",
+                    headerShown: false,
                     presentation: "modal",
                 }}
             />
