@@ -36,6 +36,13 @@ export default function ProtectedLayout() {
                     headerShown: false,
                 }}
             />
+            <Stack.Screen
+                name="premium"
+                options={{
+                    presentation: "modal",
+                    headerShown: false,
+                }}
+            />
         </Stack>
     );
 }

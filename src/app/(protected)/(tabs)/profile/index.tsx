@@ -22,10 +22,10 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 
-import { PremiumModal } from "@/components/PremiumModal";
 import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
+import { useRouter } from "expo-router";
 
 // ============================================================
 // SABİTLER
@@ -134,8 +134,27 @@ const ProfileScreen = () => {
 
   // Avatar Modal
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
-  // Premium Modal
-  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  // Premium
+  const router = useRouter();
+  const openPremium = () =>
+    router.push({ pathname: "/(protected)/premium", params: { reason: "general" } });
+
+  const handleCancelSubscription = async () => {
+    try {
+      const validToken = await getValidToken();
+      if (!validToken) return;
+      const res = await fetch(`${API_URL}/users/cancel_premium/`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${validToken}` },
+      });
+      if (res.ok) {
+        await refreshUserData();
+        Alert.alert("Abonelik İptal Edildi", "Premium aboneliğin başarıyla iptal edildi.");
+      }
+    } catch (e) {
+      console.error("Cancel subscription error:", e);
+    }
+  };
 
   // Toggle local state (optimistic update)
   const [toggleOverrides, setToggleOverrides] = useState<
@@ -543,7 +562,7 @@ const ProfileScreen = () => {
         {!user?.is_premium && (
           <TouchableOpacity
             style={[styles.upgradeCta, pct >= 90 && styles.upgradeCtaUrgent]}
-            onPress={() => setPremiumModalVisible(true)}
+            onPress={() => openPremium()}
             activeOpacity={0.85}
           >
             <Ionicons name="flash" size={14} color="#000" />
@@ -608,7 +627,7 @@ const ProfileScreen = () => {
               <Text style={styles.statDot}>•</Text>
               <TouchableOpacity
                 onPress={() =>
-                  !user?.is_premium && setPremiumModalVisible(true)
+                  !user?.is_premium && openPremium()
                 }
               >
                 <Text
@@ -738,9 +757,24 @@ const ProfileScreen = () => {
         <Section title="HESAP BİLGİLERİ">
           <InfoRow
             label="Üyelik Tipi"
-            value={user?.is_premium ? "Premium" : "Standart"}
+            value={
+              user?.is_premium
+                ? `Premium (${user.premium_type === "yearly" ? "Yıllık" : "Aylık"})`
+                : "Standart"
+            }
             isReadonly
           />
+          {user?.is_premium && user?.premium_expires_at && (
+            <InfoRow
+              label="Abonelik Bitiş"
+              value={new Date(user.premium_expires_at).toLocaleDateString("tr-TR", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+              isReadonly
+            />
+          )}
           <InfoRow
             label="Aylık Kalan Erteleme Hakkı"
             value={
@@ -749,8 +783,29 @@ const ProfileScreen = () => {
                 : `${user?.remaining_reschedules} / 2`
             }
             isReadonly
-            isLast
+            isLast={!user?.is_premium}
           />
+          {user?.is_premium && (
+            <TouchableOpacity
+              style={styles.cancelSubRow}
+              onPress={() =>
+                Alert.alert(
+                  "Aboneliği İptal Et",
+                  "Premium aboneliğini iptal etmek istediğine emin misin?",
+                  [
+                    { text: "Vazgeç", style: "cancel" },
+                    {
+                      text: "İptal Et",
+                      style: "destructive",
+                      onPress: handleCancelSubscription,
+                    },
+                  ],
+                )
+              }
+            >
+              <Text style={styles.cancelSubText}>Aboneliği İptal Et</Text>
+            </TouchableOpacity>
+          )}
         </Section>
 
         {/* SECTION 4: BİLDİRİM TERCİHLERİ */}
@@ -843,13 +898,6 @@ const ProfileScreen = () => {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
-
-      {/* Premium Modal */}
-      <PremiumModal
-        visible={premiumModalVisible}
-        onClose={() => setPremiumModalVisible(false)}
-        reason="general"
-      />
 
       {/* Avatar Modal */}
       <Modal
@@ -1262,6 +1310,17 @@ const styles = StyleSheet.create({
   },
   avatarModalBtnText: {
     color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  cancelSubRow: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.cardBorder,
+  },
+  cancelSubText: {
+    color: COLORS.danger,
     fontSize: 14,
     fontWeight: "600",
   },

@@ -28,7 +28,7 @@ import { AvailabilityTool } from "@/components/chat/tools/AvailabilityTool";
 import { PlanConfirmationTool } from "@/components/chat/tools/PlanConfirmationTool";
 import { ProgramSetupTool } from "@/components/chat/tools/ProgramSetupTool";
 import { RunnerProfileTool } from "@/components/chat/tools/RunnerProfileTool";
-import { PremiumModal } from "@/components/PremiumModal";
+import { useRouter } from "expo-router";
 
 // ============================================================
 // 💬 SABİTLER
@@ -148,6 +148,7 @@ const DynamicSystemMessage = ({
 // 📱 ANA EKRAN
 // ============================================================
 const ChatbotScreen = () => {
+  const router = useRouter();
   const { getValidToken, user, refreshUserData } = useContext(AuthContext);
   const flatListRef = useRef<FlatList>(null);
 
@@ -164,8 +165,8 @@ const ChatbotScreen = () => {
   const [canUseChat, setCanUseChat] = useState(true);
   const [remainingTokens, setRemainingTokens] = useState<number | null>(null);
 
-  // Premium modal
-  const [premiumModalVisible, setPremiumModalVisible] = useState(false);
+  const openPremium = (reason: string = "general") =>
+    router.push({ pathname: "/(protected)/premium", params: { reason } });
 
   const activeToolId = messages.find(
     (m) => m.sender === "tool_widget" && !m.toolData?.submitted,
@@ -183,7 +184,7 @@ const ChatbotScreen = () => {
   // Token dolunca otomatik modal aç
   useEffect(() => {
     if (!canUseChat) {
-      setPremiumModalVisible(true);
+      openPremium(!canUseChat ? "token_limit" : "general");
     }
   }, [canUseChat]);
 
@@ -237,7 +238,7 @@ const ChatbotScreen = () => {
   const connectAndStream = async (payloadMessages: any[]) => {
     // Token kontrolü — modal aç, mesaj gönderme
     if (!canUseChat) {
-      setPremiumModalVisible(true);
+      openPremium(!canUseChat ? "token_limit" : "general");
       return;
     }
 
@@ -597,7 +598,7 @@ const ChatbotScreen = () => {
       {!canUseChat && (
         <TouchableOpacity
           style={styles.tokenBlockedBanner}
-          onPress={() => setPremiumModalVisible(true)}
+          onPress={() => openPremium(!canUseChat ? "token_limit" : "general")}
           activeOpacity={0.8}
         >
           <Ionicons name="lock-closed" size={16} color="#FF5252" />
@@ -616,7 +617,7 @@ const ChatbotScreen = () => {
         remainingTokens < TOKEN_WARNING_THRESHOLD && (
           <TouchableOpacity
             style={styles.tokenWarningBanner}
-            onPress={() => setPremiumModalVisible(true)}
+            onPress={() => openPremium(!canUseChat ? "token_limit" : "general")}
             activeOpacity={0.8}
           >
             <Ionicons name="warning-outline" size={14} color="#FFA500" />
@@ -675,7 +676,7 @@ const ChatbotScreen = () => {
         />
         <TouchableOpacity
           onPress={
-            !canUseChat ? () => setPremiumModalVisible(true) : handleUserSend
+            !canUseChat ? () => openPremium(!canUseChat ? "token_limit" : "general") : handleUserSend
           }
           disabled={canUseChat && (!inputText.trim() || isSendDisabled)}
           style={[
@@ -693,12 +694,6 @@ const ChatbotScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Premium Modal */}
-      <PremiumModal
-        visible={premiumModalVisible}
-        onClose={() => setPremiumModalVisible(false)}
-        reason={!canUseChat ? "token_limit" : "general"}
-      />
     </KeyboardAvoidingView>
   );
 };

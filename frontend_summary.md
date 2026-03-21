@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.4
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.5
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -102,7 +102,7 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır.
   - `RunnerProfileTool`: Fiziksel profil doğrulama
   - `ProgramSetupTool`: Hedef/süre/başlangıç tarihi — başlangıç tarihi için **Bugün / Yarın / Gelecek Pzt** hızlı seçenekleri
   - `AvailabilityTool`: Koşu günleri seçimi
-- **Token Yönetimi:** Stream bitince biriken token sayısı `/users/update_token_usage/` endpoint'ine POST edilir, `canUseChat` false olunca `PremiumModal` açılır
+- **Token Yönetimi:** Stream bitince biriken token sayısı `/users/update_token_usage/` endpoint'ine POST edilir, `canUseChat` false olunca Premium ekranı açılır (`router.push`)
 
 ### G. Profile (`profile/index.tsx`)
 
@@ -114,8 +114,25 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır.
 - **Koşu Günleri:** Chip tabanlı çoklu seçim UI, değişiklik aktif programı etkilemez (yalnızca yeni planlar için baz alınır)
 - **Pace:** `null` değeri `--:--` olarak gösterilir; "Pace'imi bilmiyorum" seçeneği `null` gönderir
 - **Token Kartı:** Progress bar ile kullanım yüzdesi (%70+ turuncu, %90+ kırmızı), premium kullanıcıda "Sınırsız" badge
-- **Hesap Bilgileri:** Üyelik tipi, kalan erteleme hakkı
-- `PremiumModal` entegrasyonu
+- **Hesap Bilgileri:**
+  - Üyelik tipi: "Premium (Aylık)" / "Premium (Yıllık)" / "Standart"
+  - Abonelik bitiş tarihi (sadece premium, Türkçe format: "21 Mart 2027")
+  - Kalan erteleme hakkı (premium: "Sınırsız")
+  - **Aboneliği İptal Et:** Sadece premium kullanıcılar için görünür, onay Alert'i sonrası `POST /api/users/cancel_premium/` çağrılır
+- Premium ekranına `router.push("/(protected)/premium")` ile yönlendirme
+
+### H. Premium Ekranı (`(protected)/premium.tsx`)
+
+- **Stack screen**, `presentation: "modal"` — iOS native swipe-down gesture ile kapanır
+- `(protected)/_layout.tsx`'de tanımlı, `headerShown: false`
+- Her tab'dan `router.push({ pathname: "/(protected)/premium", params: { reason } })` ile açılır
+- `reason` parametresi: `token_limit` / `feature` / `general` — başlık ve açıklama buna göre değişir
+- **Özellikler listesi:** Sınırsız AI koçluğu, sınırsız erteleme, akıllı bildirimler
+- **Plan seçimi:** Aylık (₺149) / Yıllık (₺799, %55 tasarruf), radio button selection indicator
+- **Satın alma:** `POST /api/users/activate_premium/` → `{ premium_type: "monthly" | "yearly" }` gönderir
+- Başarı sonrası `refreshUserData()` + 1.8sn delay ile `router.back()`
+- ScrollView ile içerik kaydırılabilir, native modal gesture ile çakışmaz
+- Eski `components/PremiumModal.tsx` (RN Modal + PanResponder) kaldırıldı, yerine bu native stack screen geldi
 
 ---
 
@@ -134,12 +151,14 @@ isReady: boolean;
 
 ```ts
 is_premium: boolean
+premium_type?: "monthly" | "yearly" | null
+premium_expires_at?: string | null          // ISO datetime, backend lazy check ile expire kontrolü
 total_tokens_used: number
-remaining_tokens: number | null   // null = premium (sınırsız)
+remaining_tokens: number | null             // null = premium (sınırsız)
 can_use_chat: boolean
 remaining_reschedules: number
-preferred_running_days: number[]  // [0,2,4] → 0=Pzt, 6=Paz
-current_pace: number | null       // saniye/km, null = bilinmiyor
+preferred_running_days: number[]            // [0,2,4] → 0=Pzt, 6=Paz
+current_pace: number | null                 // saniye/km, null = bilinmiyor
 pace_display?: string
 ```
 
@@ -164,20 +183,28 @@ const { token } = useContext(AuthContext);
 
 ## 4. Premium & Token Sistemi
 
-**Akış:**
+**Premium Abonelik Akışı:**
+
+1. Kullanıcı Premium ekranını açar (`router.push("/(protected)/premium")`)
+2. Aylık veya Yıllık plan seçer
+3. `POST /api/users/activate_premium/` → `{ premium_type: "monthly" | "yearly" }` gönderilir
+4. Backend `premium_expires_at` hesaplar (monthly: +30 gün, yearly: +365 gün), `is_premium=true` yapar
+5. `refreshUserData()` ile AuthContext güncellenir
+6. **Lazy expiry:** Backend `UserSerializer.to_representation()` her serialize'da `check_premium_status()` çağırır — expire olmuşsa otomatik `is_premium=false` yapar
+
+**Abonelik İptali:**
+
+- Profile → Hesap Bilgileri → "Aboneliği İptal Et" (sadece premium)
+- Onay Alert'i → `POST /api/users/cancel_premium/`
+- Backend: `is_premium=false`, `premium_type=null`, `premium_expires_at=null`
+
+**Token Kullanım Akışı:**
 
 1. Her chat stream'inde FastAPI `token_usage` SSE eventi gönderir
 2. Frontend stream bitince biriken token'ı `/users/update_token_usage/` POST eder
 3. Response'dan `remaining_tokens` ve `can_use_chat` güncellenir
 4. `refreshUserData()` çağrılarak AuthContext ve Profile sayfası senkronize olur
-5. `can_use_chat: false` → `PremiumModal` otomatik açılır
-
-**`PremiumModal` (`components/PremiumModal.tsx`):**
-
-- Alttan kayan bottom sheet, `reason` prop'u ile başlık değişir (`token_limit` / `feature` / `general`)
-- Aylık / Yıllık plan seçimi
-- Demo satın alma: `/users/activate_premium/` POST → `is_premium: true` yapar
-- Her yerden `<PremiumModal visible={...} onClose={...} reason="..." />` ile kullanılır
+5. `can_use_chat: false` → Premium ekranı otomatik açılır (`reason: "token_limit"`)
 
 ---
 
@@ -220,6 +247,7 @@ src/
 │   ├── register.tsx                         # Kayıt ekranı
 │   └── (protected)/
 │       ├── _layout.tsx                      # Auth guard layout
+│       ├── premium.tsx                      # Premium satın alma ekranı (modal presentation)
 │       └── (tabs)/
 │           ├── _layout.tsx                  # Tab bar konfigürasyonu
 │           ├── (home)/
@@ -249,7 +277,6 @@ src/
 │       ├── android-icon-background.png
 │       └── android-icon-monochrome.png
 ├── components/
-│   ├── PremiumModal.tsx                     # Premium satın alma bottom sheet
 │   └── chat/
 │       └── tools/
 │           ├── AvailabilityTool.tsx          # Koşu günleri seçim widget
@@ -275,3 +302,4 @@ src/
 - **Image Picker (iOS):** Modal kapatıldıktan sonra picker açılması için `animationType="none"` + `setTimeout(..., 100)` gereklidir. `MediaTypeOptions` deprecated — `mediaTypes: "images"` string literal kullanılır.
 - **`current_pace` null:** Backend `null=True` ile işaretli. Frontend `null` değerini `--:--` gösterir.
 - **CalendarList horizontal sorunları:** `CalendarList` ile horizontal scroll, `ScrollView` içinde dikey kaydırmayla gesture çakışması yaratır. Bu nedenle `Calendar` + özel ok butonları + manuel swipe gesture tercih edildi.
+- **Premium ekranı mimari notu:** Eski `PremiumModal` (RN `Modal` + `PanResponder` ile swipe-to-dismiss) gesture çakışmaları nedeniyle terk edildi. Yerine `(protected)/premium.tsx` stack screen + `presentation: "modal"` kullanıldı — iOS native swipe-down gesture otomatik çalışır, ekstra kod gerektirmez.

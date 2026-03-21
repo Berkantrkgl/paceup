@@ -39,8 +39,10 @@ export type UserData = {
   longest_streak: number;
   profile_image?: string | null;
 
-  // Yeni Eklenen Alanlar
+  // Premium & SaaS
   is_premium: boolean;
+  premium_type?: "monthly" | "yearly" | null;
+  premium_expires_at?: string | null;
   total_tokens_used: number;
   preferred_running_days: number[];
   remaining_reschedules: number;
