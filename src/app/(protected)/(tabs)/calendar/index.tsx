@@ -220,38 +220,44 @@ const CalendarScreen = () => {
         });
         setWorkoutsMap(map);
 
-        // Check: bugüne en yakın geçmiş workout missed ise popup aç
-        if (!rescheduleChecked.current && data.length > 0) {
-          rescheduleChecked.current = true;
-          const today = new Date().toISOString().split("T")[0];
+        // Missed workout check — her fetch sonrası güncelle
+        const today = new Date().toISOString().split("T")[0];
+        const pastWorkouts = data
+          .filter((w: any) => w.scheduled_date < today)
+          .sort((a: any, b: any) =>
+            a.scheduled_date.localeCompare(b.scheduled_date),
+          );
 
-          // Geçmiş workout'ları tarihe göre sırala (en yenisi sonda)
-          const pastWorkouts = data
-            .filter((w: any) => w.scheduled_date < today)
-            .sort((a: any, b: any) =>
-              a.scheduled_date.localeCompare(b.scheduled_date),
-            );
-
-          if (pastWorkouts.length > 0) {
-            // En son geçmiş workout missed ise → popup aç
-            const lastPast = pastWorkouts[pastWorkouts.length - 1];
-            if (lastPast.status === "missed") {
-              // Sondan geriye doğru ardışık missed zincirini bul
-              const missed: any[] = [];
-              for (let i = pastWorkouts.length - 1; i >= 0; i--) {
-                if (pastWorkouts[i].status === "missed") {
-                  missed.unshift(pastWorkouts[i]);
-                } else {
-                  break;
-                }
+        if (pastWorkouts.length > 0) {
+          const lastPast = pastWorkouts[pastWorkouts.length - 1];
+          if (lastPast.status === "missed") {
+            // Sondan geriye doğru ardışık missed zincirini bul
+            const missed: any[] = [];
+            for (let i = pastWorkouts.length - 1; i >= 0; i--) {
+              if (pastWorkouts[i].status === "missed") {
+                missed.unshift(pastWorkouts[i]);
+              } else {
+                break;
               }
-              setMissedWorkout(lastPast);
-              setMissedWorkouts(missed);
+            }
+            setMissedWorkout(lastPast);
+            setMissedWorkouts(missed);
+
+            // Popup sadece session'da ilk kez gösterilsin
+            if (!rescheduleChecked.current) {
+              rescheduleChecked.current = true;
               setSelectedRescheduleDate(null);
               setShowMissedList(false);
               setShowRescheduleModal(true);
             }
+          } else {
+            // Artık missed yok → temizle
+            setMissedWorkout(null);
+            setMissedWorkouts([]);
           }
+        } else {
+          setMissedWorkout(null);
+          setMissedWorkouts([]);
         }
       }
     } catch (error) {
@@ -349,7 +355,19 @@ const CalendarScreen = () => {
   // --- TWO-WAY SYNC ---
 
   // When calendar day is tapped → scroll slider to that workout
+  // Double-tap (already selected) → open detail
   const handleDayPress = (dateStr: string) => {
+    if (dateStr === selectedDate) {
+      const workout = workoutsMap[dateStr];
+      if (workout) {
+        router.push({
+          pathname: "/calendar/workout-detail",
+          params: { workoutId: workout.id },
+        });
+      }
+      return;
+    }
+
     setSelectedDate(dateStr);
 
     const idx = sortedWorkouts.findIndex((w) => w.scheduled_date === dateStr);
@@ -758,6 +776,43 @@ const CalendarScreen = () => {
             );
           })}
         </View>
+
+        {/* RESCHEDULE INLINE SECTION */}
+        {missedWorkout && (
+          <Pressable
+            style={styles.rescheduleSection}
+            onPress={() => {
+              setSelectedRescheduleDate(null);
+              setShowMissedList(false);
+              setShowRescheduleModal(true);
+            }}
+          >
+            <View style={styles.rescheduleSectionLeft}>
+              <View style={styles.rescheduleSectionIcon}>
+                <Ionicons
+                  name="alert-circle"
+                  size={20}
+                  color={COLORS.warning}
+                />
+              </View>
+              <View>
+                <Text style={styles.rescheduleSectionTitle}>
+                  {missedWorkouts.length > 1
+                    ? `${missedWorkouts.length} kaçırılan antrenman`
+                    : "Kaçırılan antrenman"}
+                </Text>
+                <Text style={styles.rescheduleSectionDesc}>
+                  Planını kaydırmak için dokun
+                </Text>
+              </View>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={COLORS.textDim}
+            />
+          </Pressable>
+        )}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -1173,6 +1228,45 @@ const styles = StyleSheet.create({
     color: COLORS.textDim,
     fontSize: 11,
     fontWeight: "600",
+  },
+
+  // RESCHEDULE INLINE SECTION
+  rescheduleSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginHorizontal: 20,
+    marginTop: 20,
+    backgroundColor: COLORS.card,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: `${COLORS.warning}30`,
+  },
+  rescheduleSectionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  rescheduleSectionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: `${COLORS.warning}15`,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rescheduleSectionTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  rescheduleSectionDesc: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: "500",
+    marginTop: 2,
   },
 
   // RESCHEDULE MODAL
