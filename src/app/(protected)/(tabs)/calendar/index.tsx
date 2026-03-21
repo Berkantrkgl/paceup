@@ -14,8 +14,12 @@ import React, {
   useState,
 } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
+  LayoutAnimation,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -142,7 +146,7 @@ const getWorkoutTheme = (type: WorkoutTypeEnum) => {
 };
 
 const CalendarScreen = () => {
-  const { getValidToken } = useContext(AuthContext);
+  const { getValidToken, user, refreshUserData } = useContext(AuthContext);
   const params = useLocalSearchParams();
   const navigation = useNavigation();
   const sliderRef = useRef<FlatList>(null);
@@ -157,6 +161,17 @@ const CalendarScreen = () => {
   const [workoutsMap, setWorkoutsMap] = useState<any>({});
   const [refreshing, setRefreshing] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(todayStr);
+
+  // Reschedule state
+  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
+  const [isRescheduling, setIsRescheduling] = useState(false);
+  const [missedWorkout, setMissedWorkout] = useState<any>(null);
+  const [missedWorkouts, setMissedWorkouts] = useState<any[]>([]);
+  const [showMissedList, setShowMissedList] = useState(false);
+  const [selectedRescheduleDate, setSelectedRescheduleDate] = useState<
+    string | null
+  >(null);
+  const rescheduleChecked = useRef(false);
 
   // Sorted workouts for slider (by date) — memoized to prevent re-renders
   const sortedWorkouts = React.useMemo(
@@ -204,9 +219,118 @@ const CalendarScreen = () => {
           if (!map[w.scheduled_date]) map[w.scheduled_date] = w;
         });
         setWorkoutsMap(map);
+
+        // Check: bugüne en yakın geçmiş workout missed ise popup aç
+        if (!rescheduleChecked.current && data.length > 0) {
+          rescheduleChecked.current = true;
+          const today = new Date().toISOString().split("T")[0];
+
+          // Geçmiş workout'ları tarihe göre sırala (en yenisi sonda)
+          const pastWorkouts = data
+            .filter((w: any) => w.scheduled_date < today)
+            .sort((a: any, b: any) =>
+              a.scheduled_date.localeCompare(b.scheduled_date),
+            );
+
+          if (pastWorkouts.length > 0) {
+            // En son geçmiş workout missed ise → popup aç
+            const lastPast = pastWorkouts[pastWorkouts.length - 1];
+            if (lastPast.status === "missed") {
+              // Sondan geriye doğru ardışık missed zincirini bul
+              const missed: any[] = [];
+              for (let i = pastWorkouts.length - 1; i >= 0; i--) {
+                if (pastWorkouts[i].status === "missed") {
+                  missed.unshift(pastWorkouts[i]);
+                } else {
+                  break;
+                }
+              }
+              setMissedWorkout(lastPast);
+              setMissedWorkouts(missed);
+              setSelectedRescheduleDate(null);
+              setShowMissedList(false);
+              setShowRescheduleModal(true);
+            }
+          }
+        }
       }
     } catch (error) {
       console.log("Fetch Error:", error);
+    }
+  };
+
+  // --- RESCHEDULE ---
+  const getNextRunningDays = (): { label: string; date: string }[] => {
+    const runningDays: number[] = user?.preferred_running_days || [];
+    if (runningDays.length === 0) return [];
+
+    const DAY_NAMES = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+    const MONTH_NAMES = [
+      "Oca", "Şub", "Mar", "Nis", "May", "Haz",
+      "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara",
+    ];
+
+    const results: { label: string; date: string }[] = [];
+    const cursor = new Date();
+    cursor.setDate(cursor.getDate() + 1); // Yarından başla
+
+    while (results.length < 4) {
+      // preferred_running_days: 0=Pzt, 6=Paz (backend convention)
+      const dayOfWeek = (cursor.getDay() + 6) % 7; // JS Sunday=0 → 0=Pzt
+      if (runningDays.includes(dayOfWeek)) {
+        const y = cursor.getFullYear();
+        const m = String(cursor.getMonth() + 1).padStart(2, "0");
+        const d = String(cursor.getDate()).padStart(2, "0");
+        const dateStr = `${y}-${m}-${d}`;
+        const dayName = DAY_NAMES[dayOfWeek];
+        const monthName = MONTH_NAMES[cursor.getMonth()];
+        results.push({
+          label: `${dayName}, ${cursor.getDate()} ${monthName}`,
+          date: dateStr,
+        });
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return results;
+  };
+
+  const handleReschedule = async (startDate: string) => {
+    if (!missedWorkout) return;
+    const programId = missedWorkout.program;
+    if (!programId) {
+      Alert.alert("Hata", "Aktif program bulunamadı.");
+      return;
+    }
+
+    setIsRescheduling(true);
+    const validToken = await getValidToken();
+    try {
+      const res = await fetch(
+        `${API_URL}/programs/${programId}/reschedule/`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${validToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ start_date: startDate }),
+        },
+      );
+
+      if (res.status === 403) {
+        const data = await res.json();
+        Alert.alert("Erteleme Hakkı Doldu", data.error);
+      } else if (res.ok) {
+        setShowRescheduleModal(false);
+        await Promise.all([fetchWorkouts(), refreshUserData()]);
+        Alert.alert("Başarılı", "Planın güncellendi.");
+      } else {
+        Alert.alert("Hata", "Erteleme işlemi başarısız oldu.");
+      }
+    } catch {
+      Alert.alert("Hata", "Bağlantı hatası.");
+    } finally {
+      setIsRescheduling(false);
     }
   };
 
@@ -637,6 +761,201 @@ const CalendarScreen = () => {
 
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* ========== RESCHEDULE MODAL ========== */}
+      <Modal
+        visible={showRescheduleModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowRescheduleModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <ScrollView
+              bounces={false}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ padding: 24 }}
+            >
+            {/* Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalIconCircle}>
+                <Ionicons
+                  name="calendar-outline"
+                  size={28}
+                  color={COLORS.accent}
+                />
+              </View>
+              <Text style={styles.modalTitle}>
+                {missedWorkouts.length > 1
+                  ? `${missedWorkouts.length} Kaçırılan Antrenman`
+                  : "Kaçırılan Antrenman"}
+              </Text>
+              <Text style={styles.modalDesc}>
+                Kaçırdığın antrenmanları ileri bir koşu gününe kaydırmak ister
+                misin?
+              </Text>
+            </View>
+
+            {/* Collapsible missed workouts list */}
+            {missedWorkouts.length > 0 && (
+              <View style={styles.missedSection}>
+                <Pressable
+                  style={styles.missedToggle}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(
+                      LayoutAnimation.Presets.easeInEaseOut,
+                    );
+                    setShowMissedList(!showMissedList);
+                  }}
+                >
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={COLORS.danger}
+                  />
+                  <Text style={styles.missedToggleText}>
+                    {missedWorkouts.length} kaçırılan antrenmanı gör
+                  </Text>
+                  <Ionicons
+                    name={showMissedList ? "chevron-up" : "chevron-down"}
+                    size={16}
+                    color={COLORS.textDim}
+                  />
+                </Pressable>
+                {showMissedList && (
+                  <View style={styles.missedList}>
+                    {missedWorkouts.map((w: any) => {
+                      const theme = getWorkoutTheme(w.workout_type);
+                      const d = new Date(w.scheduled_date + "T00:00:00");
+                      const dayName = d.toLocaleDateString("tr-TR", {
+                        weekday: "short",
+                      });
+                      const dayNum = d.getDate();
+                      const month = d.toLocaleDateString("tr-TR", {
+                        month: "short",
+                      });
+                      return (
+                        <View key={w.id} style={styles.missedItem}>
+                          <View
+                            style={[
+                              styles.missedItemDot,
+                              { backgroundColor: theme.color },
+                            ]}
+                          />
+                          <Text style={styles.missedItemDate}>
+                            {dayName}, {dayNum} {month}
+                          </Text>
+                          <Text style={styles.missedItemType}>
+                            {theme.name}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Warning */}
+            <View style={styles.modalWarning}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={COLORS.warning}
+              />
+              <Text style={styles.modalWarningText}>
+                Bu işlem tüm antrenmanları yeniden sıralayacak. Uzun koşu
+                günlerin değişebilir.
+              </Text>
+            </View>
+
+            {/* Remaining reschedules */}
+            {user && !user.is_premium && (
+              <Text style={styles.modalRemainingText}>
+                Kalan erteleme hakkı: {user.remaining_reschedules}/2
+              </Text>
+            )}
+
+            {/* Date options */}
+            <View style={styles.modalDates}>
+              {getNextRunningDays().map((day) => (
+                <Pressable
+                  key={day.date}
+                  style={({ pressed }) => [
+                    styles.modalDateButton,
+                    selectedRescheduleDate === day.date &&
+                      styles.modalDateButtonSelected,
+                    pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
+                  ]}
+                  onPress={() => setSelectedRescheduleDate(day.date)}
+                  disabled={isRescheduling}
+                >
+                  <Ionicons
+                    name={
+                      selectedRescheduleDate === day.date
+                        ? "checkmark-circle"
+                        : "ellipse-outline"
+                    }
+                    size={20}
+                    color={
+                      selectedRescheduleDate === day.date
+                        ? COLORS.accent
+                        : COLORS.textDim
+                    }
+                  />
+                  <Text
+                    style={[
+                      styles.modalDateText,
+                      selectedRescheduleDate === day.date && {
+                        color: COLORS.accent,
+                      },
+                    ]}
+                  >
+                    {day.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Confirm button */}
+            <Pressable
+              style={({ pressed }) => [
+                styles.modalConfirmButton,
+                !selectedRescheduleDate && styles.modalConfirmButtonDisabled,
+                pressed &&
+                  selectedRescheduleDate && {
+                    opacity: 0.8,
+                    transform: [{ scale: 0.97 }],
+                  },
+              ]}
+              onPress={() => {
+                if (selectedRescheduleDate) {
+                  handleReschedule(selectedRescheduleDate);
+                }
+              }}
+              disabled={!selectedRescheduleDate || isRescheduling}
+            >
+              {isRescheduling ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.modalConfirmText}>Ertele</Text>
+              )}
+            </Pressable>
+
+            {/* Dismiss */}
+            <Pressable
+              style={styles.modalDismiss}
+              onPress={() => {
+                setSelectedRescheduleDate(null);
+                setShowRescheduleModal(false);
+              }}
+            >
+              <Text style={styles.modalDismissText}>Şimdilik Geç</Text>
+            </Pressable>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -853,6 +1172,173 @@ const styles = StyleSheet.create({
   legendText: {
     color: COLORS.textDim,
     fontSize: 11,
+    fontWeight: "600",
+  },
+
+  // RESCHEDULE MODAL
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  modalContainer: {
+    width: "100%",
+    maxHeight: "80%",
+    backgroundColor: COLORS.card,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    overflow: "hidden",
+  },
+  modalHeader: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORS.accent + "18",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  modalTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  modalDesc: {
+    color: COLORS.textDim,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  modalWarning: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: COLORS.warning + "12",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  modalWarningText: {
+    color: COLORS.warning,
+    fontSize: 12,
+    fontWeight: "600",
+    flex: 1,
+    lineHeight: 18,
+  },
+  modalRemainingText: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: "600",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  modalDates: {
+    gap: 8,
+    marginBottom: 8,
+  },
+  modalDateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: COLORS.cardVariant,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  modalDateButtonSelected: {
+    borderColor: COLORS.accent,
+    backgroundColor: `${COLORS.accent}15`,
+  },
+  modalConfirmButton: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  modalConfirmButtonDisabled: {
+    opacity: 0.4,
+  },
+  modalConfirmText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  modalDateText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  missedSection: {
+    marginBottom: 8,
+  },
+  missedToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: COLORS.cardVariant,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  missedToggleText: {
+    flex: 1,
+    color: COLORS.textDim,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  missedList: {
+    marginTop: 6,
+    gap: 4,
+  },
+  missedItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    backgroundColor: COLORS.cardVariant,
+    borderRadius: 10,
+  },
+  missedItemDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  missedItemDate: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  missedItemType: {
+    color: COLORS.textDim,
+    fontSize: 12,
+    fontWeight: "500",
+    marginLeft: "auto" as const,
+  },
+  modalDismiss: {
+    alignItems: "center",
+    paddingVertical: 14,
+    marginTop: 4,
+  },
+  modalDismissText: {
+    color: COLORS.textDim,
+    fontSize: 14,
     fontWeight: "600",
   },
 });
