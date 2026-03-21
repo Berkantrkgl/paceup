@@ -27,9 +27,11 @@ class Command(BaseCommand):
         # 3. KULLANICI OLUŞTURMA (BERKAN & AYŞENAZ)
         users_data = [
             {
-                "first": "Berkan", 
-                "last": "Standart", 
-                "is_premium": False, 
+                "first": "Berkan",
+                "last": "Standart",
+                "is_premium": False,
+                "premium_type": None,
+                "premium_expires_at": None,
                 "days": [1, 3, 5], # Salı, Perşembe, Cumartesi
                 "max_dist": 10.0,
                 "pace": 360,
@@ -39,9 +41,11 @@ class Command(BaseCommand):
                 "dob": datetime.date(2001, 3, 26) # 26 Mart 2001
             },
             {
-                "first": "Aysenaz", 
-                "last": "Premium", 
-                "is_premium": True, 
+                "first": "Aysenaz",
+                "last": "Premium",
+                "is_premium": True,
+                "premium_type": "yearly",
+                "premium_expires_at": timezone.now() + datetime.timedelta(days=330), # ~11 ay kaldı
                 "days": [0, 2, 4, 6], # Pzt, Çar, Cuma, Pazar
                 "max_dist": 21.1,
                 "pace": 310,
@@ -70,6 +74,8 @@ class Command(BaseCommand):
             user.weight = u['weight']
             user.height = u['height']
             user.is_premium = u['is_premium']
+            user.premium_type = u['premium_type']
+            user.premium_expires_at = u['premium_expires_at']
             user.preferred_running_days = u['days']
             user.max_runned_distance = u['max_dist']
             user.current_pace = u['pace']
@@ -77,7 +83,8 @@ class Command(BaseCommand):
             
             user.save()
             created_users.append(user)
-            self.stdout.write(f"Kullanıcı oluşturuldu: {user.first_name} (Doğum: {user.date_of_birth}, Premium: {user.is_premium})")
+            premium_info = f"{user.premium_type}, expires: {user.premium_expires_at}" if user.is_premium else "Free"
+            self.stdout.write(f"Kullanıcı oluşturuldu: {user.first_name} ({premium_info})")
 
         # 4. PROGRAM & WORKOUT OLUŞTURMA
         for user in created_users:

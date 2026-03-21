@@ -30,7 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
             'notification_workout_reminder', 'notification_weekly_report',
             'notification_achievements', 'notification_plan_updates',
             # SaaS
-            'is_premium', 'total_tokens_used',
+            'is_premium', 'premium_type', 'premium_expires_at', 'total_tokens_used',
             # Computed
             'remaining_reschedules',
             'active_program_id',
@@ -44,7 +44,12 @@ class UserSerializer(serializers.ModelSerializer):
             'total_tokens_used',
             'remaining_reschedules', 'active_program_id',
             'remaining_tokens', 'can_use_chat',
+            'is_premium', 'premium_type', 'premium_expires_at',
         ]
+
+    def to_representation(self, instance):
+        instance.check_premium_status()
+        return super().to_representation(instance)
 
     def get_remaining_reschedules(self, obj):
         return obj.get_remaining_reschedules()

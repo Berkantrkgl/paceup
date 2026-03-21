@@ -35,9 +35,15 @@ class User(AbstractUser):
     current_streak = models.IntegerField(default=0)
     longest_streak = models.IntegerField(default=0)
     
-    # Reschedule Limit Mantığı
+    # Premium & SaaS
     total_tokens_used = models.IntegerField(default=0, help_text="Chatbot token kullanımı")
     is_premium = models.BooleanField(default=False)
+    premium_type = models.CharField(
+        max_length=10,
+        choices=[('monthly', 'Aylık'), ('yearly', 'Yıllık')],
+        blank=True, null=True
+    )
+    premium_expires_at = models.DateTimeField(blank=True, null=True)
     reschedules_used_this_month = models.IntegerField(default=0)
     last_reschedule_reset = models.DateField(auto_now_add=True, null=True, blank=True)
 
@@ -65,6 +71,17 @@ class User(AbstractUser):
             if User.objects.filter(username=self.username).exists():
                  self.username = f"{self.username}_{uuid.uuid4().hex[:8]}"
         super().save(*args, **kwargs)
+
+    def check_premium_status(self):
+        """Lazy check: Premium süresi dolmuşsa is_premium=False yapar."""
+        if self.is_premium and self.premium_expires_at:
+            if timezone.now() >= self.premium_expires_at:
+                self.is_premium = False
+                self.premium_type = None
+                self.premium_expires_at = None
+                self.save(update_fields=['is_premium', 'premium_type', 'premium_expires_at'])
+                return False
+        return self.is_premium
 
     def get_remaining_reschedules(self):
         """Kullanıcının kalan erteleme hakkını döner ve gerekiyorsa yeni ay sıfırlamasını yapar."""

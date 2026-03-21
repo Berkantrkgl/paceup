@@ -3,6 +3,9 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from datetime import timedelta
+from django.utils import timezone
+
 from apps.users.models import User
 from apps.users.serializers import UserSerializer, TOKEN_LIMIT_FREE
 
@@ -73,8 +76,29 @@ class UserViewSet(viewsets.ModelViewSet):
     def activate_premium(self, request):
         """Demo: Gerçek ödeme entegrasyonu yapılana kadar direkt premium yap"""
         user = request.user
+        premium_type = request.data.get("premium_type", "monthly")
+
+        if premium_type not in ("monthly", "yearly"):
+            return Response({"error": "premium_type 'monthly' veya 'yearly' olmalı."}, status=status.HTTP_400_BAD_REQUEST)
+
+        duration = timedelta(days=30) if premium_type == "monthly" else timedelta(days=365)
+
         user.is_premium = True
-        user.save(update_fields=["is_premium"])
+        user.premium_type = premium_type
+        user.premium_expires_at = timezone.now() + duration
+        user.save(update_fields=["is_premium", "premium_type", "premium_expires_at"])
+
+        serializer = self.get_serializer(user)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def cancel_premium(self, request):
+        """Demo: Premium üyeliği iptal et"""
+        user = request.user
+        user.is_premium = False
+        user.premium_type = None
+        user.premium_expires_at = None
+        user.save(update_fields=["is_premium", "premium_type", "premium_expires_at"])
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
