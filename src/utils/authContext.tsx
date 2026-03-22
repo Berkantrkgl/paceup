@@ -68,6 +68,10 @@ export type UserData = {
   remaining_tokens: number | null;
   can_use_chat: boolean;
   is_onboarded: boolean;
+  tour_home: boolean;
+  tour_calendar: boolean;
+  tour_plans: boolean;
+  tour_profile: boolean;
 };
 
 type AuthState = {

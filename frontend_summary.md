@@ -159,6 +159,26 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
 - **Tamamlama:** Son adımda `PATCH /api/users/me/` ile tüm bilgiler + `is_onboarded: true` gönderilir → `refreshUserData()` → navigation guard otomatik olarak ana ekrana yönlendirir
 - **Progress bar:** Animated üst çubuk, step ilerledikçe dolur
 
+### App Tour Sistemi
+
+Onboarding tamamlandıktan sonra her tab'da ilk kez açılışta tetiklenen ekran turları. Per-tab boolean alanlarla backend'de takip edilir: `tour_home`, `tour_calendar`, `tour_plans`, `tour_profile`.
+
+**Teknik Yaklaşım:**
+- SVG Mask ile spotlight efekti: koyu overlay + `react-native-svg` Mask ile şeffaf delik
+- `Animated.createAnimatedComponent(Rect)` ile spotlight geçiş animasyonu
+- `measureInWindow` ile hedef elementin pozisyon ölçümü
+- Metin, highlight edilen elementin altında veya üstünde (20px gap, alan yetersizse taraf değiştirir)
+- Tab bar yüksekliği hesaba katılır (iOS 96px, Android 72px)
+- Tamamlanınca `PATCH /api/users/me/` ile `{ tour_X: true }` gönderilir
+
+**Turlar:**
+- **HomeTour** (4 adım): Hoş geldin → Bugünün antrenmanı → İstatistik linki → Stats satırı
+- **CalendarTour** (2 adım): Takvim görünümü → Antrenman slider'ı (boş/dolu durumu tek ref ile kapsanır)
+- **PlansTour** (2 adım): AI chatbot butonu → Plan listesi alanı (boş/dolu durumu tek ref ile kapsanır)
+- **ProfileTour** (2 adım): Premium kartı → Kimlik ve fiziksel bilgiler
+
+**UI:** Sadece beyaz metin (text shadow) + Atla/İleri butonları. Ok, dot, kart yok.
+
 ### Google Sign-In (Native)
 
 - **Paket:** `@react-native-google-signin/google-signin` (development build gerektirir)
@@ -189,6 +209,10 @@ isReady: boolean;
 
 ```ts
 is_onboarded: boolean                      // false = onboarding tamamlanmamış
+tour_home: boolean                         // per-tab tour tamamlanma durumu
+tour_calendar: boolean
+tour_plans: boolean
+tour_profile: boolean
 is_premium: boolean
 premium_type?: "monthly" | "yearly" | null
 premium_expires_at?: string | null          // ISO datetime, backend lazy check ile expire kontrolü
@@ -318,12 +342,17 @@ src/
 │       ├── android-icon-background.png
 │       └── android-icon-monochrome.png
 ├── components/
-│   └── chat/
-│       └── tools/
-│           ├── AvailabilityTool.tsx          # Koşu günleri seçim widget
-│           ├── PlanConfirmationTool.tsx      # Plan onay widget
-│           ├── ProgramSetupTool.tsx          # Hedef/süre/tarih widget
-│           └── RunnerProfileTool.tsx         # Fiziksel profil widget
+│   ├── chat/
+│   │   └── tools/
+│   │       ├── AvailabilityTool.tsx          # Koşu günleri seçim widget
+│   │       ├── PlanConfirmationTool.tsx      # Plan onay widget
+│   │       ├── ProgramSetupTool.tsx          # Hedef/süre/tarih widget
+│   │       └── RunnerProfileTool.tsx         # Fiziksel profil widget
+│   └── tour/
+│       ├── HomeTour.tsx                      # Ana sayfa turu (4 adım)
+│       ├── CalendarTour.tsx                  # Takvim turu (2 adım)
+│       ├── PlansTour.tsx                     # Planlama turu (2 adım)
+│       └── ProfileTour.tsx                   # Profil turu (2 adım)
 ├── constants/
 │   ├── Colors.ts                            # Tema renkleri (COLORS)
 │   ├── Config.ts                            # API URL'leri

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
-import React, { useContext, useState } from "react";
+import React, { useContext, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -23,6 +23,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 
 import { COLORS } from "@/constants/Colors";
+import { ProfileTour } from "@/components/tour/ProfileTour";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 import { useRouter } from "expo-router";
@@ -117,6 +118,8 @@ const ProfileScreen = () => {
   const { user, logOut, refreshUserData, getValidToken } =
     useContext(AuthContext);
   const [uploading, setUploading] = useState(false);
+  const premiumTourRef = useRef<View>(null);
+  const identityTourRef = useRef<View>(null);
 
   // Edit Modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -646,9 +649,12 @@ const ProfileScreen = () => {
         </View>
 
         {/* TOKEN KARTI */}
-        <TokenCard />
+        <View ref={premiumTourRef}>
+          <TokenCard />
+        </View>
 
         {/* SECTION 1: KİMLİK & FİZİKSEL */}
+        <View ref={identityTourRef}>
         <Section title="KİMLİK VE FİZİKSEL">
           <InfoRow
             label="Ad"
@@ -713,6 +719,7 @@ const ProfileScreen = () => {
             isLast
           />
         </Section>
+        </View>
 
         {/* SECTION 2: KOŞU PROFİLİ */}
         <Section title="KOŞU PROFİLİ">
@@ -898,6 +905,13 @@ const ProfileScreen = () => {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+
+      <ProfileTour
+        highlightRefs={{
+          premium: premiumTourRef,
+          identity: identityTourRef,
+        }}
+      />
 
       {/* Avatar Modal */}
       <Modal

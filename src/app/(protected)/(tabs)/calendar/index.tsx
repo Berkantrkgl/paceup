@@ -31,6 +31,7 @@ import {
 import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
 
 import { COLORS } from "@/constants/Colors";
+import { CalendarTour } from "@/components/tour/CalendarTour";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
@@ -150,6 +151,8 @@ const CalendarScreen = () => {
   const params = useLocalSearchParams();
   const navigation = useNavigation();
   const sliderRef = useRef<FlatList>(null);
+  const sliderTourRef = useRef<View>(null);
+  const calendarTourRef = useRef<View>(null);
   const isSliderScrolling = useRef(false);
 
   const todayStr = new Date().toISOString().split("T")[0];
@@ -698,6 +701,7 @@ const CalendarScreen = () => {
       />
 
       {/* HEADER */}
+      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Takvim</Text>
         <View style={styles.headerStats}>
@@ -710,41 +714,43 @@ const CalendarScreen = () => {
       </View>
 
       {/* WORKOUT SLIDER */}
-      {sortedWorkouts.length > 0 ? (
-        <View style={styles.sliderSection}>
-          <FlatList
-            ref={sliderRef}
-            data={sortedWorkouts}
-            renderItem={renderSliderCard}
-            keyExtractor={(item) => item.id.toString()}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            snapToInterval={SLIDER_ITEM_WIDTH}
-            snapToAlignment="start"
-            decelerationRate="fast"
-            contentContainerStyle={{ paddingHorizontal: SLIDER_PADDING }}
-            onViewableItemsChanged={onSliderViewableItemsChanged}
-            viewabilityConfig={viewabilityConfig}
-            onScrollBeginDrag={() => {
-              isSliderScrolling.current = false;
-            }}
-            getItemLayout={(_, index) => ({
-              length: SLIDER_ITEM_WIDTH,
-              offset: SLIDER_ITEM_WIDTH * index,
-              index,
-            })}
-          />
-        </View>
-      ) : (
-        <View style={styles.emptySlider}>
-          <Ionicons
-            name="calendar-clear-outline"
-            size={24}
-            color={COLORS.textDim}
-          />
-          <Text style={styles.emptySliderText}>Henüz antrenman yok</Text>
-        </View>
-      )}
+      <View ref={sliderTourRef}>
+        {sortedWorkouts.length > 0 ? (
+          <View style={styles.sliderSection}>
+            <FlatList
+              ref={sliderRef}
+              data={sortedWorkouts}
+              renderItem={renderSliderCard}
+              keyExtractor={(item) => item.id.toString()}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              snapToInterval={SLIDER_ITEM_WIDTH}
+              snapToAlignment="start"
+              decelerationRate="fast"
+              contentContainerStyle={{ paddingHorizontal: SLIDER_PADDING }}
+              onViewableItemsChanged={onSliderViewableItemsChanged}
+              viewabilityConfig={viewabilityConfig}
+              onScrollBeginDrag={() => {
+                isSliderScrolling.current = false;
+              }}
+              getItemLayout={(_, index) => ({
+                length: SLIDER_ITEM_WIDTH,
+                offset: SLIDER_ITEM_WIDTH * index,
+                index,
+              })}
+            />
+          </View>
+        ) : (
+          <View style={styles.emptySlider}>
+            <Ionicons
+              name="calendar-clear-outline"
+              size={24}
+              color={COLORS.textDim}
+            />
+            <Text style={styles.emptySliderText}>Henüz antrenman yok</Text>
+          </View>
+        )}
+      </View>
 
       {/* CALENDAR */}
       <ScrollView
@@ -758,6 +764,7 @@ const CalendarScreen = () => {
         }
       >
         <View
+          ref={calendarTourRef}
           style={styles.calendarContainer}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
@@ -1060,6 +1067,13 @@ const CalendarScreen = () => {
           </View>
         </View>
       </Modal>
+
+      <CalendarTour
+        highlightRefs={{
+          slider: sliderTourRef,
+          calendar: calendarTourRef,
+        }}
+      />
     </View>
   );
 };

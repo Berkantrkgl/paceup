@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useFocusEffect } from "expo-router";
-import React, { useCallback, useContext, useState } from "react";
+import React, { useCallback, useContext, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 import { COLORS } from "@/constants/Colors";
+import { PlansTour } from "@/components/tour/PlansTour";
 import { API_URL } from "@/constants/Config";
 import { AuthContext } from "@/utils/authContext";
 
@@ -22,6 +23,8 @@ const PlansScreen = () => {
     const [userPlans, setUserPlans] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const chatbotRef = useRef<View>(null);
+    const planListRef = useRef<View>(null);
 
     const fetchPlans = async () => {
         const validToken = await getValidToken();
@@ -316,6 +319,7 @@ const PlansScreen = () => {
 
                 {/* AI CREATE BUTTON */}
                 <Pressable
+                    ref={chatbotRef}
                     onPress={() =>
                         router.push("/(protected)/(tabs)/plans/chatbot")
                     }
@@ -354,41 +358,44 @@ const PlansScreen = () => {
                     </LinearGradient>
                 </Pressable>
 
-                {/* ACTIVE PLANS */}
-                {activePlans.length > 0 && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Aktif Program</Text>
-                        {activePlans.map(renderActivePlan)}
-                    </View>
-                )}
-
-                {/* ARCHIVED PLANS */}
-                {archivedPlans.length > 0 && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Arşiv</Text>
-                        <View style={styles.archivedList}>
-                            {archivedPlans.map(renderArchivedPlan)}
+                {/* PLAN LIST AREA */}
+                <View ref={planListRef}>
+                    {/* ACTIVE PLANS */}
+                    {activePlans.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Aktif Program</Text>
+                            {activePlans.map(renderActivePlan)}
                         </View>
-                    </View>
-                )}
+                    )}
 
-                {/* EMPTY STATE */}
-                {!isLoading && userPlans.length === 0 && (
-                    <View style={styles.emptyState}>
-                        <Ionicons
-                            name="map-outline"
-                            size={48}
-                            color={COLORS.inactive}
-                        />
-                        <Text style={styles.emptyTitle}>
-                            Henüz bir planın yok
-                        </Text>
-                        <Text style={styles.emptyDesc}>
-                            Yapay zeka koçunla tanış ve hedefine uygun
-                            programını oluştur.
-                        </Text>
-                    </View>
-                )}
+                    {/* ARCHIVED PLANS */}
+                    {archivedPlans.length > 0 && (
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Arşiv</Text>
+                            <View style={styles.archivedList}>
+                                {archivedPlans.map(renderArchivedPlan)}
+                            </View>
+                        </View>
+                    )}
+
+                    {/* EMPTY STATE */}
+                    {!isLoading && userPlans.length === 0 && (
+                        <View style={styles.emptyState}>
+                            <Ionicons
+                                name="map-outline"
+                                size={48}
+                                color={COLORS.inactive}
+                            />
+                            <Text style={styles.emptyTitle}>
+                                Henüz bir planın yok
+                            </Text>
+                            <Text style={styles.emptyDesc}>
+                                Yapay zeka koçunla tanış ve hedefine uygun
+                                programını oluştur.
+                            </Text>
+                        </View>
+                    )}
+                </View>
 
                 <View style={{ height: 40 }} />
             </ScrollView>
@@ -398,6 +405,13 @@ const PlansScreen = () => {
                     <ActivityIndicator size="large" color={COLORS.accent} />
                 </View>
             )}
+
+            <PlansTour
+                highlightRefs={{
+                    chatbot: chatbotRef,
+                    planList: planListRef,
+                }}
+            />
         </View>
     );
 };

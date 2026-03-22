@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Link, router, useFocusEffect } from "expo-router";
 // useMemo'yu import etmeyi unutma
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useContext, useMemo, useState } from "react";
+import React, { useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import { API_URL } from "@/constants/Config";
 // Yeni oluşturduğumuz içerik dosyasını import et
 import { HEADER_IMAGES, MOTIVATION_QUOTES } from "@/constants/Content";
 import { AuthContext } from "@/utils/authContext";
+import { HomeTour } from "@/components/tour/HomeTour";
 
 const { width } = Dimensions.get("window");
 
@@ -93,6 +94,11 @@ const HomeScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [todayWorkout, setTodayWorkout] = useState<Workout | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
+
+  // Tour highlight refs
+  const workoutRef = useRef<View>(null);
+  const progressLinkRef = useRef<View>(null);
+  const statsRef = useRef<View>(null);
 
   // --- RANDOM CONTENT LOGIC ---
   // useMemo kullanarak sadece component ilk yüklendiğinde rastgele seçim yapmasını sağlıyoruz.
@@ -269,7 +275,7 @@ const HomeScreen = () => {
 
         <View style={styles.contentOverlappingContainer}>
           {/* FLOATING STATS ROW */}
-              <View style={styles.floatingStatsContainer}>
+              <View ref={statsRef} style={styles.floatingStatsContainer}>
                 {/* Distance (SOL) */}
                 <Link href={"/progress"} asChild push>
                   <Pressable style={[styles.statCard, styles.statCardMain]}>
@@ -342,7 +348,7 @@ const HomeScreen = () => {
               </View>
 
               {/* NEXT WORKOUT CARD */}
-              <View style={styles.sectionContainer}>
+              <View ref={workoutRef} style={styles.sectionContainer}>
                 <Text style={styles.sectionTitle}>Bugünün Antrenmanı</Text>
                 {todayWorkout && workoutStyle && dateInfo ? (
                   <Pressable
@@ -560,6 +566,7 @@ const HomeScreen = () => {
               </View>
 
               {/* PROGRESS LINK */}
+              <View ref={progressLinkRef}>
               <Link href={"/progress"} asChild push>
                 <Pressable>
                   <LinearGradient
@@ -593,9 +600,19 @@ const HomeScreen = () => {
                   </LinearGradient>
                 </Pressable>
               </Link>
+              </View>
         </View>
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      {/* APP TOUR */}
+      <HomeTour
+        highlightRefs={{
+          workout: workoutRef,
+          progressLink: progressLinkRef,
+          stats: statsRef,
+        }}
+      />
     </View>
   );
 };
