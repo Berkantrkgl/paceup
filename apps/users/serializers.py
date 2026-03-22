@@ -17,6 +17,7 @@ class UserSerializer(serializers.ModelSerializer):
             # Identity
             'id', 'email', 'username', 'first_name', 'last_name', 'phone',
             'profile_image', 'date_of_birth', 'gender', 'is_onboarded',
+            'tour_home', 'tour_calendar', 'tour_plans', 'tour_profile',
             # Physical
             'weight', 'height',
             # Running

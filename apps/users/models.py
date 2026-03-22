@@ -14,6 +14,10 @@ class User(AbstractUser):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     is_onboarded = models.BooleanField(default=False)
+    tour_home = models.BooleanField(default=False)
+    tour_calendar = models.BooleanField(default=False)
+    tour_plans = models.BooleanField(default=False)
+    tour_profile = models.BooleanField(default=False)
 
     # Personal info
     email = models.EmailField(unique=True)

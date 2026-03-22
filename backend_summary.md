@@ -1,4 +1,4 @@
-# 🛠️ PaceUp Backend Technical Architecture Documentation v2.8
+# 🛠️ PaceUp Backend Technical Architecture Documentation v2.9
 
 Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Design (DDD)** prensiplerine göre modüler PaceUp backend mimarisini tanımlar.
 
@@ -27,7 +27,8 @@ PACEUP-BACKEND/
 
 | Alan Grubu    | Alanlar                                                                                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Identity      | `id` (UUID), `email` (login), `username` (auto-generated), `is_onboarded` (bool, default False), `profile_image`, `phone`, `date_of_birth`                                                 |
+| Identity      | `id` (UUID), `email` (login), `username` (auto-generated), `is_onboarded`, `profile_image`, `phone`, `date_of_birth`                                                                       |
+| Tour          | `tour_home`, `tour_calendar`, `tour_plans`, `tour_profile` — her tab için ayrı bool, default False                                                                                         |
 | Physical      | `weight` (kg), `height` (cm), `gender` (male/female/other), `max_runned_distance`, `current_pace` (sn/km, nullable)                                                                        |
 | Preferences   | `preferred_running_days` (JSON: `[0,2,4]` → 0=Pzt, 6=Paz)                                                                                                                                  |
 | SaaS          | `is_premium`, `premium_type` (monthly/yearly, nullable), `premium_expires_at` (DateTime, nullable), `total_tokens_used`, `reschedules_used_this_month`, `last_reschedule_reset`            |
@@ -111,6 +112,13 @@ PACEUP-BACKEND/
 - Frontend onboarding ekranlarında boy, kilo, cinsiyet, doğum tarihi, pace, koşu günleri toplanır
 - Tüm veriler tek bir `PATCH /api/users/me/` isteğiyle gönderilir (`is_onboarded: true` dahil)
 - Frontend `is_onboarded` değerine bakarak kullanıcıyı onboarding'e mi ana ekrana mı yönlendireceğine karar verir
+
+**Tab Tour Sistemi:**
+
+- Her tab için ayrı boolean: `tour_home`, `tour_calendar`, `tour_plans`, `tour_profile`
+- Kullanıcı bir tab'ın tour'unu tamamladığında `PATCH /api/users/me/` → `{ "tour_home": true }`
+- Frontend `tour_*` değerine bakarak o tab'da tour gösterilip gösterilmeyeceğine karar verir
+- Telefon değişse / uygulama silinse bile tour durumu korunur (backend'de persist)
 
 **REST Framework Config:**
 
