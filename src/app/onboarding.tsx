@@ -29,13 +29,11 @@ const GENDER_OPTIONS = [
 ];
 
 const STEPS = [
-  { key: "gender", title: "Cinsiyetin", subtitle: "Antrenman planını kişiselleştirmemize yardımcı olur" },
-  { key: "birthday", title: "Doğum Tarihin", subtitle: "Yaşına uygun antrenman yoğunluğu belirleyelim" },
-  { key: "height", title: "Boyun", subtitle: "Tempo ve kalori hesaplamalarında kullanılır" },
-  { key: "weight", title: "Kilon", subtitle: "Antrenman yoğunluğunu kişiselleştirmemize yardımcı olur" },
-  { key: "pace", title: "Ortalama Pace", subtitle: "Mevcut koşu hızını bilmemiz planlamaya yardımcı olur" },
-  { key: "maxDistance", title: "Maksimum Koşu Mesafesi", subtitle: "Şimdiye kadar tek seferde koştuğun en uzun mesafe" },
-  { key: "days", title: "Koşu Günlerin", subtitle: "Haftada hangi günler antrenman yapmak istersin?" },
+  { key: "genderBirthday", title: "Hakkında" },
+  { key: "body", title: "Boy & Kilo" },
+  { key: "pace", title: "Ortalama Pace" },
+  { key: "maxDistance", title: "Maksimum Koşu Mesafesi" },
+  { key: "days", title: "Koşu Günlerin" },
 ];
 
 const DAYS_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
@@ -94,16 +92,8 @@ const OnboardingScreen = () => {
 
   const canProceed = () => {
     switch (STEPS[currentStep].key) {
-      case "gender":
+      case "genderBirthday":
         return gender !== "";
-      case "birthday":
-        return true;
-      case "body":
-        return true;
-      case "pace":
-        return true;
-      case "maxDistance":
-        return true;
       case "days":
         return selectedDays.length > 0;
       default:
@@ -170,8 +160,9 @@ const OnboardingScreen = () => {
 
   // --- STEP RENDERERS ---
 
-  const renderGender = () => (
+  const renderGenderBirthday = () => (
     <View style={styles.stepContent}>
+      <Text style={styles.sectionLabel}>Cinsiyet</Text>
       <View style={styles.optionsContainer}>
         {GENDER_OPTIONS.map((opt) => (
           <Pressable
@@ -182,18 +173,11 @@ const OnboardingScreen = () => {
             ]}
             onPress={() => setGender(opt.value)}
           >
-            <View
-              style={[
-                styles.genderIconCircle,
-                gender === opt.value && styles.genderIconCircleActive,
-              ]}
-            >
-              <Ionicons
-                name={opt.icon}
-                size={28}
-                color={gender === opt.value ? COLORS.white : COLORS.textDim}
-              />
-            </View>
+            <Ionicons
+              name={opt.icon}
+              size={22}
+              color={gender === opt.value ? COLORS.white : COLORS.textDim}
+            />
             <Text
               style={[
                 styles.genderLabel,
@@ -205,16 +189,14 @@ const OnboardingScreen = () => {
           </Pressable>
         ))}
       </View>
-    </View>
-  );
 
-  const renderBirthday = () => (
-    <View style={styles.stepContent}>
+      <Text style={[styles.sectionLabel, { marginTop: 32 }]}>Doğum Tarihi</Text>
       <View style={styles.datePickerContainer}>
         <DateTimePicker
           value={birthday}
           mode="date"
           display="spinner"
+          locale="tr"
           onChange={(_, date) => date && setBirthday(date)}
           maximumDate={new Date()}
           minimumDate={new Date(1940, 0, 1)}
@@ -225,8 +207,9 @@ const OnboardingScreen = () => {
     </View>
   );
 
-  const renderHeight = () => (
+  const renderBody = () => (
     <View style={styles.stepContent}>
+      <Text style={styles.sectionLabel}>Boy</Text>
       <View style={styles.pickerWrapper}>
         <Picker
           selectedValue={heightVal}
@@ -239,11 +222,8 @@ const OnboardingScreen = () => {
           ))}
         </Picker>
       </View>
-    </View>
-  );
 
-  const renderWeight = () => (
-    <View style={styles.stepContent}>
+      <Text style={[styles.sectionLabel, { marginTop: 28 }]}>Kilo</Text>
       <View style={styles.pickerWrapper}>
         <Picker
           selectedValue={weightVal}
@@ -315,7 +295,7 @@ const OnboardingScreen = () => {
             <Ionicons name="checkmark" size={14} color="#000" />
           )}
         </View>
-        <Text style={styles.unknownToggleText}>Pace'imi bilmiyorum</Text>
+        <Text style={styles.unknownToggleText}>Bilmiyorum</Text>
       </Pressable>
 
       <View
@@ -397,12 +377,9 @@ const OnboardingScreen = () => {
       <View style={{ width }}>
         <View style={styles.stepInner}>
           <Text style={styles.stepTitle}>{item.title}</Text>
-          <Text style={styles.stepSubtitle}>{item.subtitle}</Text>
 
-          {item.key === "gender" && renderGender()}
-          {item.key === "birthday" && renderBirthday()}
-          {item.key === "height" && renderHeight()}
-          {item.key === "weight" && renderWeight()}
+          {item.key === "genderBirthday" && renderGenderBirthday()}
+          {item.key === "body" && renderBody()}
           {item.key === "pace" && renderPace()}
           {item.key === "maxDistance" && renderMaxDistance()}
           {item.key === "days" && renderDays()}
@@ -552,51 +529,46 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontSize: 28,
     fontWeight: "800",
-    marginBottom: 8,
-  },
-  stepSubtitle: {
-    color: COLORS.textDim,
-    fontSize: 15,
-    lineHeight: 22,
-    marginBottom: 36,
+    marginBottom: 24,
   },
   stepContent: {
     flex: 1,
   },
 
+  // Section label (for combined steps)
+  sectionLabel: {
+    color: COLORS.textDim,
+    fontSize: 14,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+
   // Gender
   optionsContainer: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   genderCard: {
     flex: 1,
     backgroundColor: COLORS.card,
-    borderRadius: 20,
-    paddingVertical: 28,
+    borderRadius: 14,
+    paddingVertical: 16,
     alignItems: "center",
-    borderWidth: 2,
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
     borderColor: COLORS.cardBorder,
   },
   genderCardActive: {
     borderColor: COLORS.accent,
     backgroundColor: COLORS.accent + "12",
   },
-  genderIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.cardVariant,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  genderIconCircleActive: {
-    backgroundColor: COLORS.accent,
-  },
   genderLabel: {
     color: COLORS.textDim,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "600",
   },
   genderLabelActive: {
@@ -606,19 +578,19 @@ const styles = StyleSheet.create({
   // Birthday
   datePickerContainer: {
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
   },
 
-  // Pickers (Body, Pace, MaxDistance)
+  // Pickers
   dualPickerContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
     paddingVertical: 8,
@@ -649,7 +621,7 @@ const styles = StyleSheet.create({
   },
   pickerWrapper: {
     backgroundColor: COLORS.card,
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: COLORS.cardBorder,
     alignItems: "center",
