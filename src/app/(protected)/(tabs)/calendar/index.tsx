@@ -306,7 +306,15 @@ const CalendarScreen = () => {
 
   // --- RESCHEDULE ---
   const getNextRunningDays = (): { label: string; date: string }[] => {
-    const runningDays: number[] = user?.preferred_running_days || [];
+    // Aktif programın antrenman günlerini workout tarihlerinden çıkar
+    const daySet = new Set<number>();
+    allWorkouts.forEach((w: any) => {
+      if (w.workout_type !== "rest") {
+        const d = new Date(w.scheduled_date);
+        daySet.add((d.getDay() + 6) % 7); // 0=Pzt, 6=Paz
+      }
+    });
+    const runningDays = Array.from(daySet);
     if (runningDays.length === 0) return [];
 
     const DAY_NAMES = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
@@ -316,12 +324,17 @@ const CalendarScreen = () => {
     ];
 
     const results: { label: string; date: string }[] = [];
-    const cursor = new Date();
-    cursor.setDate(cursor.getDate() + 1); // Yarından başla
+    const today = new Date();
 
-    while (results.length < 4) {
-      // preferred_running_days: 0=Pzt, 6=Paz (backend convention)
-      const dayOfWeek = (cursor.getDay() + 6) % 7; // JS Sunday=0 → 0=Pzt
+    // Bu haftanın Pazar gününü bul (haftanın sonu)
+    const todayDow = (today.getDay() + 6) % 7; // 0=Pzt, 6=Paz
+    const daysUntilSunday = 6 - todayDow; // bu haftanın Pazar'ına kalan gün
+    const endDate = new Date(today);
+    endDate.setDate(today.getDate() + daysUntilSunday + 7); // bir sonraki haftanın Pazar'ı (dahil)
+
+    const cursor = new Date(today);
+    while (cursor <= endDate) {
+      const dayOfWeek = (cursor.getDay() + 6) % 7; // 0=Pzt, 6=Paz
       if (runningDays.includes(dayOfWeek)) {
         const y = cursor.getFullYear();
         const m = String(cursor.getMonth() + 1).padStart(2, "0");
