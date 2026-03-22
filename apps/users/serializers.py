@@ -16,7 +16,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             # Identity
             'id', 'email', 'username', 'first_name', 'last_name', 'phone',
-            'profile_image', 'date_of_birth', 'gender',
+            'profile_image', 'date_of_birth', 'gender', 'is_onboarded',
             # Physical
             'weight', 'height',
             # Running

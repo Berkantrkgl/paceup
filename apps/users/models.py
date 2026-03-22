@@ -13,6 +13,7 @@ class User(AbstractUser):
         OTHER = 'other', _('Other')
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    is_onboarded = models.BooleanField(default=False)
 
     # Personal info
     email = models.EmailField(unique=True)
@@ -25,7 +26,7 @@ class User(AbstractUser):
 
     # Running info
     max_runned_distance = models.FloatField(default=0.0)
-    current_pace = models.IntegerField(default=480, help_text="Saniye/km", blank=True, null=True)
+    current_pace = models.IntegerField(default=540, help_text="Saniye/km", blank=True, null=True)
     preferred_running_days = models.JSONField(default=list, blank=True, help_text="Örn: [0, 2, 4] (0=Pzt, 6=Paz)")
 
     # Current statistics

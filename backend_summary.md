@@ -1,4 +1,4 @@
-# 🛠️ PaceUp Backend Technical Architecture Documentation v2.7
+# 🛠️ PaceUp Backend Technical Architecture Documentation v2.8
 
 Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Design (DDD)** prensiplerine göre modüler PaceUp backend mimarisini tanımlar.
 
@@ -27,7 +27,7 @@ PACEUP-BACKEND/
 
 | Alan Grubu    | Alanlar                                                                                                                                                                                    |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Identity      | `id` (UUID), `email` (login), `username` (auto-generated), `profile_image`, `phone`, `date_of_birth`                                                                                       |
+| Identity      | `id` (UUID), `email` (login), `username` (auto-generated), `is_onboarded` (bool, default False), `profile_image`, `phone`, `date_of_birth`                                                 |
 | Physical      | `weight` (kg), `height` (cm), `gender` (male/female/other), `max_runned_distance`, `current_pace` (sn/km, nullable)                                                                        |
 | Preferences   | `preferred_running_days` (JSON: `[0,2,4]` → 0=Pzt, 6=Paz)                                                                                                                                  |
 | SaaS          | `is_premium`, `premium_type` (monthly/yearly, nullable), `premium_expires_at` (DateTime, nullable), `total_tokens_used`, `reschedules_used_this_month`, `last_reschedule_reset`            |
@@ -103,6 +103,14 @@ PACEUP-BACKEND/
 - Yoksa → yeni kullanıcı oluşturulur (`set_unusable_password`, username otomatik)
 - Response: `{ "access": "...", "refresh": "...", "created": true/false }`
 - Paket: `google-auth` (`google.oauth2.id_token`, `google.auth.transport.requests`)
+- Credentials `.env`'den okunur: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+
+**Onboarding Akışı:**
+
+- Register veya Google Sign-In ile oluşturulan kullanıcılar `is_onboarded: false` ile başlar
+- Frontend onboarding ekranlarında boy, kilo, cinsiyet, doğum tarihi, pace, koşu günleri toplanır
+- Tüm veriler tek bir `PATCH /api/users/me/` isteğiyle gönderilir (`is_onboarded: true` dahil)
+- Frontend `is_onboarded` değerine bakarak kullanıcıyı onboarding'e mi ana ekrana mı yönlendireceğine karar verir
 
 **REST Framework Config:**
 
@@ -273,5 +281,7 @@ get_can_use_chat          → True (premium) | total_tokens_used < 50000
 **Database:** SQLite3 (development). Production için PostgreSQL önerilir.
 
 **Storage:** AWS S3 (`your-s3-bucket-name`, eu-central-1) — profil fotoğrafları için. `custom_storages.MediaStorage` kullanılır.
+
+**Environment Variables (`.env`):** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — tüm secret'lar `.env`'de tutulur, `.gitignore`'da.
 
 ---
