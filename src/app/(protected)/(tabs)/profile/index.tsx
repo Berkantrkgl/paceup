@@ -623,6 +623,9 @@ const ProfileScreen = () => {
             <Text style={styles.userName}>
               {user?.first_name} {user?.last_name}
             </Text>
+            {user?.email && (
+              <Text style={styles.userEmail}>{user.email}</Text>
+            )}
             <View style={styles.statsRow}>
               <Text style={styles.statText}>
                 🔥 {user?.current_streak} Gün Seri
@@ -861,7 +864,19 @@ const ProfileScreen = () => {
 
         {/* FOOTER */}
         <View style={styles.footer}>
-          <Pressable style={styles.logoutBtn} onPress={logOut}>
+          <Pressable
+            style={styles.logoutBtn}
+            onPress={() =>
+              Alert.alert(
+                "Çıkış Yap",
+                "Oturumu kapatmak istediğine emin misin?",
+                [
+                  { text: "Vazgeç", style: "cancel" },
+                  { text: "Çıkış Yap", style: "destructive", onPress: logOut },
+                ],
+              )
+            }
+          >
             <Text style={styles.logoutText}>Oturumu Kapat</Text>
           </Pressable>
           <Text style={styles.versionText}>PaceUp v2.3.0</Text>
@@ -1017,6 +1032,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: COLORS.text,
     marginBottom: 2,
+  },
+  userEmail: {
+    fontSize: 12,
+    color: COLORS.textDim,
+    marginBottom: 4,
   },
   statsRow: { flexDirection: "row", alignItems: "center" },
   statText: { fontSize: 12, color: COLORS.secondary, fontWeight: "600" },
