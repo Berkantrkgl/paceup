@@ -213,6 +213,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await GoogleSignin.hasPlayServices();
       const response = await GoogleSignin.signIn();
 
+      if (response.type === "cancelled") return;
+
       const idToken = response.data?.idToken;
       if (!idToken) {
         Alert.alert("Hata", "Google'dan token alınamadı.");

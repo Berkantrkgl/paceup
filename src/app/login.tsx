@@ -52,53 +52,41 @@ const LoginScreen = () => {
                 backgroundColor="transparent"
             />
 
-            <LinearGradient
-                colors={["#1A0A00", "#0D0D0D", "#0D0D0D"]}
-                style={styles.backgroundGradient}
-                start={{ x: 0.8, y: 0 }}
-                end={{ x: 0.2, y: 1 }}
+            <KeyboardAwareScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                enableOnAndroid
+                extraScrollHeight={Platform.OS === "ios" ? 30 : 0}
+                bounces={false}
             >
-                {/* Accent glow */}
-                <View style={styles.glowAccent} />
-
-                <KeyboardAwareScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    enableOnAndroid
-                    extraScrollHeight={Platform.OS === "ios" ? 30 : 0}
-                    bounces={false}
-                >
-                    {/* HEADER */}
-                    <View style={styles.headerContainer}>
-                        <View style={styles.logoCircle}>
-                            <Ionicons
-                                name="flame"
-                                size={32}
-                                color={COLORS.accent}
-                            />
-                        </View>
-                        <Text style={styles.appName}>PaceUp</Text>
+                {/* HEADER */}
+                <View style={styles.header}>
+                    <View style={styles.logoRow}>
+                        <Ionicons name="flame" size={28} color={COLORS.accent} />
+                        <Text style={styles.logoText}>PaceUp</Text>
                     </View>
+                    <Text style={styles.title}>Hoş Geldin</Text>
+                    <Text style={styles.subtitle}>
+                        Hedeflerine koşmaya hazır mısın?
+                    </Text>
+                </View>
 
-                    {/* GLASS CARD */}
-                    <View style={styles.glassCard}>
-                        <Text style={styles.cardTitle}>Hoş Geldin</Text>
-                        <Text style={styles.cardSubtitle}>
-                            Hedeflerine koşmaya hazır mısın?
-                        </Text>
-
-                        {/* EMAIL */}
+                {/* FORM */}
+                <View style={styles.form}>
+                    {/* EMAIL */}
+                    <View style={styles.inputWrapper}>
+                        <Text style={styles.inputLabel}>E-Posta</Text>
                         <View style={styles.inputContainer}>
                             <Ionicons
                                 name="mail-outline"
-                                size={20}
-                                color={COLORS.textDim}
+                                size={18}
+                                color={COLORS.inactive}
                                 style={styles.inputIcon}
                             />
                             <TextInput
                                 style={styles.input}
-                                placeholder="E-Posta Adresi"
+                                placeholder="ornek@email.com"
                                 placeholderTextColor={COLORS.inactive}
                                 value={email}
                                 onChangeText={setEmail}
@@ -113,19 +101,22 @@ const LoginScreen = () => {
                                 cursorColor={COLORS.accent}
                             />
                         </View>
+                    </View>
 
-                        {/* PASSWORD */}
+                    {/* PASSWORD */}
+                    <View style={styles.inputWrapper}>
+                        <Text style={styles.inputLabel}>Şifre</Text>
                         <View style={styles.inputContainer}>
                             <Ionicons
                                 name="lock-closed-outline"
-                                size={20}
-                                color={COLORS.textDim}
+                                size={18}
+                                color={COLORS.inactive}
                                 style={styles.inputIcon}
                             />
                             <TextInput
                                 ref={passwordRef}
                                 style={styles.input}
-                                placeholder="Şifre"
+                                placeholder="Şifreni gir"
                                 placeholderTextColor={COLORS.inactive}
                                 value={password}
                                 onChangeText={setPassword}
@@ -149,101 +140,97 @@ const LoginScreen = () => {
                                             ? "eye-off-outline"
                                             : "eye-outline"
                                     }
-                                    size={20}
-                                    color={COLORS.textDim}
+                                    size={18}
+                                    color={COLORS.inactive}
                                 />
                             </Pressable>
                         </View>
+                    </View>
 
-                        {/* LOGIN BUTTON */}
-                        <Pressable
-                            onPress={handleLogin}
-                            disabled={isLoading}
-                            style={({ pressed }) => [
-                                styles.buttonWrapper,
-                                pressed && { opacity: 0.85 },
-                            ]}
+                    {/* LOGIN BUTTON */}
+                    <Pressable
+                        onPress={handleLogin}
+                        disabled={isLoading}
+                        style={({ pressed }) => [
+                            styles.loginBtn,
+                            pressed && { opacity: 0.85 },
+                        ]}
+                    >
+                        <LinearGradient
+                            colors={[COLORS.accent, COLORS.secondary]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.loginBtnGradient}
                         >
-                            <LinearGradient
-                                colors={[COLORS.accent, COLORS.secondary]}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                                style={styles.gradientButton}
-                            >
-                                {isLoading ? (
-                                    <ActivityIndicator
-                                        color={COLORS.white}
-                                    />
-                                ) : (
-                                    <>
-                                        <Text style={styles.buttonText}>
-                                            Giriş Yap
-                                        </Text>
-                                        <Ionicons
-                                            name="arrow-forward"
-                                            size={18}
-                                            color={COLORS.white}
-                                            style={{ marginLeft: 8 }}
-                                        />
-                                    </>
-                                )}
-                            </LinearGradient>
-                        </Pressable>
+                            {isLoading ? (
+                                <ActivityIndicator color={COLORS.white} />
+                            ) : (
+                                <Text style={styles.loginBtnText}>
+                                    Giriş Yap
+                                </Text>
+                            )}
+                        </LinearGradient>
+                    </Pressable>
+                </View>
 
-                        {/* DIVIDER */}
-                        <View style={styles.dividerRow}>
-                            <View style={styles.dividerLine} />
-                            <Text style={styles.dividerText}>veya</Text>
-                            <View style={styles.dividerLine} />
-                        </View>
+                {/* DIVIDER */}
+                <View style={styles.dividerRow}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>veya</Text>
+                    <View style={styles.dividerLine} />
+                </View>
 
-                        {/* OAUTH BUTTONS */}
-                        <View style={styles.oauthRow}>
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.oauthButton,
-                                    pressed && { opacity: 0.75 },
-                                ]}
-                                onPress={googleSignIn}
-                            >
-                                <Ionicons
-                                    name="logo-google"
-                                    size={22}
-                                    color={COLORS.text}
-                                />
-                            </Pressable>
-
-                            <Pressable
-                                style={({ pressed }) => [
-                                    styles.oauthButton,
-                                    pressed && { opacity: 0.75 },
-                                ]}
-                                onPress={() => {
-                                    // TODO: Apple Sign In
-                                }}
-                            >
-                                <Ionicons
-                                    name="logo-apple"
-                                    size={24}
-                                    color={COLORS.text}
-                                />
-                            </Pressable>
-                        </View>
-                    </View>
-
-                    {/* FOOTER */}
-                    <View style={styles.footerContainer}>
-                        <Text style={styles.footerText}>
-                            Henüz bir hesabın yok mu?{" "}
+                {/* OAUTH */}
+                <View style={styles.oauthSection}>
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.oauthBtn,
+                            pressed && { opacity: 0.75 },
+                        ]}
+                        onPress={googleSignIn}
+                    >
+                        <Ionicons
+                            name="logo-google"
+                            size={20}
+                            color={COLORS.text}
+                        />
+                        <Text style={styles.oauthBtnText}>
+                            Google ile devam et
                         </Text>
-                        <Link href="/register" asChild>
-                            <Pressable hitSlop={8}>
-                                <Text style={styles.linkText}>Kayıt Ol</Text>
-                            </Pressable>
-                        </Link>
-                    </View>
-                </KeyboardAwareScrollView>
-            </LinearGradient>
+                    </Pressable>
+
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.oauthBtn,
+                            pressed && { opacity: 0.75 },
+                        ]}
+                        onPress={() => {
+                            // TODO: Apple Sign In
+                        }}
+                    >
+                        <Ionicons
+                            name="logo-apple"
+                            size={22}
+                            color={COLORS.text}
+                        />
+                        <Text style={styles.oauthBtnText}>
+                            Apple ile devam et
+                        </Text>
+                    </Pressable>
+                </View>
+
+                {/* FOOTER */}
+                <View style={styles.footer}>
+                    <Text style={styles.footerText}>
+                        Henüz bir hesabın yok mu?{" "}
+                    </Text>
+                    <Link href="/register" asChild>
+                        <Pressable hitSlop={8}>
+                            <Text style={styles.linkText}>Kayıt Ol</Text>
+                        </Pressable>
+                    </Link>
+                </View>
+            </KeyboardAwareScrollView>
         </View>
     );
 };
@@ -255,85 +242,69 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
     },
-    backgroundGradient: {
-        flex: 1,
-    },
-    glowAccent: {
-        position: "absolute",
-        top: -80,
-        right: -80,
-        width: 250,
-        height: 250,
-        borderRadius: 125,
-        backgroundColor: COLORS.accent,
-        opacity: 0.06,
-    },
     scrollContent: {
         flexGrow: 1,
         justifyContent: "center",
-        paddingHorizontal: 24,
+        paddingHorizontal: 28,
         paddingVertical: 60,
     },
 
     // Header
-    headerContainer: {
-        alignItems: "center",
-        marginBottom: 32,
+    header: {
+        marginBottom: 36,
     },
-    logoCircle: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: "rgba(255, 69, 1, 0.1)",
-        justifyContent: "center",
+    logoRow: {
+        flexDirection: "row",
         alignItems: "center",
-        marginBottom: 12,
-        borderWidth: 1,
-        borderColor: "rgba(255, 69, 1, 0.2)",
+        gap: 8,
+        marginBottom: 28,
     },
-    appName: {
-        fontSize: 32,
+    logoText: {
+        fontSize: 24,
         fontWeight: "800",
         color: COLORS.text,
-        letterSpacing: 1,
+        letterSpacing: 0.5,
         fontStyle: "italic",
     },
-
-    // Glass Card
-    glassCard: {
-        backgroundColor: "rgba(26, 26, 26, 0.7)",
-        borderRadius: 24,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.08)",
-        padding: 28,
-        gap: 16,
-    },
-    cardTitle: {
-        fontSize: 22,
-        fontWeight: "700",
+    title: {
+        fontSize: 30,
+        fontWeight: "800",
         color: COLORS.text,
-        textAlign: "center",
+        marginBottom: 8,
     },
-    cardSubtitle: {
-        fontSize: 14,
+    subtitle: {
+        fontSize: 15,
         color: COLORS.textDim,
-        textAlign: "center",
-        marginBottom: 4,
+        lineHeight: 22,
     },
 
-    // Inputs
+    // Form
+    form: {
+        gap: 20,
+        marginBottom: 28,
+    },
+    inputWrapper: {
+        gap: 8,
+    },
+    inputLabel: {
+        fontSize: 13,
+        fontWeight: "600",
+        color: COLORS.textDim,
+        textTransform: "uppercase",
+        letterSpacing: 0.5,
+    },
     inputContainer: {
         flexDirection: "row",
         alignItems: "center",
-        backgroundColor: "rgba(13, 13, 13, 0.6)",
+        backgroundColor: COLORS.card,
         borderRadius: 14,
         borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.06)",
-        height: 56,
-        paddingHorizontal: 16,
+        borderColor: COLORS.cardBorder,
+        height: 52,
+        paddingHorizontal: 14,
     },
     inputIcon: {
-        marginRight: 12,
+        marginRight: 10,
     },
     input: {
         flex: 1,
@@ -346,69 +317,72 @@ const styles = StyleSheet.create({
         padding: 8,
     },
 
-    // Button
-    buttonWrapper: {
+    // Login Button
+    loginBtn: {
         marginTop: 4,
         shadowColor: COLORS.accent,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
+        shadowOpacity: 0.25,
         shadowRadius: 12,
         elevation: 8,
     },
-    gradientButton: {
-        width: "100%",
-        height: 56,
+    loginBtnGradient: {
+        height: 52,
         borderRadius: 14,
-        flexDirection: "row",
         justifyContent: "center",
         alignItems: "center",
     },
-    buttonText: {
+    loginBtnText: {
         color: COLORS.white,
         fontWeight: "700",
         fontSize: 16,
-        letterSpacing: 0.5,
+        letterSpacing: 0.3,
     },
 
     // Divider
     dividerRow: {
         flexDirection: "row",
         alignItems: "center",
-        marginVertical: 4,
+        marginBottom: 28,
     },
     dividerLine: {
         flex: 1,
         height: 1,
-        backgroundColor: "rgba(255, 255, 255, 0.08)",
+        backgroundColor: COLORS.cardBorder,
     },
     dividerText: {
-        color: COLORS.textDim,
+        color: COLORS.inactive,
         fontSize: 13,
+        fontWeight: "500",
         marginHorizontal: 16,
     },
 
     // OAuth
-    oauthRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 16,
+    oauthSection: {
+        gap: 12,
+        marginBottom: 32,
     },
-    oauthButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "rgba(255, 255, 255, 0.1)",
-        backgroundColor: "rgba(255, 255, 255, 0.04)",
+    oauthBtn: {
+        flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
+        height: 52,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: COLORS.cardBorder,
+        backgroundColor: COLORS.card,
+        gap: 10,
+    },
+    oauthBtnText: {
+        color: COLORS.text,
+        fontSize: 15,
+        fontWeight: "600",
     },
 
     // Footer
-    footerContainer: {
+    footer: {
         flexDirection: "row",
         justifyContent: "center",
-        marginTop: 28,
         alignItems: "center",
     },
     footerText: {
@@ -417,7 +391,7 @@ const styles = StyleSheet.create({
     },
     linkText: {
         color: COLORS.accent,
-        fontWeight: "600",
+        fontWeight: "700",
         fontSize: 14,
     },
 });

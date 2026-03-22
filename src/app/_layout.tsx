@@ -34,7 +34,13 @@ function RootLayoutNav() {
       <Stack.Screen name="(protected)" />
       <Stack.Screen name="onboarding" />
       <Stack.Screen name="login" />
-      <Stack.Screen name="register" />
+      <Stack.Screen
+        name="register"
+        options={{
+          animation: "slide_from_right",
+          animationDuration: 250,
+        }}
+      />
     </Stack>
   );
 }
