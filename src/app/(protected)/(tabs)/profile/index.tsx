@@ -865,7 +865,10 @@ const ProfileScreen = () => {
         {/* FOOTER */}
         <View style={styles.footer}>
           <Pressable
-            style={styles.logoutBtn}
+            style={({ pressed }) => [
+              styles.logoutBtn,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.97 }] },
+            ]}
             onPress={() =>
               Alert.alert(
                 "Çıkış Yap",

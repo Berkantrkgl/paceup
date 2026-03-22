@@ -442,7 +442,9 @@ const ProgressScreen = () => {
                             <BarChart
                                 data={{
                                     labels: WEEK_LABELS,
-                                    datasets: [{ data: weeklyDistance.every(v => v === 0) ? [0, 0, 0, 0, 0, 0, 0.01] : weeklyDistance }],
+                                    datasets: weeklyDistance.every(v => v === 0)
+                                        ? [{ data: [0, 0, 0, 0, 0, 0, 0] }, { data: [6], withDots: false }]
+                                        : [{ data: weeklyDistance }],
                                 }}
                                 width={width - 72}
                                 height={210}
@@ -458,7 +460,9 @@ const ProgressScreen = () => {
                             <BarChart
                                 data={{
                                     labels: WEEK_LABELS,
-                                    datasets: [{ data: weeklyPace.every(v => v === 0) ? [0, 0, 0, 0, 0, 0, 0.01] : weeklyPace }],
+                                    datasets: weeklyPace.every(v => v === 0)
+                                        ? [{ data: [0, 0, 0, 0, 0, 0, 0] }, { data: [8], withDots: false }]
+                                        : [{ data: weeklyPace }],
                                 }}
                                 width={width - 72}
                                 height={210}
