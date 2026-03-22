@@ -25,9 +25,9 @@ const ProgressScreen = () => {
     const [loading, setLoading] = useState(true);
     const [activeChart, setActiveChart] = useState<"distance" | "pace">("distance");
 
-    const [chartData, setChartData] = useState<number[]>([0]);
-    const [chartLabels, setChartLabels] = useState<string[]>(["-"]);
-    const [paceHistory, setPaceHistory] = useState<number[]>([0]);
+    const WEEK_LABELS = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+    const [weeklyDistance, setWeeklyDistance] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
+    const [weeklyPace, setWeeklyPace] = useState<number[]>([0, 0, 0, 0, 0, 0, 0]);
 
     const [summaryStats, setSummaryStats] = useState({
         total_distance: 0,
@@ -47,11 +47,11 @@ const ProgressScreen = () => {
         if (!validToken) return;
 
         try {
-            const [summaryRes, chartRes, progRes, achRes] = await Promise.all([
+            const [summaryRes, workoutsRes, progRes, achRes] = await Promise.all([
                 fetch(`${API_URL}/stats/summary/`, {
                     headers: { Authorization: `Bearer ${validToken}` },
                 }),
-                fetch(`${API_URL}/stats/charts/?period=month`, {
+                fetch(`${API_URL}/workouts/?only_active=true`, {
                     headers: { Authorization: `Bearer ${validToken}` },
                 }),
                 fetch(`${API_URL}/stats/program/`, {
@@ -67,13 +67,36 @@ const ProgressScreen = () => {
                 setSummaryStats(data);
             }
 
-            if (chartRes.ok) {
-                const data = await chartRes.json();
-                if (data.datasets && data.datasets[0].data.length > 0) {
-                    setChartData(data.datasets[0].data);
-                    setChartLabels(data.labels);
-                    setPaceHistory(data.pace_data || [0]);
-                }
+            if (workoutsRes.ok) {
+                const json = await workoutsRes.json();
+                const workouts = Array.isArray(json) ? json : json.results || [];
+
+                // Bu haftanın Pazartesi'sini bul
+                const today = new Date();
+                const dow = (today.getDay() + 6) % 7; // 0=Pzt, 6=Paz
+                const monday = new Date(today);
+                monday.setDate(today.getDate() - dow);
+                monday.setHours(0, 0, 0, 0);
+
+                const dist = [0, 0, 0, 0, 0, 0, 0];
+                const pace = [0, 0, 0, 0, 0, 0, 0];
+
+                workouts.forEach((w: any) => {
+                    if (w.status !== "completed" || !w.result) return;
+                    // "YYYY-MM-DD" → timezone-safe parse
+                    const parts = w.scheduled_date.split("-");
+                    const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
+                    const diffDays = Math.round((d.getTime() - monday.getTime()) / (1000 * 60 * 60 * 24));
+                    if (diffDays >= 0 && diffDays < 7) {
+                        dist[diffDays] = w.result.actual_distance || 0;
+                        const duration = w.result.actual_duration || 0;
+                        const distance = w.result.actual_distance || 0;
+                        pace[diffDays] = distance > 0 ? duration / distance : 0; // dk/km
+                    }
+                });
+
+                setWeeklyDistance(dist);
+                setWeeklyPace(pace);
             }
 
             if (progRes.ok) {
@@ -412,14 +435,14 @@ const ProgressScreen = () => {
                     <View style={styles.chartCard}>
                         <Text style={styles.chartLabel}>
                             {activeChart === "distance"
-                                ? "Aylık Mesafe (km)"
-                                : "Aylık Tempo (dk/km)"}
+                                ? "Bu Hafta — Mesafe (km)"
+                                : "Bu Hafta — Tempo (dk/km)"}
                         </Text>
                         {activeChart === "distance" ? (
                             <BarChart
                                 data={{
-                                    labels: chartLabels.filter((_, i) => i % 5 === 0),
-                                    datasets: [{ data: chartData }],
+                                    labels: WEEK_LABELS,
+                                    datasets: [{ data: weeklyDistance.every(v => v === 0) ? [0, 0, 0, 0, 0, 0, 0.01] : weeklyDistance }],
                                 }}
                                 width={width - 72}
                                 height={210}
@@ -434,8 +457,8 @@ const ProgressScreen = () => {
                         ) : (
                             <BarChart
                                 data={{
-                                    labels: chartLabels.filter((_, i) => i % 5 === 0),
-                                    datasets: [{ data: paceHistory }],
+                                    labels: WEEK_LABELS,
+                                    datasets: [{ data: weeklyPace.every(v => v === 0) ? [0, 0, 0, 0, 0, 0, 0.01] : weeklyPace }],
                                 }}
                                 width={width - 72}
                                 height={210}
