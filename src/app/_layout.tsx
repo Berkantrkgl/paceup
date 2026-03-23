@@ -4,7 +4,7 @@ import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "fast-text-encoding";
 import React, { useContext } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Image, View } from "react-native";
 
 // Navigasyon Mantığını İçeren Alt Bileşen
 function RootLayoutNav() {
@@ -22,6 +22,11 @@ function RootLayoutNav() {
           backgroundColor: COLORS.background,
         }}
       >
+        <Image
+          source={require("@/assets/images/splash-icon.png")}
+          style={{ width: 120, height: 120, marginBottom: 24 }}
+          resizeMode="contain"
+        />
         <ActivityIndicator size="large" color={COLORS.accent} />
       </View>
     );

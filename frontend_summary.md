@@ -374,4 +374,16 @@ src/
 - **CalendarList horizontal sorunları:** `CalendarList` ile horizontal scroll, `ScrollView` içinde dikey kaydırmayla gesture çakışması yaratır. Bu nedenle `Calendar` + özel ok butonları + manuel swipe gesture tercih edildi.
 - **Premium ekranı mimari notu:** Eski `PremiumModal` (RN `Modal` + `PanResponder` ile swipe-to-dismiss) gesture çakışmaları nedeniyle terk edildi. Yerine `(protected)/premium.tsx` stack screen + `presentation: "modal"` kullanıldı — iOS native swipe-down gesture otomatik çalışır, ekstra kod gerektirmez.
 - **Development build zorunluluğu:** `@react-native-google-signin/google-signin` native modül gerektirdiğinden Expo Go'da çalışmaz. `npx expo run:ios` ile build alınır. JS kod değişiklikleri hot reload ile yansır, native değişikliklerde (yeni paket, plugin, `app.json`) tekrar build gerekir.
-- **Google OAuth client tipleri:** iOS client (native SDK, bundle ID: `com.anonymous.PaceUp`) ve Web client (backend'de `id_token` doğrulama) ayrı tutulur. `expo-auth-session` proxy yöntemi Expo Go'da sorunlu olduğundan terk edildi.
+- **Google OAuth client tipleri:** iOS client (native SDK, bundle ID: `com.example.PaceUp`) ve Web client (backend'de `id_token` doğrulama) ayrı tutulur. `expo-auth-session` proxy yöntemi Expo Go'da sorunlu olduğundan terk edildi.
+
+---
+
+## 8. App Metadata & Branding
+
+- **Bundle ID:** `com.example.PaceUp` (iOS), Android package aynı
+- **Splash Screen:** Koyu arka plan (`#0D0D0D`), beyaz koşucu logosu ortada, `imageWidth: 280`, light/dark mod aynı renk
+- **App Icon:** Koyu arka planlı koşucu logosu (1024x1024)
+- **Android Adaptive Icon:** Foreground: beyaz logo (şeffaf arka plan), Background: `#0D0D0D`, Monochrome: tek renk silüet
+- **Loading Ekranı (`_layout.tsx`):** Splash ile seamless geçiş — aynı koyu arka plan (#0D0D0D) + logo (`splash-icon.png`, 120x120) + turuncu `ActivityIndicator`
+- **iPad Desteği:** Kapalı (`supportsTablet: false`) — sadece iPhone
+- **Favicon:** Küçük logo (48x48) web için
