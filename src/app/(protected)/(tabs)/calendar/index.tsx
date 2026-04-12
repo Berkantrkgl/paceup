@@ -10,6 +10,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -24,15 +25,16 @@ import {
   RefreshControl,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
 import { Calendar, DateData, LocaleConfig } from "react-native-calendars";
 
-import { COLORS } from "@/constants/Colors";
 import { CalendarTour } from "@/components/tour/CalendarTour";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme, ThemeColors } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
@@ -86,68 +88,104 @@ LocaleConfig.locales["tr"] = {
 };
 LocaleConfig.defaultLocale = "tr";
 
-// --- RENK PALETİ ---
-const THEME_COLORS = {
-  tempo: "#FF4501",
-  easy: "#4ECDC4",
-  interval: "#FFD93D",
-  long: "#A569BD",
-  rest: "#B0A89E",
-  default: "#FA7D09",
-  missed: "#FF3B30",
-};
+// --- WORKOUT TİP PALETİ ---
+// Dark ve light için ayrı paletler — özellikle sarı (interval) ve turkuaz
+// (easy) light zeminde kontrast kaybettiği için koyu alternatifler kullanılır.
+const WORKOUT_PALETTE = {
+  dark: {
+    tempo: "#FF4501",
+    easy: "#4ECDC4",
+    interval: "#FFD93D",
+    long: "#A569BD",
+    rest: "#B0A89E",
+    default: "#FA7D09",
+    missed: "#FF3B30",
+  },
+  light: {
+    tempo: "#E23E00", // Biraz koyulaştırılmış
+    easy: "#0E9B8F", // Koyu turkuaz — beyaz zeminde okunur
+    interval: "#B8860B", // Koyu altın — sarı yerine
+    long: "#7B3F96", // Koyu mor
+    rest: "#8A8278",
+    default: "#D96A00",
+    missed: "#E53935",
+  },
+} as const;
+
+// Geriye dönük uyumluluk için default referans (status icon'larda kullanılıyor)
+const THEME_COLORS = WORKOUT_PALETTE.dark;
 
 type WorkoutTypeEnum = "easy" | "tempo" | "interval" | "long" | "rest";
 
-const getWorkoutTheme = (type: WorkoutTypeEnum) => {
+// colors + isDark parametreleri theme-aware bgGradient için gerekli.
+// Light modda pure surface'e ölmek yerine color'un kendisine fade olur,
+// böylece gradient boyunca renk canlılığı korunur.
+const getWorkoutTheme = (
+  type: WorkoutTypeEnum,
+  c: ThemeColors,
+  isDark: boolean,
+) => {
+  const palette = isDark ? WORKOUT_PALETTE.dark : WORKOUT_PALETTE.light;
+  const grad = (color: string): [string, string] =>
+    isDark ? [color + "65", c.surface] : [color, color + "A0"];
+
   switch (type) {
     case "tempo":
       return {
-        color: THEME_COLORS.tempo,
+        color: palette.tempo,
         name: "Tempo",
         icon: "speedometer",
-        bgGradient: [THEME_COLORS.tempo + "65", COLORS.card],
+        bgGradient: grad(palette.tempo),
       };
     case "easy":
       return {
-        color: THEME_COLORS.easy,
+        color: palette.easy,
         name: "Hafif",
         icon: "leaf",
-        bgGradient: [THEME_COLORS.easy + "65", COLORS.card],
+        bgGradient: grad(palette.easy),
       };
     case "interval":
       return {
-        color: THEME_COLORS.interval,
+        color: palette.interval,
         name: "İnterval",
         icon: "flash",
-        bgGradient: [THEME_COLORS.interval + "65", COLORS.card],
+        bgGradient: grad(palette.interval),
       };
     case "long":
       return {
-        color: THEME_COLORS.long,
+        color: palette.long,
         name: "Uzun",
         icon: "infinite",
-        bgGradient: [THEME_COLORS.long + "65", COLORS.card],
+        bgGradient: grad(palette.long),
       };
     case "rest":
       return {
-        color: THEME_COLORS.rest,
+        color: palette.rest,
         name: "Dinlenme",
         icon: "moon",
-        bgGradient: [COLORS.cardVariant, COLORS.card],
+        bgGradient: isDark
+          ? ([c.surfaceVariant, c.surface] as [string, string])
+          : ([palette.rest + "55", palette.rest + "1F"] as [string, string]),
       };
     default:
       return {
-        color: THEME_COLORS.default,
+        color: palette.default,
         name: "Koşu",
         icon: "fitness",
-        bgGradient: [THEME_COLORS.default + "50", COLORS.card],
+        bgGradient: isDark
+          ? ([palette.default + "50", c.surface] as [string, string])
+          : ([palette.default + "80", palette.default + "2E"] as [
+              string,
+              string,
+            ]),
       };
   }
 };
 
 const CalendarScreen = () => {
   const { getValidToken, user, refreshUserData } = useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const params = useLocalSearchParams();
   const navigation = useNavigation();
   const sliderRef = useRef<FlatList>(null);
@@ -176,6 +214,26 @@ const CalendarScreen = () => {
   >(null);
   const rescheduleChecked = useRef(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Calendar library theme prop — temaya bağlı.
+  const calendarTheme = useMemo(
+    () => ({
+      calendarBackground: "transparent",
+      textSectionTitleColor: colors.text.secondary,
+      textDayHeaderFontSize: 12,
+      textDayHeaderFontWeight: "600" as const,
+      ["stylesheet.calendar.header" as any]: {
+        week: {
+          flexDirection: "row",
+          justifyContent: "space-around",
+          paddingBottom: 8,
+          marginBottom: 4,
+          borderBottomWidth: 0,
+        },
+      },
+    }),
+    [colors],
+  );
 
   const handleTouchStart = (e: any) => {
     touchStart.current = {
@@ -213,7 +271,7 @@ const CalendarScreen = () => {
   })();
 
   // Sorted workouts for slider (by date) — memoized to prevent re-renders
-  const sortedWorkouts = React.useMemo(
+  const sortedWorkouts = useMemo(
     () =>
       [...allWorkouts].sort((a, b) =>
         a.scheduled_date.localeCompare(b.scheduled_date),
@@ -306,12 +364,11 @@ const CalendarScreen = () => {
 
   // --- RESCHEDULE ---
   const getNextRunningDays = (): { label: string; date: string }[] => {
-    // Aktif programın antrenman günlerini workout tarihlerinden çıkar
     const daySet = new Set<number>();
     allWorkouts.forEach((w: any) => {
       if (w.workout_type !== "rest") {
         const d = new Date(w.scheduled_date);
-        daySet.add((d.getDay() + 6) % 7); // 0=Pzt, 6=Paz
+        daySet.add((d.getDay() + 6) % 7);
       }
     });
     const runningDays = Array.from(daySet);
@@ -326,15 +383,14 @@ const CalendarScreen = () => {
     const results: { label: string; date: string }[] = [];
     const today = new Date();
 
-    // Bu haftanın Pazar gününü bul (haftanın sonu)
-    const todayDow = (today.getDay() + 6) % 7; // 0=Pzt, 6=Paz
-    const daysUntilSunday = 6 - todayDow; // bu haftanın Pazar'ına kalan gün
+    const todayDow = (today.getDay() + 6) % 7;
+    const daysUntilSunday = 6 - todayDow;
     const endDate = new Date(today);
-    endDate.setDate(today.getDate() + daysUntilSunday + 7); // bir sonraki haftanın Pazar'ı (dahil)
+    endDate.setDate(today.getDate() + daysUntilSunday + 7);
 
     const cursor = new Date(today);
     while (cursor <= endDate) {
-      const dayOfWeek = (cursor.getDay() + 6) % 7; // 0=Pzt, 6=Paz
+      const dayOfWeek = (cursor.getDay() + 6) % 7;
       if (runningDays.includes(dayOfWeek)) {
         const y = cursor.getFullYear();
         const m = String(cursor.getMonth() + 1).padStart(2, "0");
@@ -406,8 +462,6 @@ const CalendarScreen = () => {
 
   // --- TWO-WAY SYNC ---
 
-  // When calendar day is tapped → scroll slider to that workout
-  // Double-tap (already selected) → open detail
   const handleDayPress = (dateStr: string) => {
     if (dateStr === selectedDate) {
       const workout = workoutsMap[dateStr];
@@ -435,7 +489,6 @@ const CalendarScreen = () => {
     }
   };
 
-  // When slider card becomes visible → update selected date & calendar month
   const onSliderViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (isSliderScrolling.current) return;
     if (viewableItems.length > 0) {
@@ -449,13 +502,11 @@ const CalendarScreen = () => {
     itemVisiblePercentThreshold: 60,
   }).current;
 
-  // Scroll slider to selected date on initial load
   useEffect(() => {
     if (sortedWorkouts.length > 0) {
       const idx = sortedWorkouts.findIndex(
         (w) => w.scheduled_date === selectedDate,
       );
-      // Find closest workout if no exact match
       const targetIdx = idx >= 0 ? idx : findClosestWorkoutIndex(selectedDate);
       if (targetIdx >= 0 && sliderRef.current) {
         setTimeout(() => {
@@ -487,7 +538,7 @@ const CalendarScreen = () => {
   // --- SLIDER CARD ---
   const renderSliderCard = useCallback(
     ({ item: workout }: { item: any }) => {
-      const theme = getWorkoutTheme(workout.workout_type);
+      const theme = getWorkoutTheme(workout.workout_type, colors, isDark);
       const isSelected = workout.scheduled_date === selectedDate;
 
       const dateObj = new Date(workout.scheduled_date);
@@ -521,22 +572,39 @@ const CalendarScreen = () => {
               <Text
                 style={[
                   styles.sliderDayName,
-                  isToday && { color: COLORS.accent },
+                  !isDark && { color: "rgba(255,255,255,0.85)" },
+                  isToday && { color: isDark ? colors.accent : colors.white },
                 ]}
               >
                 {isToday ? "Bugün" : dayName}
               </Text>
-              <Text style={[styles.sliderDayNum, { color: theme.color }]}>
+              <Text
+                style={[
+                  styles.sliderDayNum,
+                  { color: isDark ? theme.color : colors.white },
+                ]}
+              >
                 {dayNum}
               </Text>
-              <Text style={styles.sliderMonth}>{monthName}</Text>
+              <Text
+                style={[
+                  styles.sliderMonth,
+                  !isDark && { color: "rgba(255,255,255,0.85)" },
+                ]}
+              >
+                {monthName}
+              </Text>
             </View>
 
             {/* Vertical separator */}
             <View
               style={[
                 styles.sliderSeparator,
-                { backgroundColor: theme.color + "40" },
+                {
+                  backgroundColor: isDark
+                    ? theme.color + "40"
+                    : "rgba(255,255,255,0.45)",
+                },
               ]}
             />
 
@@ -546,21 +614,36 @@ const CalendarScreen = () => {
                 <View
                   style={[
                     styles.sliderTypeBadge,
-                    { backgroundColor: theme.color + "25" },
+                    {
+                      backgroundColor: isDark
+                        ? theme.color + "25"
+                        : "rgba(255,255,255,0.28)",
+                    },
                   ]}
                 >
                   <Ionicons
                     name={theme.icon as any}
                     size={14}
-                    color={theme.color}
+                    color={isDark ? theme.color : colors.white}
                   />
-                  <Text style={[styles.sliderTypeText, { color: theme.color }]}>
+                  <Text
+                    style={[
+                      styles.sliderTypeText,
+                      { color: isDark ? theme.color : colors.white },
+                    ]}
+                  >
                     {theme.name}
                   </Text>
                 </View>
               </View>
 
-              <Text style={styles.sliderTitle} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.sliderTitle,
+                  !isDark && { color: colors.white },
+                ]}
+                numberOfLines={1}
+              >
                 {workout.title}
               </Text>
 
@@ -571,9 +654,18 @@ const CalendarScreen = () => {
                       <Ionicons
                         name="timer-outline"
                         size={13}
-                        color={COLORS.textDim}
+                        color={
+                          isDark
+                            ? colors.text.secondary
+                            : "rgba(255,255,255,0.9)"
+                        }
                       />
-                      <Text style={styles.sliderMetaText}>
+                      <Text
+                        style={[
+                          styles.sliderMetaText,
+                          !isDark && { color: "rgba(255,255,255,0.9)" },
+                        ]}
+                      >
                         {workout.planned_duration} dk
                       </Text>
                     </View>
@@ -583,9 +675,18 @@ const CalendarScreen = () => {
                       <Ionicons
                         name="location-outline"
                         size={13}
-                        color={COLORS.textDim}
+                        color={
+                          isDark
+                            ? colors.text.secondary
+                            : "rgba(255,255,255,0.9)"
+                        }
                       />
-                      <Text style={styles.sliderMetaText}>
+                      <Text
+                        style={[
+                          styles.sliderMetaText,
+                          !isDark && { color: "rgba(255,255,255,0.9)" },
+                        ]}
+                      >
                         {workout.planned_distance} km
                       </Text>
                     </View>
@@ -594,12 +695,16 @@ const CalendarScreen = () => {
               )}
             </View>
 
-            <Ionicons name="chevron-forward" size={20} color={COLORS.textDim} />
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={isDark ? colors.text.secondary : "rgba(255,255,255,0.8)"}
+            />
           </LinearGradient>
         </Pressable>
       );
     },
-    [selectedDate, todayStr],
+    [selectedDate, todayStr, colors, styles],
   );
 
   // --- CALENDAR DAY ---
@@ -614,9 +719,8 @@ const CalendarScreen = () => {
     const workout = workoutsMap[dateStr];
     const isSelected = dateStr === selectedDate;
     const isToday = dateStr === todayStr;
-    const isCurrentMonth = state === "";
 
-    const theme = workout ? getWorkoutTheme(workout.workout_type) : null;
+    const theme = workout ? getWorkoutTheme(workout.workout_type, colors, isDark) : null;
     const isCompleted = workout?.status === "completed";
     const isMissed = workout?.status === "missed";
 
@@ -630,21 +734,27 @@ const CalendarScreen = () => {
             styles.dayBox,
             // Default: empty day
             !workout && {
-              backgroundColor: "#1C1C1C",
-              borderColor: isSelected ? COLORS.text : "transparent",
+              backgroundColor: isDark ? colors.surfaceVariant : "#E8DFCB",
+              borderColor: isSelected ? colors.text.primary : "transparent",
               borderWidth: isSelected ? 1.5 : 0,
-              ...(isSelected && { backgroundColor: "#2E2E2E" }),
+              ...(isSelected && {
+                backgroundColor: isDark ? colors.borderStrong : "#C8B99E",
+              }),
             },
             // Workout day: use theme color
             workout && {
               borderColor: theme?.color,
               borderWidth: 1.5,
-              backgroundColor: theme ? theme.color + "38" : "transparent",
+              backgroundColor: theme
+                ? theme.color + (isDark ? "38" : "70")
+                : "transparent",
             },
             // Selected day with workout: brighter bg + thicker border
             isSelected &&
               workout && {
-                backgroundColor: theme ? theme.color + "99" : "transparent",
+                backgroundColor: theme
+                  ? theme.color + (isDark ? "99" : "D8")
+                  : "transparent",
                 borderWidth: 2,
               },
             // Today without workout: no special border
@@ -660,12 +770,12 @@ const CalendarScreen = () => {
               styles.dayText,
               {
                 color: isToday
-                  ? COLORS.accent
+                  ? colors.accent
                   : workout
-                    ? COLORS.white
+                    ? colors.white
                     : isSelected
-                      ? COLORS.text
-                      : "#AAA",
+                      ? colors.text.primary
+                      : colors.text.disabled,
                 fontWeight: workout || isToday || isSelected ? "800" : "500",
               },
             ]}
@@ -684,7 +794,7 @@ const CalendarScreen = () => {
               <Ionicons
                 name="checkmark-circle"
                 size={12}
-                color={COLORS.success}
+                color={colors.success}
               />
             </View>
           )}
@@ -708,17 +818,16 @@ const CalendarScreen = () => {
   return (
     <View style={styles.container}>
       <StatusBar
-        barStyle="light-content"
+        barStyle={isDark ? "light-content" : "dark-content"}
         translucent
         backgroundColor="transparent"
       />
 
       {/* HEADER */}
-      {/* HEADER */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Takvim</Text>
         <View style={styles.headerStats}>
-          <Ionicons name="fitness-outline" size={14} color={COLORS.accent} />
+          <Ionicons name="fitness-outline" size={14} color={colors.accent} />
           <Text style={styles.headerStatsText}>
             {allWorkouts.filter((w) => w.status === "completed").length}/
             {allWorkouts.length}
@@ -758,7 +867,7 @@ const CalendarScreen = () => {
             <Ionicons
               name="calendar-clear-outline"
               size={24}
-              color={COLORS.textDim}
+              color={colors.text.secondary}
             />
             <Text style={styles.emptySliderText}>Henüz antrenman yok</Text>
           </View>
@@ -772,7 +881,7 @@ const CalendarScreen = () => {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor={COLORS.accent}
+            tintColor={colors.accent}
           />
         }
       >
@@ -789,7 +898,7 @@ const CalendarScreen = () => {
               hitSlop={12}
               style={styles.monthArrow}
             >
-              <Ionicons name="chevron-back" size={22} color={COLORS.accent} />
+              <Ionicons name="chevron-back" size={22} color={colors.accent} />
             </Pressable>
             <Text style={styles.monthTitle}>{currentMonthLabel}</Text>
             <Pressable
@@ -797,12 +906,12 @@ const CalendarScreen = () => {
               hitSlop={12}
               style={styles.monthArrow}
             >
-              <Ionicons name="chevron-forward" size={22} color={COLORS.accent} />
+              <Ionicons name="chevron-forward" size={22} color={colors.accent} />
             </Pressable>
           </View>
 
           <Calendar
-            key={currentMonth}
+            key={`${currentMonth}-${colors.background}`}
             current={currentMonth}
             enableSwipeMonths={false}
             hideArrows={true}
@@ -811,21 +920,7 @@ const CalendarScreen = () => {
             hideExtraDays={true}
             dayComponent={renderCustomDay as any}
             onMonthChange={(date: any) => setCurrentMonth(date.dateString)}
-            theme={{
-              calendarBackground: "transparent",
-              textSectionTitleColor: "#777",
-              textDayHeaderFontSize: 12,
-              textDayHeaderFontWeight: "600" as const,
-              ["stylesheet.calendar.header" as any]: {
-                week: {
-                  flexDirection: "row",
-                  justifyContent: "space-around",
-                  paddingBottom: 8,
-                  marginBottom: 4,
-                  borderBottomWidth: 0,
-                },
-              },
-            }}
+            theme={calendarTheme}
           />
         </View>
 
@@ -834,7 +929,7 @@ const CalendarScreen = () => {
           {(
             ["easy", "tempo", "interval", "long", "rest"] as WorkoutTypeEnum[]
           ).map((type) => {
-            const theme = getWorkoutTheme(type);
+            const theme = getWorkoutTheme(type, colors, isDark);
             return (
               <View key={type} style={styles.legendItem}>
                 <View
@@ -861,7 +956,7 @@ const CalendarScreen = () => {
                 <Ionicons
                   name="alert-circle"
                   size={20}
-                  color={COLORS.warning}
+                  color={colors.warning}
                 />
               </View>
               <View>
@@ -878,7 +973,7 @@ const CalendarScreen = () => {
             <Ionicons
               name="chevron-forward"
               size={18}
-              color={COLORS.textDim}
+              color={colors.text.secondary}
             />
           </Pressable>
         )}
@@ -906,7 +1001,7 @@ const CalendarScreen = () => {
                 <Ionicons
                   name="calendar-outline"
                   size={28}
-                  color={COLORS.accent}
+                  color={colors.accent}
                 />
               </View>
               <Text style={styles.modalTitle}>
@@ -935,7 +1030,7 @@ const CalendarScreen = () => {
                   <Ionicons
                     name="close-circle"
                     size={16}
-                    color={COLORS.danger}
+                    color={colors.danger}
                   />
                   <Text style={styles.missedToggleText}>
                     {missedWorkouts.length} kaçırılan antrenmanı gör
@@ -943,13 +1038,13 @@ const CalendarScreen = () => {
                   <Ionicons
                     name={showMissedList ? "chevron-up" : "chevron-down"}
                     size={16}
-                    color={COLORS.textDim}
+                    color={colors.text.secondary}
                   />
                 </Pressable>
                 {showMissedList && (
                   <View style={styles.missedList}>
                     {missedWorkouts.map((w: any) => {
-                      const theme = getWorkoutTheme(w.workout_type);
+                      const theme = getWorkoutTheme(w.workout_type, colors, isDark);
                       const d = new Date(w.scheduled_date + "T00:00:00");
                       const dayName = d.toLocaleDateString("tr-TR", {
                         weekday: "short",
@@ -985,7 +1080,7 @@ const CalendarScreen = () => {
               <Ionicons
                 name="alert-circle"
                 size={18}
-                color={COLORS.warning}
+                color={colors.warning}
               />
               <Text style={styles.modalWarningText}>
                 Bu işlem tüm antrenmanları yeniden sıralayacak. Uzun koşu
@@ -1023,15 +1118,15 @@ const CalendarScreen = () => {
                     size={20}
                     color={
                       selectedRescheduleDate === day.date
-                        ? COLORS.accent
-                        : COLORS.textDim
+                        ? colors.accent
+                        : colors.text.secondary
                     }
                   />
                   <Text
                     style={[
                       styles.modalDateText,
                       selectedRescheduleDate === day.date && {
-                        color: COLORS.accent,
+                        color: colors.accent,
                       },
                     ]}
                   >
@@ -1060,7 +1155,7 @@ const CalendarScreen = () => {
               disabled={!selectedRescheduleDate || isRescheduling}
             >
               {isRescheduling ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={colors.text.inverse} size="small" />
               ) : (
                 <Text style={styles.modalConfirmText}>Ertele</Text>
               )}
@@ -1093,444 +1188,451 @@ const CalendarScreen = () => {
 
 export default CalendarScreen;
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: { flex: 1, backgroundColor: c.background },
 
-  // HEADER
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    paddingTop: 70,
-    paddingBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "900",
-    color: COLORS.text,
-    letterSpacing: 0.3,
-  },
-  headerStats: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: COLORS.card,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    gap: 5,
-  },
-  headerStatsText: { color: COLORS.textDim, fontSize: 13, fontWeight: "700" },
+    // HEADER
+    header: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingHorizontal: 20,
+      paddingTop: 70,
+      paddingBottom: 12,
+    },
+    headerTitle: {
+      fontSize: 28,
+      fontWeight: "900" as const,
+      color: c.text.primary,
+      letterSpacing: 0.3,
+    },
+    headerStats: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surface,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+      gap: 5,
+    },
+    headerStatsText: {
+      color: c.text.secondary,
+      fontSize: 13,
+      fontWeight: "700" as const,
+    },
 
-  // SLIDER
-  sliderSection: {
-    marginTop: 10,
-    marginBottom: 30,
-  },
-  sliderCard: {
-    width: SLIDER_CARD_WIDTH,
-    marginHorizontal: SLIDER_CARD_MARGIN,
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  sliderCardSelected: {
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  sliderCardGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 18,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  sliderDateCol: {
-    alignItems: "center",
-    width: 56,
-  },
-  sliderDayName: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    marginBottom: 2,
-  },
-  sliderDayNum: {
-    fontSize: 28,
-    fontWeight: "900",
-  },
-  sliderMonth: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  sliderSeparator: {
-    width: 1,
-    height: 48,
-    marginHorizontal: 14,
-    borderRadius: 1,
-  },
-  sliderInfo: {
-    flex: 1,
-  },
-  sliderTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 4,
-  },
-  sliderTypeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-    gap: 4,
-  },
-  sliderTypeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    textTransform: "uppercase",
-  },
-  sliderTitle: {
-    color: COLORS.text,
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-  sliderMeta: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  sliderMetaItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-  },
-  sliderMetaText: {
-    color: COLORS.textDim,
-    fontSize: 13,
-    fontWeight: "600",
-  },
+    // SLIDER
+    sliderSection: {
+      marginTop: 10,
+      marginBottom: 30,
+    },
+    sliderCard: {
+      width: SLIDER_CARD_WIDTH,
+      marginHorizontal: SLIDER_CARD_MARGIN,
+      borderRadius: 20,
+      overflow: "hidden" as const,
+    },
+    sliderCardSelected: {
+      shadowColor: c.accent,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 6,
+    },
+    sliderCardGradient: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      padding: 18,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    sliderDateCol: {
+      alignItems: "center" as const,
+      width: 56,
+    },
+    sliderDayName: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "600" as const,
+      textTransform: "uppercase" as const,
+      marginBottom: 2,
+    },
+    sliderDayNum: {
+      fontSize: 28,
+      fontWeight: "900" as const,
+    },
+    sliderMonth: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "600" as const,
+    },
+    sliderSeparator: {
+      width: 1,
+      height: 48,
+      marginHorizontal: 14,
+      borderRadius: 1,
+    },
+    sliderInfo: {
+      flex: 1,
+    },
+    sliderTopRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      marginBottom: 4,
+    },
+    sliderTypeBadge: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 8,
+      gap: 4,
+    },
+    sliderTypeText: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+      textTransform: "uppercase" as const,
+    },
+    sliderTitle: {
+      color: c.text.primary,
+      fontSize: 16,
+      fontWeight: "700" as const,
+      marginBottom: 6,
+    },
+    sliderMeta: {
+      flexDirection: "row" as const,
+      gap: 12,
+    },
+    sliderMetaItem: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 3,
+    },
+    sliderMetaText: {
+      color: c.text.secondary,
+      fontSize: 13,
+      fontWeight: "600" as const,
+    },
 
-  // EMPTY SLIDER
-  emptySlider: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 10,
-    marginHorizontal: 20,
-    marginBottom: 8,
-    paddingVertical: 20,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    borderStyle: "dashed",
-  },
-  emptySliderText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "600",
-  },
+    // EMPTY SLIDER
+    emptySlider: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 10,
+      marginHorizontal: 20,
+      marginBottom: 8,
+      paddingVertical: 20,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+      borderStyle: "dashed" as const,
+    },
+    emptySliderText: {
+      color: c.text.secondary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
 
-  // CALENDAR
-  calendarContainer: { marginHorizontal: 10, paddingVertical: 4 },
-  monthHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 10,
-    marginBottom: 14,
-  },
-  monthTitle: {
-    color: COLORS.text,
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  monthArrow: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: COLORS.card,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  dayContainer: {
-    width: CELL_WIDTH,
-    height: CELL_WIDTH,
-    justifyContent: "center",
-    alignItems: "center",
-    marginVertical: 3,
-  },
-  dayBox: {
-    width: CELL_WIDTH - 6,
-    height: CELL_WIDTH - 6,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 12,
-  },
-  dayText: { fontSize: 13 },
-  dayDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: 3,
-  },
-  statusIcon: {
-    position: "absolute",
-    top: -4,
-    right: -4,
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    padding: 1,
-    zIndex: 2,
-  },
-  todayBar: {
-    width: 14,
-    height: 2.5,
-    borderRadius: 2,
-    backgroundColor: COLORS.accent,
-    marginTop: 3,
-  },
+    // CALENDAR
+    calendarContainer: { marginHorizontal: 10, paddingVertical: 4 },
+    monthHeader: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      paddingHorizontal: 10,
+      marginBottom: 14,
+    },
+    monthTitle: {
+      color: c.text.primary,
+      fontSize: 18,
+      fontWeight: "700" as const,
+    },
+    monthArrow: {
+      width: 36,
+      height: 36,
+      borderRadius: 12,
+      backgroundColor: c.surface,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    dayContainer: {
+      width: CELL_WIDTH,
+      height: CELL_WIDTH,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      marginVertical: 3,
+    },
+    dayBox: {
+      width: CELL_WIDTH - 6,
+      height: CELL_WIDTH - 6,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderRadius: 12,
+    },
+    dayText: { fontSize: 13 },
+    dayDot: {
+      width: 4,
+      height: 4,
+      borderRadius: 2,
+      marginTop: 3,
+    },
+    statusIcon: {
+      position: "absolute" as const,
+      top: -4,
+      right: -4,
+      backgroundColor: c.background,
+      borderRadius: 8,
+      padding: 1,
+      zIndex: 2,
+    },
+    todayBar: {
+      width: 14,
+      height: 2.5,
+      borderRadius: 2,
+      backgroundColor: c.accent,
+      marginTop: 3,
+    },
 
-  // LEGEND
-  legend: {
-    flexDirection: "row",
-    justifyContent: "center",
-    flexWrap: "wrap",
-    gap: 14,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  legendItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  legendText: {
-    color: COLORS.textDim,
-    fontSize: 11,
-    fontWeight: "600",
-  },
+    // LEGEND
+    legend: {
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      flexWrap: "wrap" as const,
+      gap: 14,
+      paddingHorizontal: 20,
+      paddingTop: 8,
+      paddingBottom: 4,
+    },
+    legendItem: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 5,
+    },
+    legendDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    legendText: {
+      color: c.text.secondary,
+      fontSize: 11,
+      fontWeight: "600" as const,
+    },
 
-  // RESCHEDULE INLINE SECTION
-  rescheduleSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginHorizontal: 20,
-    marginTop: 20,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: `${COLORS.warning}30`,
-  },
-  rescheduleSectionLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    flex: 1,
-  },
-  rescheduleSectionIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: `${COLORS.warning}15`,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rescheduleSectionTitle: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  rescheduleSectionDesc: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "500",
-    marginTop: 2,
-  },
+    // RESCHEDULE INLINE SECTION
+    rescheduleSection: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      marginHorizontal: 20,
+      marginTop: 20,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: `${c.warning}30`,
+    },
+    rescheduleSectionLeft: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 12,
+      flex: 1,
+    },
+    rescheduleSectionIcon: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: `${c.warning}15`,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    rescheduleSectionTitle: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "700" as const,
+    },
+    rescheduleSectionDesc: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      marginTop: 2,
+    },
 
-  // RESCHEDULE MODAL
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 24,
-  },
-  modalContainer: {
-    width: "100%",
-    maxHeight: "80%",
-    backgroundColor: COLORS.card,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    overflow: "hidden",
-  },
-  modalHeader: {
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalIconCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORS.accent + "18",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  modalTitle: {
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: "800",
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  modalDesc: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  modalWarning: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    backgroundColor: COLORS.warning + "12",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  modalWarningText: {
-    color: COLORS.warning,
-    fontSize: 12,
-    fontWeight: "600",
-    flex: 1,
-    lineHeight: 18,
-  },
-  modalRemainingText: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "600",
-    textAlign: "center",
-    marginBottom: 12,
-  },
-  modalDates: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  modalDateButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    backgroundColor: COLORS.cardVariant,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  modalDateButtonSelected: {
-    borderColor: COLORS.accent,
-    backgroundColor: `${COLORS.accent}15`,
-  },
-  modalConfirmButton: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  modalConfirmButtonDisabled: {
-    opacity: 0.4,
-  },
-  modalConfirmText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  modalDateText: {
-    color: COLORS.text,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  missedSection: {
-    marginBottom: 8,
-  },
-  missedToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: COLORS.cardVariant,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  missedToggleText: {
-    flex: 1,
-    color: COLORS.textDim,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  missedList: {
-    marginTop: 6,
-    gap: 4,
-  },
-  missedItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    backgroundColor: COLORS.cardVariant,
-    borderRadius: 10,
-  },
-  missedItemDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  missedItemDate: {
-    color: COLORS.text,
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  missedItemType: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "500",
-    marginLeft: "auto" as const,
-  },
-  modalDismiss: {
-    alignItems: "center",
-    paddingVertical: 14,
-    marginTop: 4,
-  },
-  modalDismissText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-});
+    // RESCHEDULE MODAL
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      paddingHorizontal: 24,
+    },
+    modalContainer: {
+      width: "100%" as const,
+      maxHeight: "80%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 24,
+      borderWidth: 1,
+      borderColor: c.border,
+      overflow: "hidden" as const,
+    },
+    modalHeader: {
+      alignItems: "center" as const,
+      marginBottom: 16,
+    },
+    modalIconCircle: {
+      width: 56,
+      height: 56,
+      borderRadius: 28,
+      backgroundColor: c.accent + "18",
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginBottom: 14,
+    },
+    modalTitle: {
+      color: c.text.primary,
+      fontSize: 20,
+      fontWeight: "800" as const,
+      marginBottom: 6,
+      textAlign: "center" as const,
+    },
+    modalDesc: {
+      color: c.text.secondary,
+      fontSize: 14,
+      textAlign: "center" as const,
+      lineHeight: 20,
+    },
+    modalWarning: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 8,
+      backgroundColor: c.warning + "12",
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 16,
+    },
+    modalWarningText: {
+      color: c.warning,
+      fontSize: 12,
+      fontWeight: "600" as const,
+      flex: 1,
+      lineHeight: 18,
+    },
+    modalRemainingText: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "600" as const,
+      textAlign: "center" as const,
+      marginBottom: 12,
+    },
+    modalDates: {
+      gap: 8,
+      marginBottom: 8,
+    },
+    modalDateButton: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+      backgroundColor: c.surfaceVariant,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    modalDateButtonSelected: {
+      borderColor: c.accent,
+      backgroundColor: `${c.accent}15`,
+    },
+    modalConfirmButton: {
+      backgroundColor: c.accent,
+      paddingVertical: 16,
+      borderRadius: 14,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginTop: 4,
+      marginBottom: 4,
+    },
+    modalConfirmButtonDisabled: {
+      opacity: 0.4,
+    },
+    modalConfirmText: {
+      color: c.text.inverse,
+      fontSize: 16,
+      fontWeight: "800" as const,
+    },
+    modalDateText: {
+      color: c.text.primary,
+      fontSize: 15,
+      fontWeight: "700" as const,
+    },
+    missedSection: {
+      marginBottom: 8,
+    },
+    missedToggle: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      backgroundColor: c.surfaceVariant,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    missedToggleText: {
+      flex: 1,
+      color: c.text.secondary,
+      fontSize: 13,
+      fontWeight: "600" as const,
+    },
+    missedList: {
+      marginTop: 6,
+      gap: 4,
+    },
+    missedItem: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 10,
+    },
+    missedItemDot: {
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+    },
+    missedItemDate: {
+      color: c.text.primary,
+      fontSize: 13,
+      fontWeight: "600" as const,
+    },
+    missedItemType: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      marginLeft: "auto" as const,
+    },
+    modalDismiss: {
+      alignItems: "center" as const,
+      paddingVertical: 14,
+      marginTop: 4,
+    },
+    modalDismissText: {
+      color: c.text.secondary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+  } as const;
+};

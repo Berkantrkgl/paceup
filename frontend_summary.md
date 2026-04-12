@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.7
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.8
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -118,6 +118,7 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
   - Abonelik bitiş tarihi (sadece premium, Türkçe format: "21 Mart 2027")
   - Kalan erteleme hakkı (premium: "Sınırsız")
   - **Aboneliği İptal Et:** Sadece premium kullanıcılar için görünür, onay Alert'i sonrası `POST /api/users/cancel_premium/` çağrılır
+- **Görünüm (Tema Seçici):** KİMLİK VE FİZİKSEL section'ının hemen altında — ghost button tarzında 3'lü minimal selector (Sistem / Aydınlık / Karanlık). Seçim anında tema canlı değişir, `AsyncStorage` key'i `theme-preference-v1`'e persist edilir.
 - Premium ekranına `router.push("/(protected)/premium")` ile yönlendirme
 
 ### H. Premium Ekranı (`(protected)/premium.tsx`)
@@ -245,7 +246,119 @@ const { token } = useContext(AuthContext);
 
 ---
 
-## 4. Premium & Token Sistemi
+## 5. Theming (Dark / Light Mode)
+
+Uygulama hem koyu hem açık temayı destekler. Sistem custom React Context üzerine kuruludur — dışarıdan bir UI library (tamagui, nativewind, unistyles vb.) kullanılmaz.
+
+**Mimari:**
+
+```
+<ThemeProvider>           ← en dışta, AsyncStorage'dan tercihi okur
+  <AuthProvider>
+    <ThemedShell>         ← StatusBar + expo-system-ui
+      <RootLayoutNav />
+```
+
+**3-State Preference Modeli:**
+
+- `ThemePreference = "system" | "light" | "dark"` — kullanıcı seçimi, `AsyncStorage` key: `theme-preference-v1`
+- `"system"` seçiliyken `useColorScheme()` sonucu runtime'da çözülür (OS tercihini canlı takip eder)
+- Hidrasyon: Storage okunana kadar children render edilmez (ilk frame'de yanlış tema flash'ı engellenir)
+
+**Token Yapısı (`src/theme/tokens.ts`):**
+
+Nested semantic token'lar (20 civarında):
+
+```ts
+type ThemeColors = {
+  background: string;           // ekran arkaplanı
+  surface: string;              // kart zemini
+  surfaceVariant: string;       // yükseltilmiş kart / input
+  overlay: string;              // modal scrim
+  border: string;
+  borderStrong: string;
+  text: {
+    primary: string;
+    secondary: string;
+    disabled: string;
+    inverse: string;            // accent üstündeki metin
+  };
+  accent: string;               // #FF4501 — her iki modda aynı marka rengi
+  accentMuted: string;
+  secondary: string;
+  success / warning / danger / info: string;
+  shadow: string;
+  inactive: string;
+  white / transparent: string;  // sabitler
+};
+```
+
+**Palet Özellikleri:**
+
+- **Dark:** Carbon Dark (background `#0D0D0D`, surface `#1A1A1A`)
+- **Light:** Warm (background `#FBF7F2` krem, surface `#FFFFFF`, text `#1F1B16` kahve-siyah). Pure beyaz yerine sıcak krem tonu tercih edilmiştir — accent turuncuyla uyumlu
+- **Marka rengi (`#FF4501`) her iki modda aynı** — sadece yüzeyler, metinler ve border'lar flip olur
+
+**Stil Pattern'i — `useThemedStyles` Factory Hook:**
+
+`StyleSheet.create` module load'da evaluate olduğu için runtime tema değişiminde çalışmaz. Bunun yerine factory + `useMemo` pattern'i kullanılır:
+
+```ts
+// Component:
+const styles = useThemedStyles(makeStyles);
+
+// Dosyanın sonunda:
+const makeStyles = (t: Theme) =>
+  ({
+    container: { backgroundColor: t.colors.background },
+    card: { backgroundColor: t.colors.surface },
+  }) as const;
+```
+
+- `makeStyles` component dışında tanımlanır → stabil referans → `useMemo` yalnızca tema değiştiğinde yeniden hesaplar
+- `useThemedStyles` içinde `StyleSheet.create` yapılır → RN style-ID cache'i korunur
+
+**Dinamik Renk Kullanımı (inline):**
+
+Prop olarak renk geçen yerlerde (`LinearGradient colors={...}`, `Ionicons color={...}`, chart-kit `chartConfig` vb.) component içinde `const { colors, isDark } = useTheme()` alınır ve doğrudan kullanılır.
+
+**Third-party Library Theming:**
+
+- **`react-native-chart-kit`:** `chartConfig` `useMemo` ile tema'ya bağlanır. `hexToRgba` helper'ı opacity callback'leri için kullanılır
+- **`react-native-calendars`:** `theme` prop'u `useMemo` + `key={theme}` force-remount (stale cache bug'ı için)
+- **`@react-native-picker/picker`:** `itemStyle={{ color: colors.text.primary }}` — iOS wheel picker'ın seçim çizgileri OS temasını takip eder, JS'den override edilemez (bilinen limitasyon)
+- **`@react-native-community/datetimepicker`:** `themeVariant={isDark ? "dark" : "light"}` + `textColor`
+- **`expo-linear-gradient`:** color array'leri inline olarak token'lardan beslenir
+- **`expo-system-ui`:** `SystemUI.setBackgroundColorAsync(colors.background)` ile Android nav bar teması
+
+**Workout Type Paleti (Özel Durum):**
+
+Workout türleri (tempo, easy, interval, long, rest) için ayrı bir `WORKOUT_PALETTE` vardır — token sisteminin dışındadır çünkü semantik workout renkleri (sarı interval, turkuaz easy vb.) her iki modda aynı kalmaz. Light mod için koyulaştırılmış alternatifler tanımlıdır (örn. sarı `#FFD93D` → `#B8860B` altın). Calendar ve workout-detail ekranlarında `isDark` parametresiyle doğru palet seçilir.
+
+**Gradient Kart Pattern'i:**
+
+Home dashboard, calendar slider ve achievement kartları light modda yüksek doymuş gradient + beyaz metin kullanır:
+
+```ts
+// Dark: [color + "22", surface]  (soluk fade)
+// Light: [color, color + "A0"]    (full doymuş + hafif fade)
+```
+
+Bunun içindeki text/ikonlar light modda `colors.white` / `rgba(255,255,255,0.85)` ile override edilir (dark modda mevcut renkli davranış korunur).
+
+**StatusBar + Android Nav Bar:**
+
+`_layout.tsx`'de `ThemedShell` component'i `isDark`'a göre `StatusBar.style` belirler ve `SystemUI.setBackgroundColorAsync` ile Android nav bar'ı temaya bağlar. iOS'ta nav bar işlemi no-op.
+
+**Bilinen Sınırlamalar:**
+
+- Native splash screen OS temasını takip eder, in-app user override'ı bilmez (ilk açılışta kısa bir flash olabilir)
+- iOS picker seçim çizgileri OS'a bağımlı (native UIKit sınırlaması)
+- React Navigation modal presentation native dim/blur OS temasını kullanır
+
+---
+
+## 6. Premium & Token Sistemi
 
 **Premium Abonelik Akışı:**
 
@@ -272,7 +385,7 @@ const { token } = useContext(AuthContext);
 
 ---
 
-## 5. API Integration Pattern
+## 7. API Integration Pattern
 
 ```ts
 const fetchData = async () => {
@@ -301,7 +414,7 @@ export const API_URL = `${BASE_URL}/api`; // Django Backend
 
 ---
 
-## 6. Proje Klasör Yapısı
+## 8. Proje Klasör Yapısı
 
 ```
 src/
@@ -342,6 +455,7 @@ src/
 │       ├── android-icon-background.png
 │       └── android-icon-monochrome.png
 ├── components/
+│   ├── ThemeSelector.tsx                     # Tema seçici (Sistem/Aydınlık/Karanlık)
 │   ├── chat/
 │   │   └── tools/
 │   │       ├── AvailabilityTool.tsx          # Koşu günleri seçim widget
@@ -354,18 +468,23 @@ src/
 │       ├── PlansTour.tsx                     # Planlama turu (2 adım)
 │       └── ProfileTour.tsx                   # Profil turu (2 adım)
 ├── constants/
-│   ├── Colors.ts                            # Tema renkleri (COLORS)
 │   ├── Config.ts                            # API URL'leri
-│   └── Content.ts                           # Statik içerikler
+│   └── Content.ts                           # Statik içerikler (motivasyon, header görselleri)
+├── theme/
+│   ├── tokens.ts                            # Dark + Light palet + Theme tipi
+│   ├── ThemeContext.tsx                     # ThemeProvider, useTheme(), AsyncStorage persist
+│   └── useThemedStyles.ts                   # Factory hook (StyleSheet.create + useMemo)
 ├── types/
 │   └── plans.ts                             # Plan/antrenman tipleri
 └── utils/
     └── authContext.tsx                       # Auth state, token yönetimi
 ```
 
+> **Not:** `constants/Colors.ts` kaldırılmıştır. Tüm renk erişimi artık `@/theme/ThemeContext` → `useTheme()` üzerinden yapılır.
+
 ---
 
-## 7. Önemli Notlar & Bilinen Davranışlar
+## 9. Önemli Notlar & Bilinen Davranışlar
 
 - **Timezone bug (isToday):** `new Date("YYYY-MM-DD")` UTC olarak parse edilir, Türkiye (+3) saatinde yanlış güne kayabilir. Doğru yöntem: `new Date().toLocaleDateString("en-CA")` ile string karşılaştırması veya `new Date(y, m-1, d)` constructor kullanımı.
 - **Reschedule günleri:** Backend `running_days` formatı `[0,2,4]` (0=Pzt). JS `getDay()` dönüşümü için `JS_TO_BACKEND_DAY = [6, 0, 1, 2, 3, 4, 5]` mapping'i kullanılır.
@@ -375,10 +494,13 @@ src/
 - **Premium ekranı mimari notu:** Eski `PremiumModal` (RN `Modal` + `PanResponder` ile swipe-to-dismiss) gesture çakışmaları nedeniyle terk edildi. Yerine `(protected)/premium.tsx` stack screen + `presentation: "modal"` kullanıldı — iOS native swipe-down gesture otomatik çalışır, ekstra kod gerektirmez.
 - **Development build zorunluluğu:** `@react-native-google-signin/google-signin` native modül gerektirdiğinden Expo Go'da çalışmaz. `npx expo run:ios` ile build alınır. JS kod değişiklikleri hot reload ile yansır, native değişikliklerde (yeni paket, plugin, `app.json`) tekrar build gerekir.
 - **Google OAuth client tipleri:** iOS client (native SDK, bundle ID: `com.example.PaceUp`) ve Web client (backend'de `id_token` doğrulama) ayrı tutulur. `expo-auth-session` proxy yöntemi Expo Go'da sorunlu olduğundan terk edildi.
+- **Tema sistemi — `COLORS` importu yoktur:** Eski `constants/Colors.ts` silinmiştir. Yeni kod yazarken renkler için **daima** `useTheme()` hook'u kullanılmalı, factory pattern (`makeStyles(t: Theme)`) ile stil tanımlanmalı. `StyleSheet.create` doğrudan çağrılmaz — `useThemedStyles(makeStyles)` sarmalayıcı kullanılır.
+- **Workout type renkleri tema-ayrık:** `WORKOUT_PALETTE.dark` ve `WORKOUT_PALETTE.light` — sarı (interval) gibi renkler light zeminde okunurluk kaybettiği için koyu alternatifler kullanılır. Yeni bir workout type eklenirse her iki palete de eklenmelidir.
+- **Gradient light mod pattern'i:** Light modda yüksek doymuş gradient kullanan kartlarda (home workout card, calendar slider, progress link, achievement) içindeki metin/ikonlar `colors.white` / `rgba(255,255,255,0.85)` ile override edilir. Dark modda mevcut renkli metin davranışı korunur (`!isDark && { color: colors.white }` pattern'i).
 
 ---
 
-## 8. App Metadata & Branding
+## 10. App Metadata & Branding
 
 - **Bundle ID:** `com.example.PaceUp` (iOS), Android package aynı
 - **Splash Screen:** Koyu arka plan (`#0D0D0D`), beyaz koşucu logosu ortada, `imageWidth: 280`, light/dark mod aynı renk

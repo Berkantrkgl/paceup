@@ -1,4 +1,6 @@
-import { COLORS } from "@/constants/Colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useEffect, useRef, useState } from "react";
@@ -7,14 +9,12 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
-// --- TYPES ---
 export interface ProgramSetupData {
   goal: string;
   mode: "duration" | "race_date" | "ai_decide";
@@ -27,7 +27,7 @@ interface ProgramSetupToolProps {
   submitted?: boolean;
 }
 
-// --- CONSTANTS ---
+// Hedef tipleri kendi semantik renklerine sahip — tema-bağımsız sabitler.
 const GOALS = [
   {
     id: "5k",
@@ -81,6 +81,9 @@ export const ProgramSetupTool = ({
   onSubmit,
   submitted,
 }: ProgramSetupToolProps) => {
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+
   const [step, setStep] = useState(1);
   const [selectedGoal, setSelectedGoal] = useState<string | null>(null);
   const [customGoal, setCustomGoal] = useState("");
@@ -206,7 +209,7 @@ export const ProgramSetupTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>{getGoalLabel()}</Text>
@@ -255,7 +258,6 @@ export const ProgramSetupTool = ({
           <Text style={styles.stepTitle}>🎯 Hedefini Seç</Text>
           <Text style={styles.stepSubtitle}>Ne için koşmak istiyorsun?</Text>
 
-          {/* YENİ TASARIM: Liste Tarzı Seçim */}
           <View style={styles.goalsList}>
             {GOALS.map((goal) => {
               const isSelected = selectedGoal === goal.id;
@@ -301,14 +303,14 @@ export const ProgramSetupTool = ({
 
           {selectedGoal === "custom" && (
             <View style={styles.customInput}>
-              <Ionicons name="create-outline" size={20} color={COLORS.accent} />
+              <Ionicons name="create-outline" size={20} color={colors.accent} />
               <TextInput
                 ref={inputRef}
                 style={styles.customTextInput}
                 value={customGoal}
                 onChangeText={setCustomGoal}
                 placeholder="Hedefini buraya yaz..."
-                placeholderTextColor="#666"
+                placeholderTextColor={colors.text.secondary}
                 autoCapitalize="sentences"
               />
             </View>
@@ -360,7 +362,7 @@ export const ProgramSetupTool = ({
             <Ionicons
               name="calendar"
               size={20}
-              color={COLORS.accent}
+              color={colors.accent}
               style={{ marginBottom: 6 }}
             />
             <Text style={styles.dateCardDate}>{formatDate(startDate)}</Text>
@@ -419,7 +421,11 @@ export const ProgramSetupTool = ({
               <Ionicons
                 name="sparkles"
                 size={14}
-                color={durationType === "auto" ? COLORS.accent : "#666"}
+                color={
+                  durationType === "auto"
+                    ? colors.accent
+                    : colors.text.secondary
+                }
                 style={{ marginRight: 4 }}
               />
               <Text
@@ -439,7 +445,7 @@ export const ProgramSetupTool = ({
                 style={styles.weekButton}
                 onPress={() => setWeeks(Math.max(MIN_WEEKS, weeks - 1))}
               >
-                <Ionicons name="remove" size={28} color="#AAA" />
+                <Ionicons name="remove" size={28} color={colors.text.secondary} />
               </TouchableOpacity>
               <View style={styles.weekDisplay}>
                 <Text style={styles.weekNumber}>{weeks}</Text>
@@ -449,7 +455,7 @@ export const ProgramSetupTool = ({
                 style={styles.weekButton}
                 onPress={() => setWeeks(Math.min(MAX_WEEKS, weeks + 1))}
               >
-                <Ionicons name="add" size={28} color={COLORS.accent} />
+                <Ionicons name="add" size={28} color={colors.accent} />
               </TouchableOpacity>
             </View>
           )}
@@ -462,7 +468,7 @@ export const ProgramSetupTool = ({
               <Ionicons
                 name="flag"
                 size={20}
-                color={COLORS.accent}
+                color={colors.accent}
                 style={{ marginBottom: 6 }}
               />
               <Text style={styles.dateCardDate}>{formatDate(targetDate)}</Text>
@@ -475,7 +481,7 @@ export const ProgramSetupTool = ({
               <Ionicons
                 name="sparkles-outline"
                 size={32}
-                color={COLORS.accent}
+                color={colors.accent}
                 style={{ marginBottom: 8 }}
               />
               <Text style={styles.autoText}>
@@ -489,7 +495,7 @@ export const ProgramSetupTool = ({
             <Ionicons
               name="information-circle-outline"
               size={14}
-              color={COLORS.accent}
+              color={colors.accent}
             />
             <Text style={styles.infoText}>
               Kısa süreli programlar daha yoğun antrenman gerektirir
@@ -517,7 +523,7 @@ export const ProgramSetupTool = ({
             style={styles.backButton}
             onPress={() => setStep(step - 1)}
           >
-            <Ionicons name="arrow-back" size={20} color="#AAA" />
+            <Ionicons name="arrow-back" size={20} color={colors.text.secondary} />
             <Text style={styles.backButtonText}>Geri</Text>
           </TouchableOpacity>
         )}
@@ -533,7 +539,7 @@ export const ProgramSetupTool = ({
           <Text style={styles.nextButtonText}>
             {step === 3 ? "Tamamla" : "Devam"}
           </Text>
-          <Ionicons name="arrow-forward" size={20} color="#000" />
+          <Ionicons name="arrow-forward" size={20} color={colors.text.inverse} />
         </TouchableOpacity>
       </View>
 
@@ -567,8 +573,8 @@ export const ProgramSetupTool = ({
                     ? getMaxStartDate()
                     : getMaxTargetDate()
                 }
-                themeVariant="dark"
-                textColor="white"
+                themeVariant={isDark ? "dark" : "light"}
+                textColor={colors.text.primary}
               />
             </Pressable>
           </Pressable>
@@ -593,384 +599,387 @@ export const ProgramSetupTool = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 360,
-  },
-  stepContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  stepWrapper: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  stepDot: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#2A2A2A",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#3A3A3A",
-  },
-  stepDotActive: {
-    borderColor: COLORS.accent,
-  },
-  stepDotCurrent: {
-    backgroundColor: COLORS.accent,
-  },
-  stepNumber: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#666",
-  },
-  stepNumberActive: {
-    color: "#000",
-  },
-  stepLine: {
-    width: 32,
-    height: 2,
-    backgroundColor: "#3A3A3A",
-    marginHorizontal: 6,
-  },
-  stepLineActive: {
-    backgroundColor: COLORS.accent,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 16,
-  },
-  stepContent: {
-    flex: 1,
-  },
-  stepTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 4,
-  },
-  stepSubtitle: {
-    fontSize: 13,
-    color: "#999",
-    marginBottom: 16,
-  },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      minHeight: 360,
+    },
+    stepContainer: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginBottom: 16,
+    },
+    stepWrapper: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+    },
+    stepDot: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    stepDotActive: {
+      borderColor: c.accent,
+    },
+    stepDotCurrent: {
+      backgroundColor: c.accent,
+    },
+    stepNumber: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+      color: c.text.secondary,
+    },
+    stepNumberActive: {
+      color: c.text.inverse,
+    },
+    stepLine: {
+      width: 32,
+      height: 2,
+      backgroundColor: c.border,
+      marginHorizontal: 6,
+    },
+    stepLineActive: {
+      backgroundColor: c.accent,
+    },
+    scrollView: {
+      flex: 1,
+    },
+    scrollContent: {
+      paddingBottom: 16,
+    },
+    stepContent: {
+      flex: 1,
+    },
+    stepTitle: {
+      fontSize: 17,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 4,
+    },
+    stepSubtitle: {
+      fontSize: 13,
+      color: c.text.secondary,
+      marginBottom: 16,
+    },
 
-  // Liste Tarzı Hedef Seçimi
-  goalsList: {
-    gap: 8,
-  },
-  goalRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 10,
-    borderWidth: 2,
-    borderColor: "#2A2A2A",
-  },
-  goalRowActive: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accent + "10",
-  },
-  goalLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  goalIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: "#1F1F1F",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  goalEmoji: {
-    fontSize: 20,
-  },
-  goalTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#CCC",
-    marginBottom: 1,
-  },
-  goalTitleActive: {
-    color: "#FFF",
-  },
-  goalSubtitle: {
-    fontSize: 11,
-    color: "#777",
-  },
-  radioOuter: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#444",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radioOuterActive: {
-    borderColor: COLORS.accent,
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.accent,
-  },
+    // Liste Tarzı Hedef Seçimi
+    goalsList: {
+      gap: 8,
+    },
+    goalRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 12,
+      padding: 10,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    goalRowActive: {
+      borderColor: c.accent,
+      backgroundColor: c.accent + "10",
+    },
+    goalLeft: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+    },
+    goalIconBox: {
+      width: 38,
+      height: 38,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    goalEmoji: {
+      fontSize: 20,
+    },
+    goalTitle: {
+      fontSize: 14,
+      fontWeight: "600" as const,
+      color: c.text.secondary,
+      marginBottom: 1,
+    },
+    goalTitleActive: {
+      color: c.text.primary,
+    },
+    goalSubtitle: {
+      fontSize: 11,
+      color: c.text.secondary,
+    },
+    radioOuter: {
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: c.border,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    radioOuterActive: {
+      borderColor: c.accent,
+    },
+    radioInner: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: c.accent,
+    },
 
-  customInput: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 10,
-    backgroundColor: "#252525",
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderWidth: 2,
-    borderColor: COLORS.accent,
-  },
-  customTextInput: {
-    flex: 1,
-    color: "#FFF",
-    fontSize: 14,
-  },
-  quickDates: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
-  quickDateBtn: {
-    flex: 1,
-    backgroundColor: "#252525",
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  quickDateText: {
-    color: COLORS.accent,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  dateCard: {
-    backgroundColor: "#252525",
-    borderRadius: 14,
-    paddingVertical: 18,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  dateCardDate: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  dateCardLabel: {
-    fontSize: 11,
-    color: "#777",
-  },
-  durationTabs: {
-    flexDirection: "row",
-    backgroundColor: "#252525",
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 16,
-  },
-  durationTab: {
-    flex: 1,
-    flexDirection: "row",
-    paddingVertical: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 7,
-  },
-  durationTabActive: {
-    backgroundColor: "#1A1A1A",
-  },
-  durationTabText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
-  },
-  durationTabTextActive: {
-    color: COLORS.accent,
-  },
-  weekSelector: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 20,
-    paddingVertical: 16,
-  },
-  weekButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#252525",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  weekDisplay: {
-    alignItems: "center",
-    minWidth: 80,
-  },
-  weekNumber: {
-    fontSize: 40,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  weekLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: COLORS.accent,
-    letterSpacing: 2,
-    marginTop: 2,
-  },
-  autoInfo: {
-    alignItems: "center",
-    paddingVertical: 24,
-  },
-  autoText: {
-    fontSize: 13,
-    color: "#CCC",
-    textAlign: "center",
-    lineHeight: 18,
-    paddingHorizontal: 16,
-  },
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255, 165, 0, 0.1)",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    gap: 8,
-    marginTop: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 165, 0, 0.2)",
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 11,
-    color: "#DDD",
-    lineHeight: 15,
-  },
-  footer: {
-    flexDirection: "row",
-    gap: 10,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#2A2A2A",
-  },
-  backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: "#252525",
-  },
-  backButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#AAA",
-  },
-  nextButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: COLORS.accent,
-  },
-  nextButtonDisabled: {
-    opacity: 0.5,
-  },
-  nextButtonText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#000",
-  },
-  submittedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#252525",
-    padding: 12,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  submittedIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.accent + "20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  submittedTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  submittedSubtitle: {
-    fontSize: 12,
-    color: "#999",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.8)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: "#1C1C1E",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#2A2A2A",
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FFF",
-  },
-  modalCancel: {
-    fontSize: 15,
-    color: "#999",
-  },
-  modalDone: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: COLORS.accent,
-  },
-});
+    customInput: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+      marginTop: 10,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderWidth: 2,
+      borderColor: c.accent,
+    },
+    customTextInput: {
+      flex: 1,
+      color: c.text.primary,
+      fontSize: 14,
+    },
+    quickDates: {
+      flexDirection: "row" as const,
+      gap: 10,
+      marginBottom: 12,
+    },
+    quickDateBtn: {
+      flex: 1,
+      backgroundColor: c.surfaceVariant,
+      paddingVertical: 10,
+      borderRadius: 10,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    quickDateText: {
+      color: c.accent,
+      fontSize: 12,
+      fontWeight: "600" as const,
+    },
+    dateCard: {
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 14,
+      paddingVertical: 18,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    dateCardDate: {
+      fontSize: 16,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    dateCardLabel: {
+      fontSize: 11,
+      color: c.text.secondary,
+    },
+    durationTabs: {
+      flexDirection: "row" as const,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 10,
+      padding: 3,
+      marginBottom: 16,
+    },
+    durationTab: {
+      flex: 1,
+      flexDirection: "row" as const,
+      paddingVertical: 8,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      borderRadius: 7,
+    },
+    durationTabActive: {
+      backgroundColor: c.surface,
+    },
+    durationTabText: {
+      fontSize: 12,
+      fontWeight: "600" as const,
+      color: c.text.secondary,
+    },
+    durationTabTextActive: {
+      color: c.accent,
+    },
+    weekSelector: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 20,
+      paddingVertical: 16,
+    },
+    weekButton: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    weekDisplay: {
+      alignItems: "center" as const,
+      minWidth: 80,
+    },
+    weekNumber: {
+      fontSize: 40,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+    },
+    weekLabel: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+      color: c.accent,
+      letterSpacing: 2,
+      marginTop: 2,
+    },
+    autoInfo: {
+      alignItems: "center" as const,
+      paddingVertical: 24,
+    },
+    autoText: {
+      fontSize: 13,
+      color: c.text.primary,
+      textAlign: "center" as const,
+      lineHeight: 18,
+      paddingHorizontal: 16,
+    },
+    infoBox: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.warning + "1A",
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 10,
+      gap: 8,
+      marginTop: 12,
+      borderWidth: 1,
+      borderColor: c.warning + "33",
+    },
+    infoText: {
+      flex: 1,
+      fontSize: 11,
+      color: c.text.primary,
+      lineHeight: 15,
+    },
+    footer: {
+      flexDirection: "row" as const,
+      gap: 10,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    backButton: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+      backgroundColor: c.surfaceVariant,
+    },
+    backButtonText: {
+      fontSize: 14,
+      fontWeight: "600" as const,
+      color: c.text.secondary,
+    },
+    nextButton: {
+      flex: 1,
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: c.accent,
+    },
+    nextButtonDisabled: {
+      opacity: 0.5,
+    },
+    nextButtonText: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.inverse,
+    },
+    submittedCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      padding: 12,
+      borderRadius: 12,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    submittedIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.accent + "20",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    submittedTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    submittedSubtitle: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "flex-end" as const,
+    },
+    modalContent: {
+      backgroundColor: c.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 20,
+    },
+    modalHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
+    modalCancel: {
+      fontSize: 15,
+      color: c.text.secondary,
+    },
+    modalDone: {
+      fontSize: 15,
+      fontWeight: "600" as const,
+      color: c.accent,
+    },
+  } as const;
+};

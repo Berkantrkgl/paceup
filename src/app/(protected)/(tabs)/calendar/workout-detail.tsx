@@ -15,8 +15,10 @@ import {
   View,
 } from "react-native";
 
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme, ThemeColors } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 // --- DATE HELPER ---
@@ -28,39 +30,73 @@ const getLocalDateString = (date: Date = new Date()) => {
 };
 
 // --- WORKOUT THEME ---
+// Dark ve light için ayrı paletler — calendar/index.tsx ile aynı mantık.
 type WorkoutType = "easy" | "tempo" | "interval" | "long";
 
-const WORKOUT_THEMES: Record<
+const WORKOUT_META: Record<
   WorkoutType,
-  { icon: string; color: string; name: string }
+  { icon: string; name: string; colorDark: string; colorLight: string }
 > = {
-  tempo: { icon: "speedometer", color: "#FF4501", name: "Tempo" },
-  easy: { icon: "leaf", color: "#4ECDC4", name: "Hafif" },
-  interval: { icon: "flash", color: "#FFD93D", name: "İnterval" },
-  long: { icon: "infinite", color: "#A569BD", name: "Uzun Koşu" },
+  tempo: {
+    icon: "speedometer",
+    name: "Tempo",
+    colorDark: "#FF4501",
+    colorLight: "#E23E00",
+  },
+  easy: {
+    icon: "leaf",
+    name: "Hafif",
+    colorDark: "#4ECDC4",
+    colorLight: "#0E9B8F",
+  },
+  interval: {
+    icon: "flash",
+    name: "İnterval",
+    colorDark: "#FFD93D",
+    colorLight: "#B8860B",
+  },
+  long: {
+    icon: "infinite",
+    name: "Uzun Koşu",
+    colorDark: "#A569BD",
+    colorLight: "#7B3F96",
+  },
 };
 
-const getTheme = (type: string) =>
-  WORKOUT_THEMES[type as WorkoutType] ?? {
-    icon: "fitness",
-    color: COLORS.accent,
-    name: "Koşu",
+const getTheme = (type: string, c: ThemeColors, isDark: boolean) => {
+  const meta = WORKOUT_META[type as WorkoutType];
+  if (!meta) {
+    return {
+      icon: "fitness",
+      color: c.accent,
+      name: "Koşu",
+    };
+  }
+  return {
+    icon: meta.icon,
+    name: meta.name,
+    color: isDark ? meta.colorDark : meta.colorLight,
   };
-
-// --- FEELING MAP ---
-const FEELINGS: Record<string, { icon: string; color: string; text: string }> =
-  {
-    excellent: { icon: "star", color: "#FFD93D", text: "Mükemmel" },
-    good: { icon: "happy", color: COLORS.success, text: "İyi" },
-    okay: { icon: "thumbs-up", color: COLORS.secondary, text: "Orta" },
-    hard: { icon: "water", color: "#FF4D4D", text: "Zor" },
-    very_hard: { icon: "skull", color: "#D32F2F", text: "Çok Zor" },
-  };
+};
 
 const WorkoutDetail = () => {
   const { getValidToken, refreshUserData } = useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { workoutId } = useLocalSearchParams();
   const todayStr = getLocalDateString();
+
+  // FEELINGS token'lardan beslenir → hook içinde.
+  const FEELINGS: Record<
+    string,
+    { icon: string; color: string; text: string }
+  > = {
+    excellent: { icon: "star", color: colors.warning, text: "Mükemmel" },
+    good: { icon: "happy", color: colors.success, text: "İyi" },
+    okay: { icon: "thumbs-up", color: colors.secondary, text: "Orta" },
+    hard: { icon: "water", color: colors.danger, text: "Zor" },
+    very_hard: { icon: "skull", color: "#D32F2F", text: "Çok Zor" },
+  };
 
   const [workout, setWorkout] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -268,7 +304,7 @@ const WorkoutDetail = () => {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={COLORS.accent} />
+        <ActivityIndicator size="large" color={colors.accent} />
       </View>
     );
   }
@@ -277,6 +313,8 @@ const WorkoutDetail = () => {
 
   const theme = getTheme(
     isEditing ? editValues.workout_type : workout.workout_type,
+    colors,
+    isDark,
   );
   const isCompleted = workout.status === "completed";
   const isMissed = workout.status === "missed";
@@ -298,7 +336,11 @@ const WorkoutDetail = () => {
     >
       {/* Background gradient — full bleed behind modal */}
       <LinearGradient
-        colors={[theme.color + "30", COLORS.background, COLORS.background]}
+        colors={[
+          theme.color + (isDark ? "30" : "70"),
+          colors.background,
+          colors.background,
+        ]}
         locations={[0, 0.35, 1]}
         style={StyleSheet.absoluteFill}
       />
@@ -335,16 +377,16 @@ const WorkoutDetail = () => {
                 <View
                   style={[
                     styles.statusChip,
-                    { backgroundColor: COLORS.success + "20" },
+                    { backgroundColor: colors.success + "20" },
                   ]}
                 >
                   <Ionicons
                     name="checkmark-circle"
                     size={14}
-                    color={COLORS.success}
+                    color={colors.success}
                   />
                   <Text
-                    style={[styles.statusChipText, { color: COLORS.success }]}
+                    style={[styles.statusChipText, { color: colors.success }]}
                   >
                     Tamamlandı
                   </Text>
@@ -354,11 +396,17 @@ const WorkoutDetail = () => {
                 <View
                   style={[
                     styles.statusChip,
-                    { backgroundColor: "#FF3B30" + "20" },
+                    { backgroundColor: colors.danger + "20" },
                   ]}
                 >
-                  <Ionicons name="close-circle" size={14} color="#FF3B30" />
-                  <Text style={[styles.statusChipText, { color: "#FF3B30" }]}>
+                  <Ionicons
+                    name="close-circle"
+                    size={14}
+                    color={colors.danger}
+                  />
+                  <Text
+                    style={[styles.statusChipText, { color: colors.danger }]}
+                  >
                     Kaçırıldı
                   </Text>
                 </View>
@@ -384,7 +432,7 @@ const WorkoutDetail = () => {
                   style={styles.editIconButton}
                   onPress={() => setIsEditing(true)}
                 >
-                  <Ionicons name="pencil" size={16} color={COLORS.textDim} />
+                  <Ionicons name="pencil" size={16} color={colors.text.secondary} />
                 </Pressable>
               )}
             </View>
@@ -403,7 +451,7 @@ const WorkoutDetail = () => {
                 setEditValues({ ...editValues, title: t })
               }
               style={styles.heroTitleInput}
-              placeholderTextColor={COLORS.textDim}
+              placeholderTextColor={colors.text.secondary}
             />
           ) : (
             <Text style={styles.heroTitle}>{workout.title}</Text>
@@ -414,7 +462,7 @@ const WorkoutDetail = () => {
             <Ionicons
               name="calendar-outline"
               size={15}
-              color={COLORS.textDim}
+              color={colors.text.secondary}
             />
             <Text style={styles.heroDateText}>
               {dayNum} {monthYear}, {dayName}
@@ -435,7 +483,7 @@ const WorkoutDetail = () => {
                 keyboardType="numeric"
                 style={[styles.statValueInput, { color: theme.color }]}
                 placeholder="0"
-                placeholderTextColor={COLORS.textDim}
+                placeholderTextColor={colors.text.secondary}
               />
             ) : (
               <Text style={[styles.statValue, { color: theme.color }]}>
@@ -456,7 +504,7 @@ const WorkoutDetail = () => {
                 keyboardType="numeric"
                 style={[styles.statValueInput, { color: theme.color }]}
                 placeholder="0"
-                placeholderTextColor={COLORS.textDim}
+                placeholderTextColor={colors.text.secondary}
               />
             ) : (
               <Text style={[styles.statValue, { color: theme.color }]}>
@@ -484,8 +532,9 @@ const WorkoutDetail = () => {
           <View style={styles.section}>
             <Text style={styles.sectionLabel}>Antrenman Türü</Text>
             <View style={styles.typeGrid}>
-              {(Object.keys(WORKOUT_THEMES) as WorkoutType[]).map((type) => {
-                const t = WORKOUT_THEMES[type];
+              {(Object.keys(WORKOUT_META) as WorkoutType[]).map((type) => {
+                const meta = WORKOUT_META[type];
+                const tColor = isDark ? meta.colorDark : meta.colorLight;
                 const selected = editValues.workout_type === type;
                 return (
                   <Pressable
@@ -496,23 +545,23 @@ const WorkoutDetail = () => {
                     style={[
                       styles.typeChip,
                       {
-                        borderColor: t.color,
-                        backgroundColor: selected ? t.color : "transparent",
+                        borderColor: tColor,
+                        backgroundColor: selected ? tColor : "transparent",
                       },
                     ]}
                   >
                     <Ionicons
-                      name={t.icon as any}
+                      name={meta.icon as any}
                       size={16}
-                      color={selected ? "#fff" : t.color}
+                      color={selected ? colors.text.inverse : tColor}
                     />
                     <Text
                       style={[
                         styles.typeChipText,
-                        { color: selected ? "#fff" : t.color },
+                        { color: selected ? colors.text.inverse : tColor },
                       ]}
                     >
-                      {t.name}
+                      {meta.name}
                     </Text>
                   </Pressable>
                 );
@@ -583,7 +632,7 @@ const WorkoutDetail = () => {
                 style={styles.notesInput}
                 multiline
                 placeholder="Notlarını buraya yaz..."
-                placeholderTextColor={COLORS.textDim}
+                placeholderTextColor={colors.text.secondary}
               />
             ) : (
               <Text style={styles.notesText}>
@@ -618,7 +667,7 @@ const WorkoutDetail = () => {
                 disabled={isProcessing}
               >
                 {isProcessing ? (
-                  <ActivityIndicator color="#fff" size="small" />
+                  <ActivityIndicator color={colors.text.inverse} size="small" />
                 ) : (
                   <Text style={styles.saveButtonText}>Kaydet</Text>
                 )}
@@ -640,7 +689,7 @@ const WorkoutDetail = () => {
                       isFuture ? "time-outline" : "checkmark-circle-outline"
                     }
                     size={22}
-                    color="#fff"
+                    color={colors.text.inverse}
                   />
                   <Text style={styles.primaryActionText}>
                     {isFuture ? "Günü Bekleniyor" : "Antrenmanı Tamamla"}
@@ -657,7 +706,7 @@ const WorkoutDetail = () => {
                   <Ionicons
                     name="arrow-undo-outline"
                     size={20}
-                    color={COLORS.success}
+                    color={colors.success}
                   />
                   <Text style={styles.undoActionText}>Geri Al</Text>
                 </Pressable>
@@ -668,7 +717,7 @@ const WorkoutDetail = () => {
                 onPress={handleDelete}
                 disabled={isProcessing}
               >
-                <Ionicons name="trash-outline" size={18} color="#FF4D4D" />
+                <Ionicons name="trash-outline" size={18} color={colors.danger} />
                 <Text style={styles.deleteActionText}>Antrenmanı Sil</Text>
               </Pressable>
             </>
@@ -683,333 +732,339 @@ const WorkoutDetail = () => {
 
 export default WorkoutDetail;
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  centered: { justifyContent: "center", alignItems: "center" },
-  scrollView: { flex: 1 },
-  scrollContent: { paddingBottom: 20 },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: { flex: 1, backgroundColor: c.background },
+    centered: {
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    scrollView: { flex: 1 },
+    scrollContent: { paddingBottom: 20 },
 
-  // ===== HANDLE =====
-  handleRow: {
-    alignItems: "center",
-    paddingTop: 10,
-    paddingBottom: 6,
-  },
-  handle: {
-    width: 36,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: COLORS.cardBorder,
-  },
+    // ===== HANDLE =====
+    handleRow: {
+      alignItems: "center" as const,
+      paddingTop: 10,
+      paddingBottom: 6,
+    },
+    handle: {
+      width: 36,
+      height: 5,
+      borderRadius: 3,
+      backgroundColor: c.border,
+    },
 
-  // ===== HERO =====
-  heroSection: {
-    paddingTop: 12,
-    paddingHorizontal: 24,
-    paddingBottom: 24,
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  heroTopRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  heroIconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statusChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  statusChipText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  heroTypeLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 1.5,
-    marginBottom: 6,
-  },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: "900",
-    color: COLORS.text,
-    marginBottom: 10,
-    letterSpacing: -0.3,
-  },
-  heroTitleInput: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: COLORS.text,
-    borderBottomWidth: 1.5,
-    borderBottomColor: COLORS.accent,
-    paddingVertical: 6,
-    marginBottom: 10,
-  },
-  heroDateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  heroDateText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  editIconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.card,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    // ===== HERO =====
+    heroSection: {
+      paddingTop: 12,
+      paddingHorizontal: 24,
+      paddingBottom: 24,
+    },
+    heroTopRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      marginBottom: 16,
+    },
+    heroTopRight: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+    },
+    heroIconCircle: {
+      width: 52,
+      height: 52,
+      borderRadius: 14,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    statusChip: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 20,
+    },
+    statusChipText: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+    },
+    heroTypeLabel: {
+      fontSize: 13,
+      fontWeight: "700" as const,
+      textTransform: "uppercase" as const,
+      letterSpacing: 1.5,
+      marginBottom: 6,
+    },
+    heroTitle: {
+      fontSize: 26,
+      fontWeight: "900" as const,
+      color: c.text.primary,
+      marginBottom: 10,
+      letterSpacing: -0.3,
+    },
+    heroTitleInput: {
+      fontSize: 22,
+      fontWeight: "800" as const,
+      color: c.text.primary,
+      borderBottomWidth: 1.5,
+      borderBottomColor: c.accent,
+      paddingVertical: 6,
+      marginBottom: 10,
+    },
+    heroDateRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    heroDateText: {
+      color: c.text.secondary,
+      fontSize: 14,
+      fontWeight: "500" as const,
+    },
+    editIconButton: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+      borderWidth: 1,
+      borderColor: c.border,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
 
-  // ===== STATS =====
-  statsRow: {
-    flexDirection: "row",
-    gap: 10,
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    gap: 6,
-  },
-  statCardEditing: {
-    borderColor: COLORS.accent + "60",
-    backgroundColor: COLORS.cardVariant,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  statValueInput: {
-    fontSize: 22,
-    fontWeight: "900",
-    textAlign: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.textDim,
-    minWidth: 40,
-    paddingVertical: 2,
-  },
-  statLabel: {
-    color: COLORS.textDim,
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-  },
+    // ===== STATS =====
+    statsRow: {
+      flexDirection: "row" as const,
+      gap: 10,
+      paddingHorizontal: 20,
+      marginBottom: 24,
+    },
+    statCard: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+      gap: 6,
+    },
+    statCardEditing: {
+      borderColor: c.accent + "60",
+      backgroundColor: c.surfaceVariant,
+    },
+    statValue: {
+      fontSize: 22,
+      fontWeight: "900" as const,
+    },
+    statValueInput: {
+      fontSize: 22,
+      fontWeight: "900" as const,
+      textAlign: "center" as const,
+      borderBottomWidth: 1,
+      borderBottomColor: c.text.secondary,
+      minWidth: 40,
+      paddingVertical: 2,
+    },
+    statLabel: {
+      color: c.text.secondary,
+      fontSize: 11,
+      fontWeight: "600" as const,
+      textTransform: "uppercase" as const,
+    },
 
-  // ===== SECTIONS =====
-  section: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionLabel: {
-    color: COLORS.textDim,
-    fontSize: 13,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 10,
-    marginLeft: 4,
-  },
+    // ===== SECTIONS =====
+    section: {
+      paddingHorizontal: 20,
+      marginBottom: 24,
+    },
+    sectionLabel: {
+      color: c.text.secondary,
+      fontSize: 13,
+      fontWeight: "700" as const,
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.5,
+      marginBottom: 10,
+      marginLeft: 4,
+    },
 
-  // ===== TYPE SELECTOR =====
-  typeGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  typeChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    gap: 6,
-  },
-  typeChipText: {
-    fontSize: 13,
-    fontWeight: "700",
-  },
+    // ===== TYPE SELECTOR =====
+    typeGrid: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: 10,
+    },
+    typeChip: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1.5,
+      gap: 6,
+    },
+    typeChipText: {
+      fontSize: 13,
+      fontWeight: "700" as const,
+    },
 
-  // ===== RESULT =====
-  resultCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: COLORS.success + "40",
-    gap: 16,
-  },
-  resultGrid: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  resultItem: {
-    flex: 1,
-    alignItems: "center",
-    gap: 2,
-  },
-  resultDivider: {
-    width: 1,
-    height: 28,
-    backgroundColor: COLORS.cardBorder,
-  },
-  resultItemValue: {
-    color: COLORS.text,
-    fontSize: 20,
-    fontWeight: "800",
-  },
-  resultItemLabel: {
-    color: COLORS.textDim,
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-  },
-  feelingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-  },
-  feelingText: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
+    // ===== RESULT =====
+    resultCard: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: c.success + "40",
+      gap: 16,
+    },
+    resultGrid: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+    },
+    resultItem: {
+      flex: 1,
+      alignItems: "center" as const,
+      gap: 2,
+    },
+    resultDivider: {
+      width: 1,
+      height: 28,
+      backgroundColor: c.border,
+    },
+    resultItemValue: {
+      color: c.text.primary,
+      fontSize: 20,
+      fontWeight: "800" as const,
+    },
+    resultItemLabel: {
+      color: c.text.secondary,
+      fontSize: 11,
+      fontWeight: "600" as const,
+      textTransform: "uppercase" as const,
+    },
+    feelingRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 6,
+      paddingTop: 4,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    feelingText: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+    },
 
-  // ===== NOTES =====
-  notesCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  notesText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  notesInput: {
-    color: COLORS.text,
-    fontSize: 14,
-    lineHeight: 22,
-    minHeight: 80,
-    textAlignVertical: "top",
-  },
+    // ===== NOTES =====
+    notesCard: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 18,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    notesText: {
+      color: c.text.secondary,
+      fontSize: 14,
+      lineHeight: 22,
+    },
+    notesInput: {
+      color: c.text.primary,
+      fontSize: 14,
+      lineHeight: 22,
+      minHeight: 80,
+      textAlignVertical: "top" as const,
+    },
 
-  // ===== ACTIONS =====
-  actions: {
-    paddingHorizontal: 20,
-    gap: 12,
-    marginTop: 4,
-  },
-  primaryAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.accent,
-    paddingVertical: 16,
-    borderRadius: 14,
-    gap: 8,
-  },
-  primaryActionDisabled: {
-    backgroundColor: COLORS.cardBorder,
-  },
-  primaryActionText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  undoAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.success + "50",
-    backgroundColor: COLORS.card,
-    gap: 8,
-  },
-  undoActionText: {
-    color: COLORS.success,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  deleteAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 14,
-    borderRadius: 14,
-    gap: 6,
-  },
-  deleteActionText: {
-    color: "#FF4D4D",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+    // ===== ACTIONS =====
+    actions: {
+      paddingHorizontal: 20,
+      gap: 12,
+      marginTop: 4,
+    },
+    primaryAction: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      backgroundColor: c.accent,
+      paddingVertical: 16,
+      borderRadius: 14,
+      gap: 8,
+    },
+    primaryActionDisabled: {
+      backgroundColor: c.border,
+    },
+    primaryActionText: {
+      color: c.text.inverse,
+      fontSize: 16,
+      fontWeight: "700" as const,
+    },
+    undoAction: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingVertical: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: c.success + "50",
+      backgroundColor: c.surface,
+      gap: 8,
+    },
+    undoActionText: {
+      color: c.success,
+      fontSize: 15,
+      fontWeight: "700" as const,
+    },
+    deleteAction: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingVertical: 14,
+      borderRadius: 14,
+      gap: 6,
+    },
+    deleteActionText: {
+      color: c.danger,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
 
-  // ===== EDIT ACTIONS =====
-  editActions: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  cancelButtonText: {
-    color: COLORS.textDim,
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  saveButton: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 14,
-    backgroundColor: COLORS.accent,
-  },
-  saveButtonText: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-});
+    // ===== EDIT ACTIONS =====
+    editActions: {
+      flexDirection: "row" as const,
+      gap: 12,
+    },
+    cancelButton: {
+      flex: 1,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingVertical: 16,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    cancelButtonText: {
+      color: c.text.secondary,
+      fontSize: 15,
+      fontWeight: "700" as const,
+    },
+    saveButton: {
+      flex: 1,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingVertical: 16,
+      borderRadius: 14,
+      backgroundColor: c.accent,
+    },
+    saveButtonText: {
+      color: c.text.inverse,
+      fontSize: 15,
+      fontWeight: "700" as const,
+    },
+  } as const;
+};

@@ -22,9 +22,12 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
 
-import { COLORS } from "@/constants/Colors";
 import { ProfileTour } from "@/components/tour/ProfileTour";
+import { ThemeSelector } from "@/components/ThemeSelector";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme, ThemeColors } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 import { useRouter } from "expo-router";
 
@@ -63,60 +66,13 @@ const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
 const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
 
 // ============================================================
-// SUB COMPONENTS
-// ============================================================
-const Section = ({ title, children }: any) => (
-  <View style={styles.sectionContainer}>
-    <Text style={styles.sectionHeader}>{title}</Text>
-    <View style={styles.sectionContent}>{children}</View>
-  </View>
-);
-
-const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
-  <Pressable
-    style={({ pressed }) => [
-      styles.row,
-      pressed && !isReadonly && styles.rowPressed,
-      isLast && styles.rowLast,
-    ]}
-    onPress={!isReadonly ? onPress : undefined}
-  >
-    <Text style={styles.rowLabel}>{label}</Text>
-    <View style={styles.rowRight}>
-      <Text style={[styles.rowValue, isReadonly && { color: COLORS.accent }]}>
-        {value}
-      </Text>
-      {!isReadonly && (
-        <Ionicons
-          name="chevron-forward"
-          size={16}
-          color={COLORS.textDim}
-          style={{ marginLeft: 6 }}
-          opacity={0.5}
-        />
-      )}
-    </View>
-  </Pressable>
-);
-
-const ToggleRow = React.memo(({ label, value, onValueChange, isLast }: any) => (
-  <View style={[styles.row, isLast && styles.rowLast]}>
-    <Text style={styles.rowLabel}>{label}</Text>
-    <Switch
-      value={value}
-      onValueChange={onValueChange}
-      trackColor={{ false: COLORS.cardBorder, true: COLORS.accent }}
-      thumbColor={COLORS.white}
-    />
-  </View>
-));
-
-// ============================================================
 // ANA EKRAN
 // ============================================================
 const ProfileScreen = () => {
   const { user, logOut, refreshUserData, getValidToken } =
     useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [uploading, setUploading] = useState(false);
   const premiumTourRef = useRef<View>(null);
   const identityTourRef = useRef<View>(null);
@@ -165,6 +121,55 @@ const ProfileScreen = () => {
   >({});
 
   // ============================================================
+  // SUB COMPONENTS (inner — theme'e bağlı olduğu için)
+  // ============================================================
+  const Section = ({ title, children }: any) => (
+    <View style={styles.sectionContainer}>
+      <Text style={styles.sectionHeader}>{title}</Text>
+      <View style={styles.sectionContent}>{children}</View>
+    </View>
+  );
+
+  const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        pressed && !isReadonly && styles.rowPressed,
+        isLast && styles.rowLast,
+      ]}
+      onPress={!isReadonly ? onPress : undefined}
+    >
+      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        <Text style={[styles.rowValue, isReadonly && { color: colors.accent }]}>
+          {value}
+        </Text>
+        {!isReadonly && (
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={colors.text.secondary}
+            style={{ marginLeft: 6 }}
+            opacity={0.5}
+          />
+        )}
+      </View>
+    </Pressable>
+  );
+
+  const ToggleRow = ({ label, value, onValueChange, isLast }: any) => (
+    <View style={[styles.row, isLast && styles.rowLast]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={colors.white}
+      />
+    </View>
+  );
+
+  // ============================================================
   // GÖRÜNTÜLEME FORMATLAYICILARI
   // ============================================================
   const formatDisplayTime = (timeStr: string) =>
@@ -192,9 +197,9 @@ const ProfileScreen = () => {
 
   const getTokenProgressColor = () => {
     const pct = getTokenProgressPercent();
-    if (pct >= 90) return "#FF5252";
-    if (pct >= 70) return "#FFA500";
-    return COLORS.accent;
+    if (pct >= 90) return colors.danger;
+    if (pct >= 70) return colors.warning;
+    return colors.accent;
   };
 
   // ============================================================
@@ -370,8 +375,8 @@ const ProfileScreen = () => {
             onChange={(_, selectedDate) =>
               setDateValue(selectedDate || dateValue)
             }
-            textColor="white"
-            themeVariant="dark"
+            textColor={colors.text.primary}
+            themeVariant={isDark ? "dark" : "light"}
             style={{ height: 180 }}
           />
         </View>
@@ -392,7 +397,7 @@ const ProfileScreen = () => {
               ]}
             >
               {paceUnknown && (
-                <Ionicons name="checkmark" size={14} color="#000" />
+                <Ionicons name="checkmark" size={14} color={colors.text.inverse} />
               )}
             </View>
             <Text style={styles.paceUnknownText}>Pace'imi bilmiyorum</Text>
@@ -411,8 +416,8 @@ const ProfileScreen = () => {
               <Picker
                 selectedValue={paceValue.min}
                 onValueChange={(v) => setPaceValue({ ...paceValue, min: v })}
-                style={{ width: 100, color: "white" }}
-                itemStyle={{ color: "white" }}
+                style={{ width: 100, color: colors.text.primary }}
+                itemStyle={{ color: colors.text.primary }}
               >
                 {PACE_MINUTES.map((m) => (
                   <Picker.Item key={m} label={m.toString()} value={m} />
@@ -425,8 +430,8 @@ const ProfileScreen = () => {
               <Picker
                 selectedValue={paceValue.sec}
                 onValueChange={(v) => setPaceValue({ ...paceValue, sec: v })}
-                style={{ width: 100, color: "white" }}
-                itemStyle={{ color: "white" }}
+                style={{ width: 100, color: colors.text.primary }}
+                itemStyle={{ color: colors.text.primary }}
               >
                 {PACE_SECONDS.map((s) => (
                   <Picker.Item
@@ -469,7 +474,7 @@ const ProfileScreen = () => {
             <Ionicons
               name="information-circle-outline"
               size={14}
-              color={COLORS.textDim}
+              color={colors.text.secondary}
             />
             <Text style={styles.dayInfoText}>
               Bu değişiklik mevcut aktif programınızı etkilemez. Yeni
@@ -485,9 +490,9 @@ const ProfileScreen = () => {
           <Picker
             selectedValue={tempValue}
             onValueChange={(itemValue) => setTempValue(itemValue)}
-            itemStyle={{ color: "white", fontSize: 20 }}
-            dropdownIconColor="white"
-            style={{ color: "white" }}
+            itemStyle={{ color: colors.text.primary, fontSize: 20 }}
+            dropdownIconColor={colors.text.primary}
+            style={{ color: colors.text.primary }}
           >
             {editConfig.options.map((opt: any) => (
               <Picker.Item
@@ -508,7 +513,7 @@ const ProfileScreen = () => {
           onChangeText={setTempValue}
           keyboardType={editConfig.type === "number" ? "numeric" : "default"}
           placeholder="Değer giriniz"
-          placeholderTextColor={COLORS.textDim}
+          placeholderTextColor={colors.text.secondary}
           autoFocus
         />
       </View>
@@ -568,7 +573,7 @@ const ProfileScreen = () => {
             onPress={() => openPremium()}
             activeOpacity={0.85}
           >
-            <Ionicons name="flash" size={14} color="#000" />
+            <Ionicons name="flash" size={14} color={colors.text.inverse} />
             <Text style={styles.upgradeCtaText}>
               {pct >= 90
                 ? "Limitin Dolmak Üzere! Premium'a Geç →"
@@ -585,7 +590,10 @@ const ProfileScreen = () => {
   // ============================================================
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.background} />
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.background}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -611,7 +619,7 @@ const ProfileScreen = () => {
             {uploading && (
               <ActivityIndicator
                 size="small"
-                color={COLORS.accent}
+                color={colors.accent}
                 style={StyleSheet.absoluteFill}
               />
             )}
@@ -639,7 +647,7 @@ const ProfileScreen = () => {
                 <Text
                   style={[
                     styles.statText,
-                    user?.is_premium && { color: COLORS.accent },
+                    user?.is_premium && { color: colors.accent },
                   ]}
                 >
                   {user?.is_premium
@@ -723,6 +731,11 @@ const ProfileScreen = () => {
           />
         </Section>
         </View>
+
+        {/* SECTION 1.5: GÖRÜNÜM */}
+        <Section title="GÖRÜNÜM">
+          <ThemeSelector />
+        </Section>
 
         {/* SECTION 2: KOŞU PROFİLİ */}
         <Section title="KOŞU PROFİLİ">
@@ -954,7 +967,7 @@ const ProfileScreen = () => {
               />
             ) : (
               <View style={styles.avatarModalPlaceholder}>
-                <Ionicons name="person" size={80} color={COLORS.textDim} />
+                <Ionicons name="person" size={80} color={colors.text.secondary} />
               </View>
             )}
 
@@ -963,7 +976,7 @@ const ProfileScreen = () => {
               style={styles.avatarModalBtn}
               onPress={handlePickImage}
             >
-              <Ionicons name="camera-outline" size={16} color={COLORS.text} />
+              <Ionicons name="camera-outline" size={16} color={colors.text.primary} />
               <Text style={styles.avatarModalBtnText}>
                 {user?.profile_image ? "Fotoğrafı Değiştir" : "Fotoğraf Ekle"}
               </Text>
@@ -975,392 +988,442 @@ const ProfileScreen = () => {
   );
 };
 
+export default ProfileScreen;
+
 // ============================================================
 // STYLES
 // ============================================================
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  header: {
-    paddingHorizontal: 20,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: COLORS.text,
-    letterSpacing: 0.3,
-  },
-  scrollContent: { paddingTop: 70, paddingBottom: 60 },
+const makeStyles = (t: Theme) => {
+  const c: ThemeColors = t.colors;
+  return {
+    container: { flex: 1, backgroundColor: c.background },
+    header: {
+      paddingHorizontal: 20,
+    },
+    headerTitle: {
+      fontSize: 28,
+      fontWeight: "800" as const,
+      color: c.text.primary,
+      letterSpacing: 0.3,
+    },
+    scrollContent: { paddingTop: 70, paddingBottom: 60 },
 
-  // User Card
-  userCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 24,
-    marginBottom: 4,
-  },
-  avatarContainer: { marginRight: 20, position: "relative" },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
-  },
-  avatarPlaceholder: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORS.card,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
-  },
-  avatarInitial: { fontSize: 28, color: COLORS.textDim, fontWeight: "bold" },
-  editBadge: {
-    position: "absolute",
-    bottom: -5,
-    alignSelf: "center",
-    backgroundColor: COLORS.cardVariant,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.background,
-  },
-  editBadgeText: { fontSize: 9, color: COLORS.textDim, fontWeight: "600" },
-  userInfo: { flex: 1, justifyContent: "center" },
-  userName: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginBottom: 2,
-  },
-  userEmail: {
-    fontSize: 12,
-    color: COLORS.textDim,
-    marginBottom: 4,
-  },
-  statsRow: { flexDirection: "row", alignItems: "center" },
-  statText: { fontSize: 12, color: COLORS.secondary, fontWeight: "600" },
-  statDot: { color: COLORS.textDim, marginHorizontal: 6, fontSize: 10 },
+    // User Card
+    userCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      padding: 24,
+      marginBottom: 4,
+    },
+    avatarContainer: { marginRight: 20, position: "relative" as const },
+    avatar: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    avatarPlaceholder: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    avatarInitial: {
+      fontSize: 28,
+      color: c.text.secondary,
+      fontWeight: "bold" as const,
+    },
+    editBadge: {
+      position: "absolute" as const,
+      bottom: -5,
+      alignSelf: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: c.background,
+    },
+    editBadgeText: {
+      fontSize: 9,
+      color: c.text.secondary,
+      fontWeight: "600" as const,
+    },
+    userInfo: { flex: 1, justifyContent: "center" as const },
+    userName: {
+      fontSize: 20,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    userEmail: {
+      fontSize: 12,
+      color: c.text.secondary,
+      marginBottom: 4,
+    },
+    statsRow: { flexDirection: "row" as const, alignItems: "center" as const },
+    statText: {
+      fontSize: 12,
+      color: c.secondary,
+      fontWeight: "600" as const,
+    },
+    statDot: { color: c.text.secondary, marginHorizontal: 6, fontSize: 10 },
 
-  // Token Card
-  tokenCard: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  tokenCardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  tokenCardTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  tokenCardTitle: { color: COLORS.text, fontSize: 14, fontWeight: "600" },
-  tokenPctText: { fontSize: 13, fontWeight: "700" },
-  premiumBadge: {
-    backgroundColor: "rgba(255,69,1,0.15)",
-    borderWidth: 1,
-    borderColor: "rgba(255,69,1,0.3)",
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  premiumBadgeText: { color: COLORS.accent, fontSize: 11, fontWeight: "700" },
-  progressBarBg: {
-    height: 6,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    marginBottom: 16,
-    borderRadius: 3,
-    overflow: "hidden",
-  },
-  progressBarFill: { height: "100%", borderRadius: 3 },
-  tokenCardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  tokenUsedText: { color: COLORS.textDim, fontSize: 12 },
-  tokenRemainingText: { fontSize: 12, fontWeight: "600" },
-  upgradeCta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.accent,
-    borderRadius: 10,
-    paddingVertical: 10,
-    gap: 6,
-  },
-  upgradeCtaUrgent: {
-    backgroundColor: "#FF5252",
-  },
-  upgradeCtaText: {
-    color: "#000",
-    fontSize: 13,
-    fontWeight: "700",
-  },
+    // Token Card
+    tokenCard: {
+      marginHorizontal: 20,
+      marginBottom: 24,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    tokenCardHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      marginBottom: 12,
+    },
+    tokenCardTitleRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    tokenCardTitle: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+    tokenPctText: { fontSize: 13, fontWeight: "700" as const },
+    premiumBadge: {
+      backgroundColor: c.accentMuted,
+      borderWidth: 1,
+      borderColor: c.accent,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    premiumBadgeText: {
+      color: c.accent,
+      fontSize: 11,
+      fontWeight: "700" as const,
+    },
+    progressBarBg: {
+      height: 6,
+      backgroundColor: c.surfaceVariant,
+      marginBottom: 16,
+      borderRadius: 3,
+      overflow: "hidden" as const,
+    },
+    progressBarFill: { height: "100%" as const, borderRadius: 3 },
+    tokenCardFooter: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      marginBottom: 12,
+    },
+    tokenUsedText: { color: c.text.secondary, fontSize: 12 },
+    tokenRemainingText: { fontSize: 12, fontWeight: "600" as const },
+    upgradeCta: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      backgroundColor: c.accent,
+      borderRadius: 10,
+      paddingVertical: 10,
+      gap: 6,
+    },
+    upgradeCtaUrgent: {
+      backgroundColor: c.danger,
+    },
+    upgradeCtaText: {
+      color: c.text.inverse,
+      fontSize: 13,
+      fontWeight: "700" as const,
+    },
 
-  // Sections
-  sectionContainer: { marginBottom: 36 },
-  sectionHeader: {
-    fontSize: 14,
-    color: COLORS.textDim,
-    fontWeight: "700",
-    marginBottom: 8,
-    paddingHorizontal: 20,
-  },
-  sectionContent: {},
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: COLORS.cardBorder,
-  },
-  rowLast: { borderBottomWidth: 0 },
-  rowPressed: { backgroundColor: COLORS.card },
-  rowLabel: { fontSize: 15, color: COLORS.text, fontWeight: "500" },
-  rowRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  rowValue: {
-    fontSize: 15,
-    color: COLORS.textDim,
-    marginRight: 4,
-    textAlign: "right",
-  },
+    // Sections
+    sectionContainer: { marginBottom: 36 },
+    sectionHeader: {
+      fontSize: 14,
+      color: c.text.secondary,
+      fontWeight: "700" as const,
+      marginBottom: 8,
+      paddingHorizontal: 20,
+    },
+    sectionContent: {},
+    row: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      borderBottomWidth: t.name === "light" ? 1 : StyleSheet.hairlineWidth,
+      borderBottomColor: t.name === "light" ? c.borderStrong : c.border,
+    },
+    rowLast: { borderBottomWidth: 0 },
+    rowPressed: { backgroundColor: c.surface },
+    rowLabel: {
+      fontSize: 15,
+      color: c.text.primary,
+      fontWeight: "500" as const,
+    },
+    rowRight: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      flex: 1,
+      justifyContent: "flex-end" as const,
+    },
+    rowValue: {
+      fontSize: 15,
+      color: c.text.secondary,
+      marginRight: 4,
+      textAlign: "right" as const,
+    },
 
-  // Footer
-  footer: { paddingHorizontal: 20, alignItems: "center", paddingBottom: 20 },
-  logoutBtn: {
-    width: "100%",
-    backgroundColor: COLORS.card,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: "center",
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  logoutText: { color: COLORS.danger, fontSize: 15, fontWeight: "600" },
-  versionText: { fontSize: 11, color: COLORS.textDim, opacity: 0.4 },
+    // Footer
+    footer: {
+      paddingHorizontal: 20,
+      alignItems: "center" as const,
+      paddingBottom: 20,
+    },
+    logoutBtn: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      paddingVertical: 16,
+      borderRadius: 16,
+      alignItems: "center" as const,
+      marginBottom: 15,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    logoutText: {
+      color: c.danger,
+      fontSize: 15,
+      fontWeight: "600" as const,
+    },
+    versionText: { fontSize: 11, color: c.text.secondary, opacity: 0.4 },
 
-  // Edit Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalCenteredContainer: { width: "90%", maxWidth: 400 },
-  modalContent: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-    backgroundColor: "#242426",
-  },
-  modalTitle: { fontSize: 16, fontWeight: "600", color: COLORS.white },
-  headerBtn: { padding: 5 },
-  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 15 },
-  headerBtnTextSave: { color: COLORS.accent, fontSize: 15, fontWeight: "bold" },
-  modalBody: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: "#1C1C1E",
-    minHeight: 150,
-    justifyContent: "center",
-  },
-  pickerWrapper: { justifyContent: "center" },
-  dualPickerContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pickerColumn: { alignItems: "center" },
-  columnLabel: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    marginBottom: -10,
-    zIndex: 1,
-  },
-  pickerSeparator: {
-    fontSize: 30,
-    color: "white",
-    paddingBottom: 20,
-    paddingHorizontal: 10,
-  },
-  multiselectContainer: { padding: 10 },
-  dayButton: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: "#2C2C2E",
-  },
-  dayButtonSelected: {
-    backgroundColor: COLORS.accent + "20",
-    borderColor: COLORS.accent,
-    borderWidth: 1,
-  },
-  dayButtonText: { color: COLORS.white, fontSize: 16 },
-  dayButtonTextSelected: { color: COLORS.accent, fontWeight: "bold" },
-  dayChipsRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-  dayChip: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#2C2C2E",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#3A3A3C",
-  },
-  dayChipSelected: {
-    backgroundColor: COLORS.accent + "25",
-    borderColor: COLORS.accent,
-  },
-  dayChipText: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  dayChipTextSelected: {
-    color: COLORS.accent,
-    fontWeight: "700",
-  },
-  dayInfoBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.04)",
-    borderRadius: 8,
-    padding: 10,
-  },
-  dayInfoText: {
-    flex: 1,
-    color: COLORS.textDim,
-    fontSize: 11,
-    lineHeight: 16,
-  },
-  input: {
-    backgroundColor: "#2C2C2E",
-    color: COLORS.text,
-    fontSize: 18,
-    padding: 16,
-    borderRadius: 12,
-    margin: 10,
-    borderWidth: 1,
-    borderColor: "#3A3A3C",
-    textAlign: "center",
-  },
-  paceUnknownToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 4,
-  },
-  paceUnknownCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: "#3A3A3C",
-    backgroundColor: "#2C2C2E",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  paceUnknownCheckActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  paceUnknownText: {
-    color: COLORS.text,
-    fontSize: 15,
-  },
-  avatarModalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  avatarModalContent: {
-    width: "97%",
-    backgroundColor: COLORS.card,
-    borderRadius: 20,
-    alignItems: "center",
-    padding: 16,
-    gap: 14,
-  },
-  avatarModalImage: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 12,
-  },
-  avatarModalPlaceholder: {
-    width: "100%",
-    aspectRatio: 1,
-    backgroundColor: COLORS.cardVariant,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 12,
-  },
-  avatarModalBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: COLORS.cardVariant,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    width: "100%",
-  },
-  avatarModalBtnText: {
-    color: COLORS.text,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  cancelSubRow: {
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-  },
-  cancelSubText: {
-    color: COLORS.danger,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-});
-
-export default ProfileScreen;
+    // Edit Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    modalCenteredContainer: { width: "90%" as const, maxWidth: 400 },
+    modalContent: {
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      overflow: "hidden" as const,
+    },
+    modalHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: t.name === "light" ? c.borderStrong : c.border,
+      backgroundColor: c.surfaceVariant,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
+    headerBtn: { padding: 5 },
+    headerBtnTextCancel: { color: c.text.secondary, fontSize: 15 },
+    headerBtnTextSave: {
+      color: c.accent,
+      fontSize: 15,
+      fontWeight: "bold" as const,
+    },
+    modalBody: {
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      backgroundColor: c.surface,
+      minHeight: 150,
+      justifyContent: "center" as const,
+    },
+    pickerWrapper: { justifyContent: "center" as const },
+    dualPickerContainer: {
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    pickerColumn: { alignItems: "center" as const },
+    columnLabel: {
+      color: c.text.secondary,
+      fontSize: 12,
+      marginBottom: -10,
+      zIndex: 1,
+    },
+    pickerSeparator: {
+      fontSize: 30,
+      color: c.text.primary,
+      paddingBottom: 20,
+      paddingHorizontal: 10,
+    },
+    multiselectContainer: { padding: 10 },
+    dayButton: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      marginBottom: 8,
+      backgroundColor: c.surfaceVariant,
+    },
+    dayButtonSelected: {
+      backgroundColor: c.accentMuted,
+      borderColor: c.accent,
+      borderWidth: 1,
+    },
+    dayButtonText: { color: c.text.primary, fontSize: 16 },
+    dayButtonTextSelected: {
+      color: c.accent,
+      fontWeight: "bold" as const,
+    },
+    dayChipsRow: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: 8,
+      justifyContent: "center" as const,
+      marginBottom: 16,
+    },
+    dayChip: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    dayChipSelected: {
+      backgroundColor: c.accentMuted,
+      borderColor: c.accent,
+    },
+    dayChipText: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "600" as const,
+    },
+    dayChipTextSelected: {
+      color: c.accent,
+      fontWeight: "700" as const,
+    },
+    dayInfoBox: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 6,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 8,
+      padding: 10,
+    },
+    dayInfoText: {
+      flex: 1,
+      color: c.text.secondary,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    input: {
+      backgroundColor: c.surfaceVariant,
+      color: c.text.primary,
+      fontSize: 18,
+      padding: 16,
+      borderRadius: 12,
+      margin: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+      textAlign: "center" as const,
+    },
+    paceUnknownToggle: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      marginBottom: 4,
+    },
+    paceUnknownCheck: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: c.border,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    paceUnknownCheckActive: {
+      backgroundColor: c.accent,
+      borderColor: c.accent,
+    },
+    paceUnknownText: {
+      color: c.text.primary,
+      fontSize: 15,
+    },
+    avatarModalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    avatarModalContent: {
+      width: "97%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      alignItems: "center" as const,
+      padding: 16,
+      gap: 14,
+    },
+    avatarModalImage: {
+      width: "100%" as const,
+      aspectRatio: 1,
+      borderRadius: 12,
+    },
+    avatarModalPlaceholder: {
+      width: "100%" as const,
+      aspectRatio: 1,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderRadius: 12,
+    },
+    avatarModalBtn: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 6,
+      backgroundColor: c.surfaceVariant,
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      width: "100%" as const,
+    },
+    avatarModalBtnText: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+    cancelSubRow: {
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    cancelSubText: {
+      color: c.danger,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+  } as const;
+};

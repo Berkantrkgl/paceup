@@ -12,8 +12,10 @@ import {
 } from "react-native";
 import Svg, { Defs, Mask, Rect } from "react-native-svg";
 
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const { width: SW, height: SH } = Dimensions.get("window");
@@ -55,9 +57,20 @@ interface HomeTourProps {
 
 export const HomeTour = ({ highlightRefs }: HomeTourProps) => {
   const { user, getValidToken, refreshUserData } = useContext(AuthContext);
+  const { isDark, colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [step, setStep] = useState(0);
   const [visible, setVisible] = useState(false);
   const [rect, setRect] = useState<LayoutRectangle | null>(null);
+
+  // Overlay ve metin renkleri temaya bağlı:
+  // Dark tema → koyu scrim + beyaz metin
+  // Light tema → beyaz scrim + koyu metin
+  const overlayFill = isDark ? "rgba(0,0,0,0.82)" : "rgba(255,255,255,0.85)";
+  const onOverlayText = isDark ? colors.white : colors.text.primary;
+  const onOverlayShadow = isDark
+    ? "rgba(0,0,0,0.6)"
+    : "rgba(255,255,255,0.8)";
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const textAnim = useRef(new Animated.Value(0)).current;
@@ -221,7 +234,7 @@ export const HomeTour = ({ highlightRefs }: HomeTourProps) => {
             y={0}
             width={SW}
             height={SH}
-            fill="rgba(0,0,0,0.8)"
+            fill={overlayFill}
             mask="url(#spotlight)"
           />
         </Svg>
@@ -246,11 +259,20 @@ export const HomeTour = ({ highlightRefs }: HomeTourProps) => {
         ]}
         pointerEvents="box-none"
       >
-        <Text style={styles.tourText}>{current.text}</Text>
+        <Text
+          style={[
+            styles.tourText,
+            { color: onOverlayText, textShadowColor: onOverlayShadow },
+          ]}
+        >
+          {current.text}
+        </Text>
 
         <View style={styles.buttonRow}>
           <Pressable onPress={completeTour} hitSlop={12}>
-            <Text style={styles.skipText}>Atla</Text>
+            <Text style={[styles.skipText, { color: onOverlayText, opacity: 0.7 }]}>
+              Atla
+            </Text>
           </Pressable>
 
           <Pressable onPress={handleTap} style={styles.nextButton} hitSlop={8}>
@@ -260,7 +282,7 @@ export const HomeTour = ({ highlightRefs }: HomeTourProps) => {
             <Ionicons
               name={isLast ? "checkmark" : "arrow-forward"}
               size={15}
-              color={COLORS.white}
+              color={colors.text.inverse}
               style={{ marginLeft: 4 }}
             />
           </Pressable>
@@ -271,50 +293,48 @@ export const HomeTour = ({ highlightRefs }: HomeTourProps) => {
   );
 };
 
-const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 9999,
-  },
-  textContainer: {
-    position: "absolute",
-    left: 28,
-    right: 28,
-    alignItems: "center",
-  },
-  tourText: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 25,
-    textShadowColor: "rgba(0,0,0,0.6)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
-    marginBottom: 20,
-  },
-  buttonRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 24,
-    marginBottom: 16,
-  },
-  skipText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  nextButton: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 20,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  nextText: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-});
+const makeStyles = (t: Theme) =>
+  ({
+    overlay: {
+      ...StyleSheet.absoluteFillObject,
+      zIndex: 9999,
+    },
+    textContainer: {
+      position: "absolute",
+      left: 28,
+      right: 28,
+      alignItems: "center",
+    },
+    tourText: {
+      fontSize: 17,
+      fontWeight: "600",
+      textAlign: "center",
+      lineHeight: 25,
+      textShadowOffset: { width: 0, height: 1 },
+      textShadowRadius: 4,
+      marginBottom: 20,
+    },
+    buttonRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 24,
+      marginBottom: 16,
+    },
+    skipText: {
+      fontSize: 14,
+      fontWeight: "500",
+    },
+    nextButton: {
+      backgroundColor: t.colors.accent,
+      borderRadius: 20,
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    nextText: {
+      color: t.colors.text.inverse,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+  }) as const;

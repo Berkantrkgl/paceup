@@ -1,5 +1,7 @@
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 import { Ionicons } from "@expo/vector-icons";
 import { Picker } from "@react-native-picker/picker";
@@ -11,13 +13,11 @@ import {
   Modal,
   Platform,
   Pressable,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 
-// --- HELPERS ---
 const generateNumberRange = (start: number, end: number, suffix: string) => {
   const options = [];
   for (let i = start; i <= end; i++) {
@@ -36,7 +36,6 @@ const paceToSeconds = (paceStr: string): number => {
   return parseInt(parts[0]) * 60 + parseInt(parts[1]);
 };
 
-// --- TYPES ---
 export interface RunnerProfileData {
   weight: string;
   height: string;
@@ -63,6 +62,10 @@ export const RunnerProfileTool = ({
   initialData,
 }: RunnerProfileToolProps) => {
   const { getValidToken, refreshUserData } = useContext(AuthContext);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const pickerTextColor = colors.text.primary;
+
   const [formData, setFormData] = useState<RunnerProfileData>({
     ...DEFAULT_DATA,
     ...initialData,
@@ -172,7 +175,7 @@ export const RunnerProfileTool = ({
                 <Ionicons
                   name={isBeginner ? "checkmark-circle" : "radio-button-off"}
                   size={22}
-                  color={isBeginner ? COLORS.accent : "#666"}
+                  color={isBeginner ? colors.accent : colors.text.secondary}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={styles.beginnerToggleTitle}>
@@ -193,8 +196,12 @@ export const RunnerProfileTool = ({
                 <Picker
                   selectedValue={tempPace.min}
                   onValueChange={(v) => setTempPace({ ...tempPace, min: v })}
-                  style={styles.pickerStyleHalf}
-                  itemStyle={styles.pickerItemStyle}
+                  style={{ color: pickerTextColor, width: "100%" }}
+                  itemStyle={{
+                    color: pickerTextColor,
+                    fontSize: 22,
+                    textAlign: "center",
+                  }}
                 >
                   {PACE_MINUTES.map((m) => (
                     <Picker.Item key={m} label={m.toString()} value={m} />
@@ -207,8 +214,12 @@ export const RunnerProfileTool = ({
                 <Picker
                   selectedValue={tempPace.sec}
                   onValueChange={(v) => setTempPace({ ...tempPace, sec: v })}
-                  style={styles.pickerStyleHalf}
-                  itemStyle={styles.pickerItemStyle}
+                  style={{ color: pickerTextColor, width: "100%" }}
+                  itemStyle={{
+                    color: pickerTextColor,
+                    fontSize: 22,
+                    textAlign: "center",
+                  }}
                 >
                   {PACE_SECONDS.map((s) => (
                     <Picker.Item
@@ -230,9 +241,13 @@ export const RunnerProfileTool = ({
         <Picker
           selectedValue={tempValue}
           onValueChange={(itemValue) => setTempValue(itemValue)}
-          itemStyle={styles.pickerItemStyle}
-          dropdownIconColor="white"
-          style={styles.pickerStyleFull}
+          itemStyle={{
+            color: pickerTextColor,
+            fontSize: 22,
+            textAlign: "center",
+          }}
+          dropdownIconColor={pickerTextColor}
+          style={{ color: pickerTextColor, width: "100%" }}
         >
           {editConfig.options.map((opt: any) => (
             <Picker.Item
@@ -255,7 +270,7 @@ export const RunnerProfileTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>Profil Onaylandı</Text>
@@ -281,7 +296,7 @@ export const RunnerProfileTool = ({
               <Ionicons
                 name={formData.gender === "female" ? "woman" : "man"}
                 size={20}
-                color={COLORS.accent}
+                color={colors.accent}
               />
             </View>
             <View>
@@ -302,7 +317,11 @@ export const RunnerProfileTool = ({
               <Ionicons
                 name="man"
                 size={18}
-                color={formData.gender === "male" ? "#000" : "#666"}
+                color={
+                  formData.gender === "male"
+                    ? colors.text.inverse
+                    : colors.text.secondary
+                }
               />
             </TouchableOpacity>
             <TouchableOpacity
@@ -315,7 +334,11 @@ export const RunnerProfileTool = ({
               <Ionicons
                 name="woman"
                 size={18}
-                color={formData.gender === "female" ? "#000" : "#666"}
+                color={
+                  formData.gender === "female"
+                    ? colors.text.inverse
+                    : colors.text.secondary
+                }
               />
             </TouchableOpacity>
           </View>
@@ -335,14 +358,14 @@ export const RunnerProfileTool = ({
         >
           <View style={styles.profileLeft}>
             <View style={styles.profileIconBox}>
-              <Ionicons name="resize-outline" size={24} color={COLORS.accent} />
+              <Ionicons name="resize-outline" size={24} color={colors.accent} />
             </View>
             <View>
               <Text style={styles.profileLabel}>Boy</Text>
               <Text style={styles.profileValue}>{formData.height} cm</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
         </Pressable>
 
         {/* Kilo */}
@@ -362,7 +385,7 @@ export const RunnerProfileTool = ({
               <Ionicons
                 name="fitness-outline"
                 size={20}
-                color={COLORS.accent}
+                color={colors.accent}
               />
             </View>
             <View>
@@ -370,7 +393,7 @@ export const RunnerProfileTool = ({
               <Text style={styles.profileValue}>{formData.weight} kg</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
         </Pressable>
 
         {/* Pace */}
@@ -383,7 +406,7 @@ export const RunnerProfileTool = ({
               <Ionicons
                 name="speedometer-outline"
                 size={20}
-                color={COLORS.accent}
+                color={colors.accent}
               />
             </View>
             <View>
@@ -391,7 +414,7 @@ export const RunnerProfileTool = ({
               <Text style={styles.profileValue}>{displayPace()}</Text>
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={18} color="#666" />
+          <Ionicons name="chevron-forward" size={18} color={colors.text.secondary} />
         </Pressable>
       </View>
 
@@ -401,11 +424,11 @@ export const RunnerProfileTool = ({
         disabled={isSaving}
       >
         {isSaving ? (
-          <ActivityIndicator size="small" color="#000" />
+          <ActivityIndicator size="small" color={colors.text.inverse} />
         ) : (
           <>
             <Text style={styles.btnText}>Onayla ve Devam Et</Text>
-            <Ionicons name="arrow-forward" size={20} color="#000" />
+            <Ionicons name="arrow-forward" size={20} color={colors.text.inverse} />
           </>
         )}
       </TouchableOpacity>
@@ -447,225 +470,233 @@ export const RunnerProfileTool = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: 16,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: "#999",
-    marginBottom: 16,
-  },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 4,
+    },
+    subtitle: {
+      fontSize: 13,
+      color: c.text.secondary,
+      marginBottom: 16,
+    },
 
-  // Profil Listesi
-  profileList: {
-    gap: 8,
-    marginBottom: 14,
-  },
-  profileRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#2A2A2A",
-  },
-  profileLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  profileIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#1F1F1F",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  profileLabel: {
-    fontSize: 11,
-    color: "#777",
-    marginBottom: 2,
-  },
-  profileValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#FFF",
-  },
+    // Profil Listesi
+    profileList: {
+      gap: 8,
+      marginBottom: 14,
+    },
+    profileRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "space-between" as const,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 12,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    profileLeft: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+    },
+    profileIconBox: {
+      width: 36,
+      height: 36,
+      borderRadius: 10,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    profileLabel: {
+      fontSize: 11,
+      color: c.text.secondary,
+      marginBottom: 2,
+    },
+    profileValue: {
+      fontSize: 14,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
 
-  // Cinsiyet Toggle
-  genderToggle: {
-    flexDirection: "row",
-    backgroundColor: "#1F1F1F",
-    borderRadius: 8,
-    padding: 2,
-    gap: 2,
-  },
-  genderBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 7,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  genderBtnActive: {
-    backgroundColor: COLORS.accent,
-  },
+    // Cinsiyet Toggle
+    genderToggle: {
+      flexDirection: "row" as const,
+      backgroundColor: c.surface,
+      borderRadius: 8,
+      padding: 2,
+      gap: 2,
+    },
+    genderBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 7,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    genderBtnActive: {
+      backgroundColor: c.accent,
+    },
 
-  // Button
-  btn: {
-    backgroundColor: COLORS.accent,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  btnText: {
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 14,
-  },
+    // Button
+    btn: {
+      backgroundColor: c.accent,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    btnText: {
+      color: c.text.inverse,
+      fontWeight: "700" as const,
+      fontSize: 14,
+    },
 
-  // Submitted
-  submittedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#252525",
-    padding: 12,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  submittedIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.accent + "20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  submittedTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  submittedSubtitle: {
-    fontSize: 12,
-    color: "#999",
-  },
+    // Submitted
+    submittedCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      padding: 12,
+      borderRadius: 12,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    submittedIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.accent + "20",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    submittedTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    submittedSubtitle: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
 
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalKeyboardAvoiding: {
-    width: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalCenteredContainer: { width: "90%", maxWidth: 400 },
-  modalContent: {
-    backgroundColor: "#1C1C1E",
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
-    backgroundColor: "#242426",
-  },
-  modalTitle: { fontSize: 16, fontWeight: "600", color: COLORS.white },
-  headerBtn: { padding: 5 },
-  headerBtnTextCancel: { color: COLORS.textDim, fontSize: 15 },
-  headerBtnTextSave: { color: COLORS.accent, fontSize: 15, fontWeight: "bold" },
-  modalBody: {
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    backgroundColor: "#1C1C1E",
-    minHeight: 150,
-    justifyContent: "center",
-  },
+    // Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    modalKeyboardAvoiding: {
+      width: "100%" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+    },
+    modalCenteredContainer: { width: "90%" as const, maxWidth: 400 },
+    modalContent: {
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      overflow: "hidden" as const,
+    },
+    modalHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+      backgroundColor: c.surfaceVariant,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
+    headerBtn: { padding: 5 },
+    headerBtnTextCancel: { color: c.text.secondary, fontSize: 15 },
+    headerBtnTextSave: {
+      color: c.accent,
+      fontSize: 15,
+      fontWeight: "bold" as const,
+    },
+    modalBody: {
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      backgroundColor: c.surface,
+      minHeight: 150,
+      justifyContent: "center" as const,
+    },
 
-  pickerWrapper: {
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-  },
-  pickerStyleFull: { color: "white", width: "100%" },
-  pickerItemStyle: { color: "white", fontSize: 22, textAlign: "center" },
-  dualPickerContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-  },
-  pickerColumn: { flex: 1, alignItems: "center" },
-  pickerStyleHalf: { color: "white", width: "100%" },
-  columnLabel: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    marginBottom: -10,
-    zIndex: 1,
-  },
-  pickerSeparator: {
-    fontSize: 30,
-    color: "white",
-    paddingBottom: 20,
-    paddingHorizontal: 10,
-  },
+    pickerWrapper: {
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      width: "100%" as const,
+    },
+    dualPickerContainer: {
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      width: "100%" as const,
+      paddingHorizontal: 20,
+    },
+    pickerColumn: { flex: 1, alignItems: "center" as const },
+    columnLabel: {
+      color: c.text.secondary,
+      fontSize: 12,
+      marginBottom: -10,
+      zIndex: 1,
+    },
+    pickerSeparator: {
+      fontSize: 30,
+      color: c.text.primary,
+      paddingBottom: 20,
+      paddingHorizontal: 10,
+    },
 
-  beginnerToggleContainer: {
-    paddingHorizontal: 15,
-    paddingBottom: 15,
-  },
-  beginnerToggle: {
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#3A3A3C",
-  },
-  beginnerToggleActive: {
-    backgroundColor: COLORS.accent + "15",
-    borderColor: COLORS.accent,
-  },
-  beginnerToggleContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  beginnerToggleTitle: {
-    color: COLORS.white,
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 2,
-  },
-  beginnerToggleSubtitle: {
-    color: COLORS.textDim,
-    fontSize: 12,
-  },
-});
+    beginnerToggleContainer: {
+      paddingHorizontal: 15,
+      paddingBottom: 15,
+    },
+    beginnerToggle: {
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 12,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    beginnerToggleActive: {
+      backgroundColor: c.accent + "15",
+      borderColor: c.accent,
+    },
+    beginnerToggleContent: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 12,
+    },
+    beginnerToggleTitle: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+      marginBottom: 2,
+    },
+    beginnerToggleSubtitle: {
+      color: c.text.secondary,
+      fontSize: 12,
+    },
+  } as const;
+};

@@ -1,10 +1,11 @@
-import { COLORS } from "@/constants/Colors";
+import { useTheme } from "@/theme/ThemeContext";
 import { AuthContext } from "@/utils/authContext";
 import { Redirect, Stack } from "expo-router";
 import React, { useContext } from "react";
 
 export default function ProtectedLayout() {
     const authState = useContext(AuthContext);
+    const { colors } = useTheme();
 
     if (!authState.isReady) {
         return null;
@@ -19,11 +20,11 @@ export default function ProtectedLayout() {
         <Stack
             screenOptions={{
                 headerStyle: {
-                    backgroundColor: COLORS.background,
+                    backgroundColor: colors.background,
                 },
-                headerTintColor: COLORS.text,
+                headerTintColor: colors.text.primary,
                 headerTitleStyle: {
-                    color: COLORS.text,
+                    color: colors.text.primary,
                     fontSize: 20,
                     fontWeight: "600",
                 },

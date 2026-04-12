@@ -1,26 +1,44 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, {
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
 import {
     ActivityIndicator,
     Dimensions,
     Pressable,
     RefreshControl,
     ScrollView,
-    StyleSheet,
     Text,
     View,
 } from "react-native";
 import { BarChart } from "react-native-chart-kit";
 
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
 
+// Hex → rgba helper (chart-kit opacity callback'leri için)
+const hexToRgba = (hex: string, opacity: number): string => {
+    const clean = hex.replace("#", "");
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+};
+
 const ProgressScreen = () => {
     const { user, getValidToken, refreshUserData } = useContext(AuthContext);
+    const { colors, isDark } = useTheme();
+    const styles = useThemedStyles(makeStyles);
     const [refreshing, setRefreshing] = useState(false);
     const [loading, setLoading] = useState(true);
     const [activeChart, setActiveChart] = useState<"distance" | "pace">("distance");
@@ -83,7 +101,6 @@ const ProgressScreen = () => {
 
                 workouts.forEach((w: any) => {
                     if (w.status !== "completed" || !w.result) return;
-                    // "YYYY-MM-DD" → timezone-safe parse
                     const parts = w.scheduled_date.split("-");
                     const d = new Date(+parts[0], +parts[1] - 1, +parts[2]);
                     const diffDays = Math.round((d.getTime() - monday.getTime()) / (1000 * 60 * 60 * 24));
@@ -142,39 +159,46 @@ const ProgressScreen = () => {
 
     const progPercent = activeProgram?.progress_percent || 0;
 
-    const distanceBarChartConfig = {
-        backgroundColor: "transparent",
-        backgroundGradientFrom: COLORS.card,
-        backgroundGradientTo: COLORS.card,
-        decimalPlaces: 1,
-        color: (opacity = 1) => `rgba(255, 69, 1, ${opacity})`,
-        labelColor: () => COLORS.textDim,
-        barPercentage: 0.5,
-        propsForBackgroundLines: {
-            strokeDasharray: "",
-            stroke: COLORS.cardBorder,
-            strokeOpacity: 0.3,
-        },
-        fillShadowGradient: COLORS.accent,
-        fillShadowGradientOpacity: 1,
-    };
+    // Chart config'leri theme'e bağlı — tema değişiminde re-compute.
+    const distanceBarChartConfig = useMemo(
+        () => ({
+            backgroundColor: "transparent",
+            backgroundGradientFrom: colors.surface,
+            backgroundGradientTo: colors.surface,
+            decimalPlaces: 1,
+            color: (opacity = 1) => hexToRgba(colors.accent, opacity),
+            labelColor: () => colors.text.secondary,
+            barPercentage: 0.5,
+            propsForBackgroundLines: {
+                strokeDasharray: "",
+                stroke: colors.border,
+                strokeOpacity: 0.3,
+            },
+            fillShadowGradient: colors.accent,
+            fillShadowGradientOpacity: 1,
+        }),
+        [colors],
+    );
 
-    const paceBarChartConfig = {
-        backgroundColor: "transparent",
-        backgroundGradientFrom: COLORS.card,
-        backgroundGradientTo: COLORS.card,
-        decimalPlaces: 1,
-        color: (opacity = 1) => `rgba(40, 199, 111, ${opacity})`,
-        labelColor: () => COLORS.textDim,
-        barPercentage: 0.5,
-        propsForBackgroundLines: {
-            strokeDasharray: "",
-            stroke: COLORS.cardBorder,
-            strokeOpacity: 0.3,
-        },
-        fillShadowGradient: COLORS.success,
-        fillShadowGradientOpacity: 1,
-    };
+    const paceBarChartConfig = useMemo(
+        () => ({
+            backgroundColor: "transparent",
+            backgroundGradientFrom: colors.surface,
+            backgroundGradientTo: colors.surface,
+            decimalPlaces: 1,
+            color: (opacity = 1) => hexToRgba(colors.success, opacity),
+            labelColor: () => colors.text.secondary,
+            barPercentage: 0.5,
+            propsForBackgroundLines: {
+                strokeDasharray: "",
+                stroke: colors.border,
+                strokeOpacity: 0.3,
+            },
+            fillShadowGradient: colors.success,
+            fillShadowGradientOpacity: 1,
+        }),
+        [colors],
+    );
 
     if (loading && !refreshing) {
         return (
@@ -184,7 +208,7 @@ const ProgressScreen = () => {
                     { justifyContent: "center", alignItems: "center" },
                 ]}
             >
-                <ActivityIndicator size="large" color={COLORS.accent} />
+                <ActivityIndicator size="large" color={colors.accent} />
             </View>
         );
     }
@@ -199,8 +223,8 @@ const ProgressScreen = () => {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={COLORS.accent}
-                        colors={[COLORS.accent]}
+                        tintColor={colors.accent}
+                        colors={[colors.accent]}
                         progressViewOffset={40}
                     />
                 }
@@ -224,13 +248,13 @@ const ProgressScreen = () => {
                             <View
                                 style={[
                                     styles.miniStatIcon,
-                                    { backgroundColor: COLORS.secondary + "20" },
+                                    { backgroundColor: colors.secondary + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="flame"
                                     size={16}
-                                    color={COLORS.secondary}
+                                    color={colors.secondary}
                                 />
                             </View>
                             <Text style={styles.miniStatValue}>
@@ -243,13 +267,13 @@ const ProgressScreen = () => {
                             <View
                                 style={[
                                     styles.miniStatIcon,
-                                    { backgroundColor: COLORS.accent + "20" },
+                                    { backgroundColor: colors.accent + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="fitness"
                                     size={16}
-                                    color={COLORS.accent}
+                                    color={colors.accent}
                                 />
                             </View>
                             <Text style={styles.miniStatValue}>
@@ -262,13 +286,13 @@ const ProgressScreen = () => {
                             <View
                                 style={[
                                     styles.miniStatIcon,
-                                    { backgroundColor: COLORS.info + "20" },
+                                    { backgroundColor: colors.info + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="time"
                                     size={16}
-                                    color={COLORS.info}
+                                    color={colors.info}
                                 />
                             </View>
                             <Text style={styles.miniStatValue}>
@@ -281,13 +305,13 @@ const ProgressScreen = () => {
                             <View
                                 style={[
                                     styles.miniStatIcon,
-                                    { backgroundColor: COLORS.warning + "20" },
+                                    { backgroundColor: colors.warning + "20" },
                                 ]}
                             >
                                 <Ionicons
                                     name="trophy"
                                     size={16}
-                                    color={COLORS.warning}
+                                    color={colors.warning}
                                 />
                             </View>
                             <Text style={styles.miniStatValue}>
@@ -336,7 +360,7 @@ const ProgressScreen = () => {
 
                                 <View style={styles.progressBarBg}>
                                     <LinearGradient
-                                        colors={[COLORS.accent, COLORS.secondary]}
+                                        colors={[colors.accent, colors.secondary]}
                                         start={{ x: 0, y: 0 }}
                                         end={{ x: 1, y: 0 }}
                                         style={[
@@ -353,7 +377,7 @@ const ProgressScreen = () => {
                                         <Ionicons
                                             name="checkmark-circle"
                                             size={14}
-                                            color={COLORS.success}
+                                            color={colors.success}
                                         />
                                         <Text style={styles.footerText}>
                                             {completed} Tamamlandı
@@ -363,7 +387,7 @@ const ProgressScreen = () => {
                                         <Ionicons
                                             name="hourglass-outline"
                                             size={14}
-                                            color={COLORS.textDim}
+                                            color={colors.text.secondary}
                                         />
                                         <Text style={styles.footerText}>
                                             {remaining} Kaldı
@@ -390,8 +414,8 @@ const ProgressScreen = () => {
                                 size={16}
                                 color={
                                     activeChart === "distance"
-                                        ? COLORS.accent
-                                        : COLORS.textDim
+                                        ? colors.accent
+                                        : colors.text.secondary
                                 }
                             />
                             <Text
@@ -416,8 +440,8 @@ const ProgressScreen = () => {
                                 size={16}
                                 color={
                                     activeChart === "pace"
-                                        ? COLORS.success
-                                        : COLORS.textDim
+                                        ? colors.success
+                                        : colors.text.secondary
                                 }
                             />
                             <Text
@@ -487,7 +511,7 @@ const ProgressScreen = () => {
                                 <Ionicons
                                     name="speedometer-outline"
                                     size={20}
-                                    color={COLORS.success}
+                                    color={colors.success}
                                 />
                                 <Text style={styles.detailStatLabel}>
                                     Güncel Tempo
@@ -504,7 +528,7 @@ const ProgressScreen = () => {
                                 <Ionicons
                                     name="calendar-outline"
                                     size={20}
-                                    color={COLORS.info}
+                                    color={colors.info}
                                 />
                                 <Text style={styles.detailStatLabel}>
                                     Aktif Gün
@@ -521,7 +545,7 @@ const ProgressScreen = () => {
                                 <Ionicons
                                     name="walk-outline"
                                     size={20}
-                                    color={COLORS.accent}
+                                    color={colors.accent}
                                 />
                                 <Text style={styles.detailStatLabel}>
                                     Bu Hafta
@@ -539,24 +563,28 @@ const ProgressScreen = () => {
                 <View style={styles.sectionContainer}>
                     <Text style={styles.sectionTitle}>Rozetler</Text>
                     {recentAchievements.length > 0 ? (
-                        recentAchievements.map((ach, index) => (
+                        recentAchievements.map((ach, index) => {
+                            const achColor =
+                                ach.icon_color || colors.warning;
+                            return (
                             <View key={index} style={styles.achievementCard}>
                                 <LinearGradient
-                                    colors={[
-                                        (ach.icon_color || COLORS.warning) + "15",
-                                        "transparent",
-                                    ]}
+                                    colors={
+                                        isDark
+                                            ? [achColor + "15", "transparent"]
+                                            : [achColor, achColor + "A0"]
+                                    }
                                     start={{ x: 0, y: 0 }}
-                                    end={{ x: 1, y: 0 }}
+                                    end={{ x: 1, y: 1 }}
                                     style={styles.achievementGradient}
                                 >
                                     <View
                                         style={[
                                             styles.achIconBox,
                                             {
-                                                backgroundColor:
-                                                    (ach.icon_color ||
-                                                        COLORS.warning) + "20",
+                                                backgroundColor: isDark
+                                                    ? achColor + "20"
+                                                    : "rgba(255,255,255,0.25)",
                                             },
                                         ]}
                                     >
@@ -564,27 +592,42 @@ const ProgressScreen = () => {
                                             name={ach.icon_name || "trophy"}
                                             size={22}
                                             color={
-                                                ach.icon_color || COLORS.warning
+                                                isDark ? achColor : colors.white
                                             }
                                         />
                                     </View>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.achTitle}>
+                                        <Text
+                                            style={[
+                                                styles.achTitle,
+                                                !isDark && {
+                                                    color: colors.white,
+                                                },
+                                            ]}
+                                        >
                                             {ach.title}
                                         </Text>
-                                        <Text style={styles.achDesc}>
+                                        <Text
+                                            style={[
+                                                styles.achDesc,
+                                                !isDark && {
+                                                    color: "rgba(255,255,255,0.85)",
+                                                },
+                                            ]}
+                                        >
                                             {ach.description}
                                         </Text>
                                     </View>
                                 </LinearGradient>
                             </View>
-                        ))
+                            );
+                        })
                     ) : (
                         <View style={styles.emptyStateCard}>
                             <Ionicons
                                 name="lock-closed-outline"
                                 size={28}
-                                color={COLORS.inactive}
+                                color={colors.inactive}
                             />
                             <Text style={styles.emptyStateText}>
                                 Henüz kazanılmış rozet yok.
@@ -604,284 +647,303 @@ const ProgressScreen = () => {
 
 export default ProgressScreen;
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.background },
-    scrollView: { flex: 1 },
-    scrollContent: { paddingBottom: 20 },
+const makeStyles = (t: Theme) => {
+    const c = t.colors;
+    return {
+        container: { flex: 1, backgroundColor: c.background },
+        scrollView: { flex: 1 },
+        scrollContent: { paddingBottom: 20 },
 
-    // HERO HEADER
-    heroHeader: {
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        paddingBottom: 8,
-    },
-    heroStatRow: {
-        marginTop: 24,
-        alignItems: "center",
-    },
-    heroStatMain: {
-        flexDirection: "row",
-        alignItems: "flex-end",
-    },
-    heroStatValue: {
-        color: COLORS.text,
-        fontSize: 56,
-        fontWeight: "900",
-        letterSpacing: -2,
-    },
-    heroStatUnit: {
-        color: COLORS.accent,
-        fontSize: 22,
-        fontWeight: "700",
-        marginBottom: 10,
-        marginLeft: 4,
-    },
-    heroStatLabel: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        fontWeight: "600",
-        textTransform: "uppercase",
-        letterSpacing: 1.5,
-        marginTop: 4,
-    },
+        // HERO HEADER
+        heroHeader: {
+            paddingHorizontal: 20,
+            paddingTop: 16,
+            paddingBottom: 8,
+        },
+        heroStatRow: {
+            marginTop: 24,
+            alignItems: "center" as const,
+        },
+        heroStatMain: {
+            flexDirection: "row" as const,
+            alignItems: "flex-end" as const,
+        },
+        heroStatValue: {
+            color: c.text.primary,
+            fontSize: 56,
+            fontWeight: "900" as const,
+            letterSpacing: -2,
+        },
+        heroStatUnit: {
+            color: c.accent,
+            fontSize: 22,
+            fontWeight: "700" as const,
+            marginBottom: 10,
+            marginLeft: 4,
+        },
+        heroStatLabel: {
+            color: c.text.secondary,
+            fontSize: 13,
+            fontWeight: "600" as const,
+            textTransform: "uppercase" as const,
+            letterSpacing: 1.5,
+            marginTop: 4,
+        },
 
-    // MINI STATS
-    miniStatsRow: {
-        flexDirection: "row",
-        backgroundColor: COLORS.card,
-        borderRadius: 16,
-        padding: 16,
-        marginTop: 20,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        alignItems: "center",
-    },
-    miniStat: {
-        flex: 1,
-        alignItems: "center",
-    },
-    miniStatIcon: {
-        width: 32,
-        height: 32,
-        borderRadius: 10,
-        alignItems: "center",
-        justifyContent: "center",
-        marginBottom: 6,
-    },
-    miniStatValue: {
-        color: COLORS.text,
-        fontSize: 15,
-        fontWeight: "800",
-    },
-    miniStatLabel: {
-        color: COLORS.textDim,
-        fontSize: 10,
-        fontWeight: "600",
-        marginTop: 2,
-    },
-    miniStatDivider: {
-        width: 1,
-        height: 36,
-        backgroundColor: COLORS.cardBorder,
-    },
+        // MINI STATS
+        miniStatsRow: {
+            flexDirection: "row" as const,
+            backgroundColor: c.surface,
+            borderRadius: 16,
+            padding: 16,
+            marginTop: 20,
+            borderWidth: 1,
+            borderColor: c.border,
+            alignItems: "center" as const,
+        },
+        miniStat: {
+            flex: 1,
+            alignItems: "center" as const,
+        },
+        miniStatIcon: {
+            width: 32,
+            height: 32,
+            borderRadius: 10,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+            marginBottom: 6,
+        },
+        miniStatValue: {
+            color: c.text.primary,
+            fontSize: 15,
+            fontWeight: "800" as const,
+        },
+        miniStatLabel: {
+            color: c.text.secondary,
+            fontSize: 10,
+            fontWeight: "600" as const,
+            marginTop: 2,
+        },
+        miniStatDivider: {
+            width: 1,
+            height: 36,
+            backgroundColor: c.border,
+        },
 
-    // SECTION
-    sectionContainer: {
-        marginTop: 24,
-        paddingHorizontal: 20,
-    },
-    sectionTitle: {
-        color: COLORS.text,
-        fontSize: 18,
-        fontWeight: "700",
-        marginBottom: 12,
-    },
+        // SECTION
+        sectionContainer: {
+            marginTop: 24,
+            paddingHorizontal: 20,
+        },
+        sectionTitle: {
+            color: c.text.primary,
+            fontSize: 18,
+            fontWeight: "700" as const,
+            marginBottom: 12,
+        },
 
-    // PROGRAM
-    programCard: {
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        backgroundColor: COLORS.card,
-    },
-    programHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "flex-start",
-        marginBottom: 16,
-    },
-    programTitle: { color: COLORS.text, fontSize: 17, fontWeight: "bold" },
-    programWeek: { color: COLORS.textDim, fontSize: 13, marginTop: 2 },
-    percentBadge: {
-        backgroundColor: COLORS.accent + "15",
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 10,
-        borderWidth: 1,
-        borderColor: COLORS.accent + "30",
-    },
-    percentText: { color: COLORS.accent, fontWeight: "800", fontSize: 13 },
-    progressBarBg: {
-        height: 6,
-        backgroundColor: COLORS.background,
-        borderRadius: 3,
-        overflow: "hidden",
-        marginBottom: 16,
-    },
-    progressBarFill: { height: "100%", borderRadius: 3 },
-    programFooter: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-    },
-    programFooterItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 5,
-    },
-    footerText: { color: COLORS.textDim, fontSize: 12, fontWeight: "600" },
+        // PROGRAM
+        programCard: {
+            borderRadius: 20,
+            padding: 20,
+            borderWidth: 1,
+            borderColor: c.border,
+            backgroundColor: c.surface,
+        },
+        programHeader: {
+            flexDirection: "row" as const,
+            justifyContent: "space-between" as const,
+            alignItems: "flex-start" as const,
+            marginBottom: 16,
+        },
+        programTitle: {
+            color: c.text.primary,
+            fontSize: 17,
+            fontWeight: "bold" as const,
+        },
+        programWeek: { color: c.text.secondary, fontSize: 13, marginTop: 2 },
+        percentBadge: {
+            backgroundColor: c.accent + "15",
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 10,
+            borderWidth: 1,
+            borderColor: c.accent + "30",
+        },
+        percentText: {
+            color: c.accent,
+            fontWeight: "800" as const,
+            fontSize: 13,
+        },
+        progressBarBg: {
+            height: 6,
+            backgroundColor: c.surfaceVariant,
+            borderRadius: 3,
+            overflow: "hidden" as const,
+            marginBottom: 16,
+        },
+        progressBarFill: { height: "100%" as const, borderRadius: 3 },
+        programFooter: {
+            flexDirection: "row" as const,
+            justifyContent: "space-between" as const,
+        },
+        programFooterItem: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            gap: 5,
+        },
+        footerText: {
+            color: c.text.secondary,
+            fontSize: 12,
+            fontWeight: "600" as const,
+        },
 
-    // CHART TABS
-    chartTabRow: {
-        flexDirection: "row",
-        gap: 8,
-        marginBottom: 12,
-    },
-    chartTab: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 6,
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 12,
-        backgroundColor: COLORS.card,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    chartTabActive: {
-        borderColor: COLORS.accent + "50",
-        backgroundColor: COLORS.accent + "10",
-    },
-    chartTabText: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        fontWeight: "600",
-    },
-    chartTabTextActive: {
-        color: COLORS.text,
-    },
+        // CHART TABS
+        chartTabRow: {
+            flexDirection: "row" as const,
+            gap: 8,
+            marginBottom: 12,
+        },
+        chartTab: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            gap: 6,
+            paddingVertical: 8,
+            paddingHorizontal: 16,
+            borderRadius: 12,
+            backgroundColor: c.surface,
+            borderWidth: 1,
+            borderColor: c.border,
+        },
+        chartTabActive: {
+            borderColor: c.accent + "50",
+            backgroundColor: c.accent + "10",
+        },
+        chartTabText: {
+            color: c.text.secondary,
+            fontSize: 13,
+            fontWeight: "600" as const,
+        },
+        chartTabTextActive: {
+            color: c.text.primary,
+        },
 
-    // CHART
-    chartCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 20,
-        paddingTop: 18,
-        paddingBottom: 10,
-        paddingHorizontal: 12,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        overflow: "hidden",
-        alignItems: "center",
-    },
-    chartLabel: {
-        color: COLORS.textDim,
-        fontSize: 12,
-        fontWeight: "600",
-        marginBottom: 12,
-        textTransform: "uppercase",
-        letterSpacing: 0.5,
-        alignSelf: "flex-start",
-        marginLeft: 6,
-    },
-    chartStyle: {
-        borderRadius: 16,
-    },
+        // CHART
+        chartCard: {
+            backgroundColor: c.surface,
+            borderRadius: 20,
+            paddingTop: 18,
+            paddingBottom: 10,
+            paddingHorizontal: 12,
+            borderWidth: 1,
+            borderColor: c.border,
+            overflow: "hidden" as const,
+            alignItems: "center" as const,
+        },
+        chartLabel: {
+            color: c.text.secondary,
+            fontSize: 12,
+            fontWeight: "600" as const,
+            marginBottom: 12,
+            textTransform: "uppercase" as const,
+            letterSpacing: 0.5,
+            alignSelf: "flex-start" as const,
+            marginLeft: 6,
+        },
+        chartStyle: {
+            borderRadius: 16,
+        },
 
-    // DETAIL STATS
-    detailStatsCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 20,
-        padding: 4,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    detailStatRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-    },
-    detailStatLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10,
-    },
-    detailStatLabel: {
-        color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "500",
-    },
-    detailStatValue: {
-        color: COLORS.text,
-        fontSize: 16,
-        fontWeight: "800",
-    },
-    detailStatUnit: {
-        color: COLORS.textDim,
-        fontSize: 12,
-        fontWeight: "500",
-    },
-    detailStatSeparator: {
-        height: 1,
-        backgroundColor: COLORS.cardBorder,
-        marginHorizontal: 16,
-    },
+        // DETAIL STATS
+        detailStatsCard: {
+            backgroundColor: c.surface,
+            borderRadius: 20,
+            padding: 4,
+            borderWidth: 1,
+            borderColor: c.border,
+        },
+        detailStatRow: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            justifyContent: "space-between" as const,
+            paddingVertical: 14,
+            paddingHorizontal: 16,
+        },
+        detailStatLeft: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            gap: 10,
+        },
+        detailStatLabel: {
+            color: c.text.primary,
+            fontSize: 14,
+            fontWeight: "500" as const,
+        },
+        detailStatValue: {
+            color: c.text.primary,
+            fontSize: 16,
+            fontWeight: "800" as const,
+        },
+        detailStatUnit: {
+            color: c.text.secondary,
+            fontSize: 12,
+            fontWeight: "500" as const,
+        },
+        detailStatSeparator: {
+            height: 1,
+            backgroundColor: c.border,
+            marginHorizontal: 16,
+        },
 
-    // ACHIEVEMENTS
-    achievementCard: {
-        borderRadius: 16,
-        marginBottom: 8,
-        overflow: "hidden",
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        backgroundColor: COLORS.card,
-    },
-    achievementGradient: {
-        flexDirection: "row",
-        alignItems: "center",
-        padding: 14,
-        gap: 12,
-    },
-    achIconBox: {
-        width: 42,
-        height: 42,
-        borderRadius: 14,
-        justifyContent: "center",
-        alignItems: "center",
-    },
-    achTitle: { color: COLORS.text, fontSize: 14, fontWeight: "700" },
-    achDesc: { color: COLORS.textDim, fontSize: 12, marginTop: 2 },
+        // ACHIEVEMENTS
+        achievementCard: {
+            borderRadius: 16,
+            marginBottom: 8,
+            overflow: "hidden" as const,
+            borderWidth: 1,
+            borderColor: c.border,
+            backgroundColor: c.surface,
+        },
+        achievementGradient: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            padding: 14,
+            gap: 12,
+        },
+        achIconBox: {
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            justifyContent: "center" as const,
+            alignItems: "center" as const,
+        },
+        achTitle: {
+            color: c.text.primary,
+            fontSize: 14,
+            fontWeight: "700" as const,
+        },
+        achDesc: { color: c.text.secondary, fontSize: 12, marginTop: 2 },
 
-    // EMPTY STATE
-    emptyStateCard: {
-        padding: 24,
-        backgroundColor: COLORS.card,
-        borderRadius: 16,
-        alignItems: "center",
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        borderStyle: "dashed",
-    },
-    emptyStateText: {
-        color: COLORS.textDim,
-        marginTop: 10,
-        fontSize: 14,
-        fontWeight: "600",
-    },
-    emptyStateSubText: {
-        color: COLORS.inactive,
-        marginTop: 4,
-        fontSize: 12,
-    },
-});
+        // EMPTY STATE
+        emptyStateCard: {
+            padding: 24,
+            backgroundColor: c.surface,
+            borderRadius: 16,
+            alignItems: "center" as const,
+            borderWidth: 1,
+            borderColor: c.border,
+            borderStyle: "dashed" as const,
+        },
+        emptyStateText: {
+            color: c.text.secondary,
+            marginTop: 10,
+            fontSize: 14,
+            fontWeight: "600" as const,
+        },
+        emptyStateSubText: {
+            color: c.inactive,
+            marginTop: 4,
+            fontSize: 12,
+        },
+    } as const;
+};

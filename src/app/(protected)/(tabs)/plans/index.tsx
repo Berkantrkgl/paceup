@@ -8,18 +8,21 @@ import {
     Pressable,
     RefreshControl,
     ScrollView,
-    StyleSheet,
     Text,
     View,
 } from "react-native";
 
-import { COLORS } from "@/constants/Colors";
 import { PlansTour } from "@/components/tour/PlansTour";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const PlansScreen = () => {
     const { getValidToken, refreshUserData } = useContext(AuthContext);
+    const { colors } = useTheme();
+    const styles = useThemedStyles(makeStyles);
     const [userPlans, setUserPlans] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -168,7 +171,7 @@ const PlansScreen = () => {
                         <Ionicons
                             name="flash"
                             size={12}
-                            color={COLORS.success}
+                            color={colors.success}
                         />
                         <Text style={styles.activeBadgeText}>Aktif</Text>
                     </View>
@@ -199,7 +202,7 @@ const PlansScreen = () => {
                     </View>
                     <View style={styles.progressBarBg}>
                         <LinearGradient
-                            colors={[COLORS.accent, COLORS.secondary]}
+                            colors={[colors.accent, colors.secondary]}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 0 }}
                             style={[
@@ -221,7 +224,7 @@ const PlansScreen = () => {
                     <Ionicons
                         name="pause-circle-outline"
                         size={16}
-                        color={COLORS.textDim}
+                        color={colors.text.secondary}
                     />
                     <Text style={styles.activePlanActionText}>
                         Arşive Kaldır
@@ -252,7 +255,7 @@ const PlansScreen = () => {
                         <Ionicons
                             name="archive-outline"
                             size={18}
-                            color={COLORS.textDim}
+                            color={colors.text.secondary}
                         />
                     </View>
                     <View style={{ flex: 1 }}>
@@ -275,7 +278,7 @@ const PlansScreen = () => {
                         <Ionicons
                             name="play-circle-outline"
                             size={22}
-                            color={COLORS.accent}
+                            color={colors.accent}
                         />
                     </Pressable>
                     <Pressable
@@ -288,7 +291,7 @@ const PlansScreen = () => {
                         <Ionicons
                             name="trash-outline"
                             size={20}
-                            color={COLORS.danger}
+                            color={colors.danger}
                         />
                     </Pressable>
                 </View>
@@ -305,7 +308,7 @@ const PlansScreen = () => {
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={onRefresh}
-                        tintColor={COLORS.accent}
+                        tintColor={colors.accent}
                     />
                 }
             >
@@ -328,7 +331,7 @@ const PlansScreen = () => {
                     ]}
                 >
                     <LinearGradient
-                        colors={[COLORS.accent, COLORS.secondary]}
+                        colors={[colors.accent, colors.secondary]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.aiCard}
@@ -338,7 +341,7 @@ const PlansScreen = () => {
                                 <Ionicons
                                     name="sparkles"
                                     size={24}
-                                    color={COLORS.white}
+                                    color={colors.text.inverse}
                                 />
                             </View>
                             <View style={{ flex: 1 }}>
@@ -384,7 +387,7 @@ const PlansScreen = () => {
                             <Ionicons
                                 name="map-outline"
                                 size={48}
-                                color={COLORS.inactive}
+                                color={colors.inactive}
                             />
                             <Text style={styles.emptyTitle}>
                                 Henüz bir planın yok
@@ -402,7 +405,7 @@ const PlansScreen = () => {
 
             {isLoading && (
                 <View style={styles.loadingOverlay}>
-                    <ActivityIndicator size="large" color={COLORS.accent} />
+                    <ActivityIndicator size="large" color={colors.accent} />
                 </View>
             )}
 
@@ -418,241 +421,250 @@ const PlansScreen = () => {
 
 export default PlansScreen;
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: COLORS.background },
-    scrollContent: { padding: 20, paddingTop: 70 },
-    loadingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(0,0,0,0.5)",
-        justifyContent: "center",
-        alignItems: "center",
-    },
+const makeStyles = (t: Theme) => {
+    const c = t.colors;
+    return {
+        container: { flex: 1, backgroundColor: c.background },
+        scrollContent: { padding: 20, paddingTop: 70 },
+        loadingOverlay: {
+            ...({
+                position: "absolute" as const,
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+            }),
+            backgroundColor: c.overlay,
+            justifyContent: "center" as const,
+            alignItems: "center" as const,
+        },
 
-    // HEADER
-    header: {
-        marginBottom: 24,
-    },
-    headerTitle: {
-        color: COLORS.text,
-        fontSize: 28,
-        fontWeight: "800",
-        letterSpacing: 0.3,
-    },
-    headerSubtitle: {
-        color: COLORS.textDim,
-        fontSize: 14,
-        marginTop: 4,
-    },
+        // HEADER
+        header: {
+            marginBottom: 24,
+        },
+        headerTitle: {
+            color: c.text.primary,
+            fontSize: 28,
+            fontWeight: "800" as const,
+            letterSpacing: 0.3,
+        },
+        headerSubtitle: {
+            color: c.text.secondary,
+            fontSize: 14,
+            marginTop: 4,
+        },
 
-    // AI CARD
-    aiCard: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: 18,
-        borderRadius: 20,
-        marginBottom: 28,
-    },
-    aiCardLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
-        gap: 14,
-    },
-    aiIconBox: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: "rgba(255,255,255,0.2)",
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    aiCardTitle: {
-        color: COLORS.white,
-        fontSize: 17,
-        fontWeight: "800",
-    },
-    aiCardDesc: {
-        color: "rgba(255,255,255,0.7)",
-        fontSize: 12,
-        marginTop: 2,
-    },
+        // AI CARD
+        aiCard: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            justifyContent: "space-between" as const,
+            padding: 18,
+            borderRadius: 20,
+            marginBottom: 28,
+        },
+        aiCardLeft: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            flex: 1,
+            gap: 14,
+        },
+        aiIconBox: {
+            width: 44,
+            height: 44,
+            borderRadius: 14,
+            backgroundColor: "rgba(255,255,255,0.2)",
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+        },
+        aiCardTitle: {
+            color: c.text.inverse,
+            fontSize: 17,
+            fontWeight: "800" as const,
+        },
+        aiCardDesc: {
+            color: "rgba(255,255,255,0.7)",
+            fontSize: 12,
+            marginTop: 2,
+        },
 
-    // SECTION
-    section: {
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        fontWeight: "700",
-        textTransform: "uppercase",
-        letterSpacing: 1,
-        marginBottom: 12,
-    },
+        // SECTION
+        section: {
+            marginBottom: 24,
+        },
+        sectionTitle: {
+            color: c.text.secondary,
+            fontSize: 13,
+            fontWeight: "700" as const,
+            textTransform: "uppercase" as const,
+            letterSpacing: 1,
+            marginBottom: 12,
+        },
 
-    // ACTIVE PLAN CARD
-    activePlanCard: {
-        backgroundColor: COLORS.card,
-        borderRadius: 20,
-        padding: 20,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-    },
-    activePlanHeader: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 12,
-    },
-    activeBadge: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 4,
-        backgroundColor: COLORS.success + "15",
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
-    },
-    activeBadgeText: {
-        color: COLORS.success,
-        fontSize: 11,
-        fontWeight: "700",
-    },
-    weekBadge: {
-        backgroundColor: COLORS.cardVariant,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 8,
-    },
-    weekBadgeText: {
-        color: COLORS.textDim,
-        fontSize: 11,
-        fontWeight: "600",
-    },
-    activePlanTitle: {
-        color: COLORS.text,
-        fontSize: 19,
-        fontWeight: "700",
-        marginBottom: 4,
-    },
-    activePlanDesc: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        lineHeight: 18,
-        marginBottom: 16,
-    },
+        // ACTIVE PLAN CARD
+        activePlanCard: {
+            backgroundColor: c.surface,
+            borderRadius: 20,
+            padding: 20,
+            borderWidth: 1,
+            borderColor: c.border,
+        },
+        activePlanHeader: {
+            flexDirection: "row" as const,
+            justifyContent: "space-between" as const,
+            alignItems: "center" as const,
+            marginBottom: 12,
+        },
+        activeBadge: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            gap: 4,
+            backgroundColor: c.success + "15",
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 8,
+        },
+        activeBadgeText: {
+            color: c.success,
+            fontSize: 11,
+            fontWeight: "700" as const,
+        },
+        weekBadge: {
+            backgroundColor: c.surfaceVariant,
+            paddingHorizontal: 10,
+            paddingVertical: 5,
+            borderRadius: 8,
+        },
+        weekBadgeText: {
+            color: c.text.secondary,
+            fontSize: 11,
+            fontWeight: "600" as const,
+        },
+        activePlanTitle: {
+            color: c.text.primary,
+            fontSize: 19,
+            fontWeight: "700" as const,
+            marginBottom: 4,
+        },
+        activePlanDesc: {
+            color: c.text.secondary,
+            fontSize: 13,
+            lineHeight: 18,
+            marginBottom: 16,
+        },
 
-    // PROGRESS
-    progressSection: {
-        marginBottom: 16,
-    },
-    progressRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 8,
-    },
-    progressPercent: {
-        color: COLORS.accent,
-        fontSize: 15,
-        fontWeight: "800",
-    },
-    progressLabel: {
-        color: COLORS.textDim,
-        fontSize: 12,
-        fontWeight: "500",
-    },
-    progressBarBg: {
-        height: 6,
-        backgroundColor: COLORS.background,
-        borderRadius: 3,
-        overflow: "hidden",
-    },
-    progressBarFill: {
-        height: "100%",
-        borderRadius: 3,
-    },
+        // PROGRESS
+        progressSection: {
+            marginBottom: 16,
+        },
+        progressRow: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            justifyContent: "space-between" as const,
+            marginBottom: 8,
+        },
+        progressPercent: {
+            color: c.accent,
+            fontSize: 15,
+            fontWeight: "800" as const,
+        },
+        progressLabel: {
+            color: c.text.secondary,
+            fontSize: 12,
+            fontWeight: "500" as const,
+        },
+        progressBarBg: {
+            height: 6,
+            backgroundColor: c.surfaceVariant,
+            borderRadius: 3,
+            overflow: "hidden" as const,
+        },
+        progressBarFill: {
+            height: "100%" as const,
+            borderRadius: 3,
+        },
 
-    // ACTIVE PLAN ACTION
-    activePlanAction: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 6,
-        paddingTop: 14,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.cardBorder,
-    },
-    activePlanActionText: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        fontWeight: "600",
-    },
+        // ACTIVE PLAN ACTION
+        activePlanAction: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+            gap: 6,
+            paddingTop: 14,
+            borderTopWidth: 1,
+            borderTopColor: c.border,
+        },
+        activePlanActionText: {
+            color: c.text.secondary,
+            fontSize: 13,
+            fontWeight: "600" as const,
+        },
 
-    // ARCHIVED PLAN
-    archivedList: {
-        backgroundColor: COLORS.card,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: COLORS.cardBorder,
-        overflow: "hidden",
-    },
-    archivedPlanCard: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.cardBorder,
-    },
-    archivedPlanLeft: {
-        flexDirection: "row",
-        alignItems: "center",
-        flex: 1,
-        gap: 12,
-    },
-    archivedIconBox: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: COLORS.cardVariant,
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    archivedPlanTitle: {
-        color: COLORS.text,
-        fontSize: 14,
-        fontWeight: "600",
-    },
-    archivedPlanMeta: {
-        color: COLORS.textDim,
-        fontSize: 11,
-        marginTop: 2,
-    },
-    archivedActions: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 14,
-    },
+        // ARCHIVED PLAN
+        archivedList: {
+            backgroundColor: c.surface,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: c.border,
+            overflow: "hidden" as const,
+        },
+        archivedPlanCard: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            justifyContent: "space-between" as const,
+            padding: 14,
+            borderBottomWidth: 1,
+            borderBottomColor: c.border,
+        },
+        archivedPlanLeft: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            flex: 1,
+            gap: 12,
+        },
+        archivedIconBox: {
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            backgroundColor: c.surfaceVariant,
+            alignItems: "center" as const,
+            justifyContent: "center" as const,
+        },
+        archivedPlanTitle: {
+            color: c.text.primary,
+            fontSize: 14,
+            fontWeight: "600" as const,
+        },
+        archivedPlanMeta: {
+            color: c.text.secondary,
+            fontSize: 11,
+            marginTop: 2,
+        },
+        archivedActions: {
+            flexDirection: "row" as const,
+            alignItems: "center" as const,
+            gap: 14,
+        },
 
-    // EMPTY STATE
-    emptyState: {
-        alignItems: "center",
-        paddingVertical: 48,
-    },
-    emptyTitle: {
-        color: COLORS.text,
-        fontSize: 18,
-        fontWeight: "700",
-        marginTop: 16,
-    },
-    emptyDesc: {
-        color: COLORS.textDim,
-        fontSize: 13,
-        textAlign: "center",
-        marginTop: 6,
-        lineHeight: 20,
-        paddingHorizontal: 40,
-    },
-});
+        // EMPTY STATE
+        emptyState: {
+            alignItems: "center" as const,
+            paddingVertical: 48,
+        },
+        emptyTitle: {
+            color: c.text.primary,
+            fontSize: 18,
+            fontWeight: "700" as const,
+            marginTop: 16,
+        },
+        emptyDesc: {
+            color: c.text.secondary,
+            fontSize: 13,
+            textAlign: "center" as const,
+            marginTop: 6,
+            lineHeight: 20,
+            paddingHorizontal: 40,
+        },
+    } as const;
+};

@@ -1,6 +1,6 @@
 import { API_URL, FASTAPI_URL } from "@/constants/Config";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useContext, useEffect, useRef, useState } from "react";
+import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -20,7 +20,9 @@ import {
 import Markdown from "react-native-markdown-display";
 import EventSource from "react-native-sse";
 
-import { COLORS } from "@/constants/Colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme, ThemeColors } from "@/theme/tokens";
 import { ChatMessage } from "@/types/plans";
 import { AuthContext } from "@/utils/authContext";
 
@@ -49,9 +51,13 @@ const TOKEN_WARNING_THRESHOLD = 10000;
 const DynamicSystemMessage = ({
   isFinished,
   isError,
+  colors,
+  styles,
 }: {
   isFinished: boolean;
   isError?: boolean;
+  colors: ThemeColors;
+  styles: any;
 }) => {
   const [textIndex, setTextIndex] = useState(() =>
     Math.floor(Math.random() * LOADING_TEXTS.length),
@@ -119,7 +125,7 @@ const DynamicSystemMessage = ({
       style={[
         styles.modernSystemContainer,
         { opacity: fadeAnim },
-        isError && { borderColor: "#FF5252" },
+        isError && { borderColor: colors.danger },
       ]}
     >
       {isFinished && (
@@ -127,7 +133,7 @@ const DynamicSystemMessage = ({
           <Ionicons
             name={isError ? "alert-circle" : "checkmark-circle"}
             size={18}
-            color={isError ? "#FF5252" : "#4CAF50"}
+            color={isError ? colors.danger : colors.success}
           />
         </View>
       )}
@@ -150,7 +156,39 @@ const DynamicSystemMessage = ({
 const ChatbotScreen = () => {
   const router = useRouter();
   const { getValidToken, user, refreshUserData } = useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const flatListRef = useRef<FlatList>(null);
+
+  // Markdown stilleri tema-aware — useMemo ile.
+  const markdownStylesAi = useMemo(
+    () =>
+      StyleSheet.create({
+        body: { color: colors.text.primary, fontSize: 14, lineHeight: 20 },
+        heading1: {
+          fontSize: 16,
+          fontWeight: "bold",
+          color: colors.text.primary,
+          marginVertical: 5,
+        },
+        strong: { color: colors.text.primary, fontWeight: "700" },
+      }),
+    [colors],
+  );
+
+  const markdownStylesUser = useMemo(
+    () =>
+      StyleSheet.create({
+        body: {
+          color: colors.text.inverse,
+          fontSize: 14,
+          lineHeight: 20,
+          fontWeight: "500",
+        },
+        paragraph: { margin: 0 },
+      }),
+    [colors],
+  );
 
   const [threadId] = useState(
     `thread-${Math.random().toString(36).substring(7)}`,
@@ -489,6 +527,8 @@ const ChatbotScreen = () => {
           <DynamicSystemMessage
             isFinished={isProcessFinished}
             isError={!!isError}
+            colors={colors}
+            styles={styles}
           />
         </View>
       );
@@ -551,10 +591,10 @@ const ChatbotScreen = () => {
       return (
         <View style={[styles.messageRow, styles.rowAi]}>
           <View style={styles.aiAvatar}>
-            <Ionicons name="sparkles" size={16} color={COLORS.accent} />
+            <Ionicons name="sparkles" size={16} color={colors.accent} />
           </View>
           <View style={[styles.bubble, styles.bubbleAi]}>
-            <ActivityIndicator size="small" color={COLORS.accent} />
+            <ActivityIndicator size="small" color={colors.accent} />
           </View>
         </View>
       );
@@ -566,7 +606,7 @@ const ChatbotScreen = () => {
       <View style={[styles.messageRow, isUser ? styles.rowUser : styles.rowAi]}>
         {!isUser && (
           <View style={styles.aiAvatar}>
-            <Ionicons name="sparkles" size={16} color={COLORS.accent} />
+            <Ionicons name="sparkles" size={16} color={colors.accent} />
           </View>
         )}
         <View
@@ -592,7 +632,7 @@ const ChatbotScreen = () => {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 115 : 0}
     >
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
 
       {/* Token Bloke Banner */}
       {!canUseChat && (
@@ -601,7 +641,7 @@ const ChatbotScreen = () => {
           onPress={() => openPremium(!canUseChat ? "token_limit" : "general")}
           activeOpacity={0.8}
         >
-          <Ionicons name="lock-closed" size={16} color="#FF5252" />
+          <Ionicons name="lock-closed" size={16} color={colors.danger} />
           <Text style={styles.tokenBlockedText}>
             Ücretsiz kullanım hakkın doldu.
           </Text>
@@ -620,7 +660,7 @@ const ChatbotScreen = () => {
             onPress={() => openPremium(!canUseChat ? "token_limit" : "general")}
             activeOpacity={0.8}
           >
-            <Ionicons name="warning-outline" size={14} color="#FFA500" />
+            <Ionicons name="warning-outline" size={14} color={colors.warning} />
             <Text style={styles.tokenWarningText}>
               Kalan: {remainingTokens.toLocaleString()} token
             </Text>
@@ -670,7 +710,7 @@ const ChatbotScreen = () => {
                   ? "Yanıt bekleniyor..."
                   : "Mesaj yazın..."
           }
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.text.secondary}
           editable={isInputEditable}
           multiline
         />
@@ -683,13 +723,13 @@ const ChatbotScreen = () => {
             styles.sendBtn,
             canUseChat &&
               (!inputText.trim() || isSendDisabled) && { opacity: 0.5 },
-            !canUseChat && { backgroundColor: COLORS.accent },
+            !canUseChat && { backgroundColor: colors.accent },
           ]}
         >
           <Ionicons
             name={!canUseChat ? "flash" : "arrow-up"}
             size={20}
-            color={COLORS.background}
+            color={colors.text.inverse}
           />
         </TouchableOpacity>
       </View>
@@ -703,165 +743,156 @@ export default ChatbotScreen;
 // ============================================================
 // 🎨 STYLES
 // ============================================================
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.background },
-  messageRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-    alignItems: "flex-end",
-    gap: 8,
-  },
-  rowUser: { justifyContent: "flex-end" },
-  rowAi: { justifyContent: "flex-start" },
-  modernSystemContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#1A1A1A",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 30,
-    borderWidth: 1,
-    borderColor: "rgba(255, 165, 0, 0.2)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
-    maxWidth: "90%",
-  },
-  iconContainer: {
-    marginRight: 10,
-    width: 24,
-    height: 24,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  systemText: {
-    color: "#E0E0E0",
-    fontSize: 13,
-    fontWeight: "600",
-    fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
-    letterSpacing: 0.3,
-  },
-  aiAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: COLORS.card,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  bubble: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    maxWidth: "82%",
-  },
-  bubbleUser: { backgroundColor: COLORS.accent, borderBottomRightRadius: 2 },
-  bubbleAi: {
-    backgroundColor: COLORS.card,
-    borderBottomLeftRadius: 2,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  toolContainer: { width: "100%", marginBottom: 16, paddingHorizontal: 5 },
-  inputContainer: {
-    flexDirection: "row",
-    padding: 10,
-    backgroundColor: COLORS.background,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-    alignItems: "flex-end",
-    gap: 10,
-  },
-  textInput: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    color: COLORS.text,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 14,
-    maxHeight: 100,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.accent,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  // Token Bloke Banner
-  tokenBlockedBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,82,82,0.1)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,82,82,0.2)",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  tokenBlockedText: {
-    color: "#FF5252",
-    fontSize: 13,
-    flex: 1,
-    fontWeight: "600",
-  },
-  tokenBlockedBtn: {
-    backgroundColor: "rgba(255,82,82,0.2)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,82,82,0.4)",
-  },
-  tokenBlockedBtnText: {
-    color: "#FF5252",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  // Token Uyarı Banner
-  tokenWarningBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,165,0,0.08)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,165,0,0.15)",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  tokenWarningText: {
-    color: "#FFA500",
-    fontSize: 12,
-    fontWeight: "500",
-    flex: 1,
-  },
-  tokenWarningLink: {
-    color: COLORS.accent,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-});
-
-const markdownStylesAi = StyleSheet.create({
-  body: { color: "#E0E0E0", fontSize: 14, lineHeight: 20 },
-  heading1: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    marginVertical: 5,
-  },
-  strong: { color: "#FFFFFF", fontWeight: "700" },
-});
-
-const markdownStylesUser = StyleSheet.create({
-  body: { color: "#000000", fontSize: 14, lineHeight: 20, fontWeight: "500" },
-  paragraph: { margin: 0 },
-});
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: { flex: 1, backgroundColor: c.background },
+    messageRow: {
+      flexDirection: "row" as const,
+      marginBottom: 16,
+      alignItems: "flex-end" as const,
+      gap: 8,
+    },
+    rowUser: { justifyContent: "flex-end" as const },
+    rowAi: { justifyContent: "flex-start" as const },
+    modernSystemContainer: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surface,
+      paddingVertical: 12,
+      paddingHorizontal: 16,
+      borderRadius: 30,
+      borderWidth: 1,
+      borderColor: c.accent + "33",
+      shadowColor: c.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 4.65,
+      elevation: 8,
+      maxWidth: "90%" as const,
+    },
+    iconContainer: {
+      marginRight: 10,
+      width: 24,
+      height: 24,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    systemText: {
+      color: c.text.primary,
+      fontSize: 13,
+      fontWeight: "600" as const,
+      fontFamily: Platform.OS === "ios" ? "System" : "Roboto",
+      letterSpacing: 0.3,
+    },
+    aiAvatar: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    bubble: {
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      borderRadius: 18,
+      maxWidth: "82%" as const,
+    },
+    bubbleUser: { backgroundColor: c.accent, borderBottomRightRadius: 2 },
+    bubbleAi: {
+      backgroundColor: c.surface,
+      borderBottomLeftRadius: 2,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    toolContainer: {
+      width: "100%" as const,
+      marginBottom: 16,
+      paddingHorizontal: 5,
+    },
+    inputContainer: {
+      flexDirection: "row" as const,
+      padding: 10,
+      backgroundColor: c.background,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+      alignItems: "flex-end" as const,
+      gap: 10,
+    },
+    textInput: {
+      flex: 1,
+      backgroundColor: c.surface,
+      color: c.text.primary,
+      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      fontSize: 14,
+      maxHeight: 100,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    sendBtn: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: c.accent,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    // Token Bloke Banner
+    tokenBlockedBanner: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.danger + "1A",
+      borderBottomWidth: 1,
+      borderBottomColor: c.danger + "33",
+      paddingHorizontal: 16,
+      paddingVertical: 10,
+      gap: 8,
+    },
+    tokenBlockedText: {
+      color: c.danger,
+      fontSize: 13,
+      flex: 1,
+      fontWeight: "600" as const,
+    },
+    tokenBlockedBtn: {
+      backgroundColor: c.danger + "33",
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: c.danger + "66",
+    },
+    tokenBlockedBtnText: {
+      color: c.danger,
+      fontSize: 12,
+      fontWeight: "700" as const,
+    },
+    // Token Uyarı Banner
+    tokenWarningBanner: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.warning + "14",
+      borderBottomWidth: 1,
+      borderBottomColor: c.warning + "26",
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      gap: 6,
+    },
+    tokenWarningText: {
+      color: c.warning,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      flex: 1,
+    },
+    tokenWarningLink: {
+      color: c.accent,
+      fontSize: 12,
+      fontWeight: "700" as const,
+    },
+  } as const;
+};

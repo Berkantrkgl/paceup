@@ -9,15 +9,16 @@ import {
   FlatList,
   Pressable,
   StatusBar,
-  StyleSheet,
   Text,
   View,
 } from "react-native";
 
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const { width } = Dimensions.get("window");
@@ -46,6 +47,8 @@ const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i); // 0-59
 
 const OnboardingScreen = () => {
   const { getValidToken, refreshUserData } = useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const [currentStep, setCurrentStep] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -63,6 +66,10 @@ const OnboardingScreen = () => {
   const [maxDistance, setMaxDistance] = useState(5);
   const [maxDistanceUnknown, setMaxDistanceUnknown] = useState(false);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
+
+  // Picker'ın native rengi temaya bağlı
+  const pickerTextColor = colors.text.primary;
+  const pickerItemStyle = { color: pickerTextColor, fontSize: 22 };
 
   const animateProgress = (step: number) => {
     Animated.timing(progressAnim, {
@@ -176,7 +183,9 @@ const OnboardingScreen = () => {
             <Ionicons
               name={opt.icon}
               size={22}
-              color={gender === opt.value ? COLORS.white : COLORS.textDim}
+              color={
+                gender === opt.value ? colors.accent : colors.text.secondary
+              }
             />
             <Text
               style={[
@@ -200,8 +209,8 @@ const OnboardingScreen = () => {
           onChange={(_, date) => date && setBirthday(date)}
           maximumDate={new Date()}
           minimumDate={new Date(1940, 0, 1)}
-          textColor={COLORS.text}
-          themeVariant="dark"
+          textColor={colors.text.primary}
+          themeVariant={isDark ? "dark" : "light"}
         />
       </View>
     </View>
@@ -214,8 +223,8 @@ const OnboardingScreen = () => {
         <Picker
           selectedValue={heightVal}
           onValueChange={(v) => setHeightVal(v)}
-          style={{ width: 200, color: "white" }}
-          itemStyle={{ color: "white", fontSize: 22 }}
+          style={{ width: 200, color: pickerTextColor }}
+          itemStyle={pickerItemStyle}
         >
           {HEIGHT_VALUES.map((h) => (
             <Picker.Item key={h} label={`${h} cm`} value={h} />
@@ -228,8 +237,8 @@ const OnboardingScreen = () => {
         <Picker
           selectedValue={weightVal}
           onValueChange={(v) => setWeightVal(v)}
-          style={{ width: 200, color: "white" }}
-          itemStyle={{ color: "white", fontSize: 22 }}
+          style={{ width: 200, color: pickerTextColor }}
+          itemStyle={pickerItemStyle}
         >
           {WEIGHT_VALUES.map((w) => (
             <Picker.Item key={w} label={`${w} kg`} value={w} />
@@ -252,7 +261,7 @@ const OnboardingScreen = () => {
           ]}
         >
           {maxDistanceUnknown && (
-            <Ionicons name="checkmark" size={14} color="#000" />
+            <Ionicons name="checkmark" size={14} color={colors.text.inverse} />
           )}
         </View>
         <Text style={styles.unknownToggleText}>Bilmiyorum</Text>
@@ -268,8 +277,8 @@ const OnboardingScreen = () => {
         <Picker
           selectedValue={maxDistance}
           onValueChange={(v) => setMaxDistance(v)}
-          style={{ width: 200, color: "white" }}
-          itemStyle={{ color: "white", fontSize: 22 }}
+          style={{ width: 200, color: pickerTextColor }}
+          itemStyle={pickerItemStyle}
         >
           {DISTANCE_VALUES.map((d) => (
             <Picker.Item key={d} label={`${d} km`} value={d} />
@@ -292,7 +301,7 @@ const OnboardingScreen = () => {
           ]}
         >
           {paceUnknown && (
-            <Ionicons name="checkmark" size={14} color="#000" />
+            <Ionicons name="checkmark" size={14} color={colors.text.inverse} />
           )}
         </View>
         <Text style={styles.unknownToggleText}>Bilmiyorum</Text>
@@ -310,8 +319,8 @@ const OnboardingScreen = () => {
           <Picker
             selectedValue={paceMin}
             onValueChange={(v) => setPaceMin(v)}
-            style={{ width: 100, color: "white" }}
-            itemStyle={{ color: "white" }}
+            style={{ width: 100, color: pickerTextColor }}
+            itemStyle={{ color: pickerTextColor }}
           >
             {PACE_MINUTES.map((m) => (
               <Picker.Item key={m} label={m.toString()} value={m} />
@@ -324,8 +333,8 @@ const OnboardingScreen = () => {
           <Picker
             selectedValue={paceSec}
             onValueChange={(v) => setPaceSec(v)}
-            style={{ width: 100, color: "white" }}
-            itemStyle={{ color: "white" }}
+            style={{ width: 100, color: pickerTextColor }}
+            itemStyle={{ color: pickerTextColor }}
           >
             {PACE_SECONDS.map((s) => (
               <Picker.Item
@@ -392,7 +401,11 @@ const OnboardingScreen = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        translucent
+        backgroundColor="transparent"
+      />
 
       {/* PROGRESS BAR */}
       <View style={styles.progressBarContainer}>
@@ -413,7 +426,7 @@ const OnboardingScreen = () => {
       <View style={styles.header}>
         {currentStep > 0 ? (
           <Pressable onPress={goBack} hitSlop={12} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.text} />
+            <Ionicons name="arrow-back" size={24} color={colors.text.primary} />
           </Pressable>
         ) : (
           <View style={styles.backButton} />
@@ -452,13 +465,13 @@ const OnboardingScreen = () => {
           ]}
         >
           <LinearGradient
-            colors={[COLORS.accent, COLORS.secondary]}
+            colors={[colors.accent, colors.secondary]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.nextButton}
           >
             {isSaving ? (
-              <ActivityIndicator color={COLORS.white} />
+              <ActivityIndicator color={colors.text.inverse} />
             ) : (
               <>
                 <Text style={styles.nextButtonText}>
@@ -467,7 +480,7 @@ const OnboardingScreen = () => {
                 <Ionicons
                   name={isLastStep ? "checkmark-circle" : "arrow-forward"}
                   size={20}
-                  color={COLORS.white}
+                  color={colors.text.inverse}
                   style={{ marginLeft: 8 }}
                 />
               </>
@@ -481,237 +494,238 @@ const OnboardingScreen = () => {
 
 export default OnboardingScreen;
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    paddingTop: StatusBar.currentHeight ?? 60,
-  },
+const makeStyles = (t: Theme) =>
+  ({
+    container: {
+      flex: 1,
+      backgroundColor: t.colors.background,
+      paddingTop: StatusBar.currentHeight ?? 60,
+    },
 
-  // Progress
-  progressBarContainer: {
-    height: 3,
-    backgroundColor: COLORS.cardBorder,
-    marginHorizontal: 24,
-    borderRadius: 2,
-    marginTop: 8,
-  },
-  progressBarFill: {
-    height: "100%",
-    backgroundColor: COLORS.accent,
-    borderRadius: 2,
-  },
+    // Progress
+    progressBarContainer: {
+      height: 3,
+      backgroundColor: t.colors.border,
+      marginHorizontal: 24,
+      borderRadius: 2,
+      marginTop: 8,
+    },
+    progressBarFill: {
+      height: "100%",
+      backgroundColor: t.colors.accent,
+      borderRadius: 2,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  backButton: {
-    width: 40,
-  },
-  stepIndicator: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "600",
-  },
+    // Header
+    header: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 24,
+      paddingVertical: 16,
+    },
+    backButton: {
+      width: 40,
+    },
+    stepIndicator: {
+      color: t.colors.text.secondary,
+      fontSize: 14,
+      fontWeight: "600",
+    },
 
-  // Steps
-  stepInner: {
-    flex: 1,
-    paddingHorizontal: 28,
-    paddingTop: 20,
-  },
-  stepTitle: {
-    color: COLORS.text,
-    fontSize: 28,
-    fontWeight: "800",
-    marginBottom: 24,
-  },
-  stepContent: {
-    flex: 1,
-  },
+    // Steps
+    stepInner: {
+      flex: 1,
+      paddingHorizontal: 28,
+      paddingTop: 20,
+    },
+    stepTitle: {
+      color: t.colors.text.primary,
+      fontSize: 28,
+      fontWeight: "800",
+      marginBottom: 24,
+    },
+    stepContent: {
+      flex: 1,
+    },
 
-  // Section label (for combined steps)
-  sectionLabel: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
+    // Section label (for combined steps)
+    sectionLabel: {
+      color: t.colors.text.secondary,
+      fontSize: 14,
+      fontWeight: "600",
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+      marginBottom: 12,
+    },
 
-  // Gender
-  optionsContainer: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  genderCard: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-  },
-  genderCardActive: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accent + "12",
-  },
-  genderLabel: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  genderLabelActive: {
-    color: COLORS.text,
-  },
+    // Gender
+    optionsContainer: {
+      flexDirection: "row",
+      gap: 10,
+    },
+    genderCard: {
+      flex: 1,
+      backgroundColor: t.colors.surface,
+      borderRadius: 14,
+      paddingVertical: 16,
+      alignItems: "center",
+      flexDirection: "row",
+      justifyContent: "center",
+      gap: 8,
+      borderWidth: 1.5,
+      borderColor: t.colors.border,
+    },
+    genderCardActive: {
+      borderColor: t.colors.accent,
+      backgroundColor: t.colors.accentMuted,
+    },
+    genderLabel: {
+      color: t.colors.text.secondary,
+      fontSize: 14,
+      fontWeight: "600",
+    },
+    genderLabelActive: {
+      color: t.colors.text.primary,
+    },
 
-  // Birthday
-  datePickerContainer: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-  },
+    // Birthday
+    datePickerContainer: {
+      backgroundColor: t.colors.surface,
+      borderRadius: 16,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: t.colors.border,
+    },
 
-  // Pickers
-  dualPickerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    paddingVertical: 8,
-  },
-  pickerColumn: {
-    alignItems: "center",
-  },
-  columnLabel: {
-    color: COLORS.textDim,
-    fontSize: 13,
-    fontWeight: "600",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  pickerSeparator: {
-    color: COLORS.text,
-    fontSize: 28,
-    fontWeight: "800",
-    marginTop: 20,
-  },
-  pickerUnit: {
-    color: COLORS.textDim,
-    fontSize: 18,
-    fontWeight: "600",
-    marginTop: 20,
-    marginLeft: 4,
-  },
-  pickerWrapper: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.cardBorder,
-    alignItems: "center",
-    paddingVertical: 8,
-  },
-  unknownToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  unknownCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  unknownCheckActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  unknownToggleText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "500",
-  },
+    // Pickers
+    dualPickerContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: t.colors.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: t.colors.border,
+      paddingVertical: 8,
+    },
+    pickerColumn: {
+      alignItems: "center",
+    },
+    columnLabel: {
+      color: t.colors.text.secondary,
+      fontSize: 13,
+      fontWeight: "600",
+      marginBottom: 4,
+      textTransform: "uppercase",
+      letterSpacing: 0.5,
+    },
+    pickerSeparator: {
+      color: t.colors.text.primary,
+      fontSize: 28,
+      fontWeight: "800",
+      marginTop: 20,
+    },
+    pickerUnit: {
+      color: t.colors.text.secondary,
+      fontSize: 18,
+      fontWeight: "600",
+      marginTop: 20,
+      marginLeft: 4,
+    },
+    pickerWrapper: {
+      backgroundColor: t.colors.surface,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: t.colors.border,
+      alignItems: "center",
+      paddingVertical: 8,
+    },
+    unknownToggle: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      alignSelf: "center",
+      marginBottom: 16,
+    },
+    unknownCheck: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 2,
+      borderColor: t.colors.border,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    unknownCheckActive: {
+      backgroundColor: t.colors.accent,
+      borderColor: t.colors.accent,
+    },
+    unknownToggleText: {
+      color: t.colors.text.secondary,
+      fontSize: 14,
+      fontWeight: "500",
+    },
 
-  // Days
-  daysGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    justifyContent: "center",
-  },
-  dayChip: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: COLORS.card,
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dayChipActive: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accent + "18",
-  },
-  dayChipText: {
-    color: COLORS.textDim,
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  dayChipTextActive: {
-    color: COLORS.accent,
-  },
-  daysHint: {
-    color: COLORS.textDim,
-    fontSize: 13,
-    textAlign: "center",
-    marginTop: 20,
-  },
+    // Days
+    daysGrid: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 10,
+      justifyContent: "center",
+    },
+    dayChip: {
+      width: 72,
+      height: 72,
+      borderRadius: 20,
+      backgroundColor: t.colors.surface,
+      borderWidth: 2,
+      borderColor: t.colors.border,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    dayChipActive: {
+      borderColor: t.colors.accent,
+      backgroundColor: t.colors.accentMuted,
+    },
+    dayChipText: {
+      color: t.colors.text.secondary,
+      fontSize: 14,
+      fontWeight: "700",
+    },
+    dayChipTextActive: {
+      color: t.colors.accent,
+    },
+    daysHint: {
+      color: t.colors.text.secondary,
+      fontSize: 13,
+      textAlign: "center",
+      marginTop: 20,
+    },
 
-  // Bottom
-  bottomContainer: {
-    paddingHorizontal: 24,
-    paddingBottom: 40,
-    paddingTop: 16,
-  },
-  nextButtonWrapper: {
-    shadowColor: COLORS.accent,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  nextButton: {
-    height: 56,
-    borderRadius: 16,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  nextButtonText: {
-    color: COLORS.white,
-    fontSize: 17,
-    fontWeight: "700",
-  },
-});
+    // Bottom
+    bottomContainer: {
+      paddingHorizontal: 24,
+      paddingBottom: 40,
+      paddingTop: 16,
+    },
+    nextButtonWrapper: {
+      shadowColor: t.colors.shadow,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    nextButton: {
+      height: 56,
+      borderRadius: 16,
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    nextButtonText: {
+      color: t.colors.text.inverse,
+      fontSize: 17,
+      fontWeight: "700",
+    },
+  }) as const;

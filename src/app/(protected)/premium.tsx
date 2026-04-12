@@ -1,5 +1,7 @@
-import { COLORS } from "@/constants/Colors";
 import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -7,7 +9,6 @@ import React, { useContext, useState } from "react";
 import {
   ActivityIndicator,
   ScrollView,
-  StyleSheet,
   Text,
   TouchableOpacity,
   View,
@@ -52,6 +53,8 @@ export default function PremiumScreen() {
   const insets = useSafeAreaInsets();
   const { reason } = useLocalSearchParams<{ reason?: string }>();
   const { getValidToken, refreshUserData } = useContext(AuthContext);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   const [selectedPlan, setSelectedPlan] = useState("yearly");
   const [loading, setLoading] = useState(false);
@@ -122,10 +125,10 @@ export default function PremiumScreen() {
               style={[styles.featureRow, i === FEATURES.length - 1 && { marginBottom: 0 }]}
             >
               <View style={styles.featureIconWrap}>
-                <Ionicons name={f.icon as any} size={16} color={COLORS.accent} />
+                <Ionicons name={f.icon as any} size={16} color={colors.accent} />
               </View>
               <Text style={styles.featureText}>{f.text}</Text>
-              <Ionicons name="checkmark" size={16} color={COLORS.success} />
+              <Ionicons name="checkmark" size={16} color={colors.success} />
             </View>
           ))}
         </View>
@@ -155,7 +158,7 @@ export default function PremiumScreen() {
                   <Ionicons
                     name={plan.icon}
                     size={18}
-                    color={isSelected ? COLORS.accent : COLORS.textDim}
+                    color={isSelected ? colors.accent : colors.text.secondary}
                   />
                 </View>
 
@@ -170,7 +173,7 @@ export default function PremiumScreen() {
                   <Text style={styles.planPeriod}>{plan.period}</Text>
                 </View>
 
-                <Text style={[styles.planNote, isSelected && { color: COLORS.accent }]}>
+                <Text style={[styles.planNote, isSelected && { color: colors.accent }]}>
                   {plan.priceNote}
                 </Text>
 
@@ -190,15 +193,15 @@ export default function PremiumScreen() {
           activeOpacity={0.85}
         >
           {loading ? (
-            <ActivityIndicator color="#000" />
+            <ActivityIndicator color={colors.text.inverse} />
           ) : success ? (
             <View style={styles.ctaBtnInner}>
-              <Ionicons name="checkmark-circle" size={20} color="#000" />
+              <Ionicons name="checkmark-circle" size={20} color={colors.text.inverse} />
               <Text style={styles.ctaBtnText}>Premium Aktif!</Text>
             </View>
           ) : (
             <View style={styles.ctaBtnInner}>
-              <Ionicons name="flash" size={18} color="#000" />
+              <Ionicons name="flash" size={18} color={colors.text.inverse} />
               <Text style={styles.ctaBtnText}>
                 {selectedPlan === "yearly"
                   ? "Yıllık Planı Başlat"
@@ -220,212 +223,215 @@ export default function PremiumScreen() {
 // ============================================================
 // STYLES
 // ============================================================
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    backgroundColor: COLORS.cardBorder,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: {
+      flex: 1,
+      backgroundColor: c.background,
+    },
+    handle: {
+      width: 40,
+      height: 4,
+      backgroundColor: c.border,
+      borderRadius: 2,
+      alignSelf: "center" as const,
+      marginTop: 8,
+      marginBottom: 4,
+    },
+    content: {
+      paddingHorizontal: 20,
+      paddingTop: 8,
+    },
 
-  // Header
-  header: {
-    alignItems: "center",
-    paddingVertical: 20,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: COLORS.text,
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  headerSub: {
-    fontSize: 14,
-    color: COLORS.textDim,
-    textAlign: "center",
-    lineHeight: 20,
-    paddingHorizontal: 10,
-  },
+    // Header
+    header: {
+      alignItems: "center" as const,
+      paddingVertical: 20,
+    },
+    headerTitle: {
+      fontSize: 24,
+      fontWeight: "800" as const,
+      color: c.text.primary,
+      textAlign: "center" as const,
+      marginBottom: 8,
+    },
+    headerSub: {
+      fontSize: 14,
+      color: c.text.secondary,
+      textAlign: "center" as const,
+      lineHeight: 20,
+      paddingHorizontal: 10,
+    },
 
-  // Features
-  featuresCard: {
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 24,
-  },
-  featuresSectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginBottom: 14,
-  },
-  featureRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  featureIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: COLORS.accent + "15",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-  featureText: {
-    color: COLORS.text,
-    fontSize: 14,
-    flex: 1,
-    lineHeight: 20,
-  },
+    // Features
+    featuresCard: {
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 24,
+    },
+    featuresSectionTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 14,
+    },
+    featureRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      marginBottom: 12,
+    },
+    featureIconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 10,
+      backgroundColor: c.accent + "15",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      marginRight: 12,
+    },
+    featureText: {
+      color: c.text.primary,
+      fontSize: 14,
+      flex: 1,
+      lineHeight: 20,
+    },
 
-  // Plans
-  planSectionTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: COLORS.text,
-    marginBottom: 12,
-  },
-  plansRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 24,
-  },
-  planCard: {
-    flex: 1,
-    backgroundColor: COLORS.card,
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-    position: "relative",
-    overflow: "hidden",
-  },
-  planCardSelected: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accent + "08",
-  },
-  popularBadge: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    alignSelf: "flex-start",
-    marginBottom: 10,
-  },
-  popularBadgeText: {
-    color: "#000",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-  },
-  planIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: COLORS.cardVariant,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  planIconWrapSelected: {
-    backgroundColor: COLORS.accent + "15",
-  },
-  planLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: COLORS.textDim,
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  planLabelSelected: {
-    color: COLORS.accent,
-  },
-  planPriceRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 2,
-  },
-  planPrice: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: COLORS.text,
-  },
-  planPriceSelected: {
-    color: COLORS.accent,
-  },
-  planPeriod: {
-    fontSize: 12,
-    color: COLORS.textDim,
-  },
-  planNote: {
-    fontSize: 11,
-    color: COLORS.textDim,
-    marginTop: 4,
-    lineHeight: 14,
-  },
-  radioOuter: {
-    position: "absolute",
-    top: 12,
-    right: 12,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: COLORS.cardBorder,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  radioOuterSelected: {
-    borderColor: COLORS.accent,
-  },
-  radioInner: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: COLORS.accent,
-  },
+    // Plans
+    planSectionTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 12,
+    },
+    plansRow: {
+      flexDirection: "row" as const,
+      gap: 12,
+      marginBottom: 24,
+    },
+    planCard: {
+      flex: 1,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1.5,
+      borderColor: c.border,
+      position: "relative" as const,
+      overflow: "hidden" as const,
+    },
+    planCardSelected: {
+      borderColor: c.accent,
+      backgroundColor: c.accent + "08",
+    },
+    popularBadge: {
+      backgroundColor: c.accent,
+      borderRadius: 6,
+      paddingHorizontal: 6,
+      paddingVertical: 3,
+      alignSelf: "flex-start" as const,
+      marginBottom: 10,
+    },
+    popularBadgeText: {
+      color: c.text.inverse,
+      fontSize: 9,
+      fontWeight: "800" as const,
+      letterSpacing: 0.8,
+    },
+    planIconWrap: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      marginBottom: 10,
+    },
+    planIconWrapSelected: {
+      backgroundColor: c.accent + "15",
+    },
+    planLabel: {
+      fontSize: 11,
+      fontWeight: "700" as const,
+      color: c.text.secondary,
+      letterSpacing: 1,
+      marginBottom: 6,
+    },
+    planLabelSelected: {
+      color: c.accent,
+    },
+    planPriceRow: {
+      flexDirection: "row" as const,
+      alignItems: "baseline" as const,
+      gap: 2,
+    },
+    planPrice: {
+      fontSize: 24,
+      fontWeight: "800" as const,
+      color: c.text.primary,
+    },
+    planPriceSelected: {
+      color: c.accent,
+    },
+    planPeriod: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
+    planNote: {
+      fontSize: 11,
+      color: c.text.secondary,
+      marginTop: 4,
+      lineHeight: 14,
+    },
+    radioOuter: {
+      position: "absolute" as const,
+      top: 12,
+      right: 12,
+      width: 20,
+      height: 20,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: c.border,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    radioOuterSelected: {
+      borderColor: c.accent,
+    },
+    radioInner: {
+      width: 10,
+      height: 10,
+      borderRadius: 5,
+      backgroundColor: c.accent,
+    },
 
-  // CTA
-  ctaBtn: {
-    backgroundColor: COLORS.accent,
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  ctaBtnInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  ctaBtnText: {
-    color: "#000",
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: 0.3,
-  },
+    // CTA
+    ctaBtn: {
+      backgroundColor: c.accent,
+      borderRadius: 16,
+      paddingVertical: 16,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginBottom: 12,
+    },
+    ctaBtnInner: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+    },
+    ctaBtnText: {
+      color: c.text.inverse,
+      fontSize: 16,
+      fontWeight: "800" as const,
+      letterSpacing: 0.3,
+    },
 
-  // Footer
-  footerNote: {
-    color: COLORS.textDim,
-    fontSize: 12,
-    textAlign: "center",
-    marginBottom: 4,
-  },
-});
+    // Footer
+    footerNote: {
+      color: c.text.secondary,
+      fontSize: 12,
+      textAlign: "center" as const,
+      marginBottom: 4,
+    },
+  } as const;
+};

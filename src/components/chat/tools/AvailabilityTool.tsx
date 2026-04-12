@@ -1,10 +1,11 @@
-import { COLORS } from "@/constants/Colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useContext, useEffect, useState } from "react";
-import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Alert, Text, TouchableOpacity, View } from "react-native";
 
-// --- TYPES ---
 export interface AvailabilityData {
   days: string[];
   long_run: string | null;
@@ -15,7 +16,6 @@ interface AvailabilityToolProps {
   submitted?: boolean;
 }
 
-// --- CONSTANTS ---
 const ALL_DAYS = [
   { id: "Mon", label: "Pazartesi", short: "Pzt", index: 0 },
   { id: "Tue", label: "Salı", short: "Sal", index: 1 },
@@ -31,18 +31,18 @@ export const AvailabilityTool = ({
   submitted,
 }: AvailabilityToolProps) => {
   const { user } = useContext(AuthContext);
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [longRunDay, setLongRunDay] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
 
-  // Kullanıcı verilerinden günleri yükle
   useEffect(() => {
     if (
       !initialized &&
       user?.preferred_running_days &&
       Array.isArray(user.preferred_running_days)
     ) {
-      // Backend'den gelen index'leri (0-6) day ID'lerine çevir
       const userDayIds = user.preferred_running_days
         .map((dayIndex: number) => {
           const day = ALL_DAYS.find((d) => d.index === dayIndex);
@@ -90,7 +90,7 @@ export const AvailabilityTool = ({
     return (
       <View style={styles.submittedCard}>
         <View style={styles.submittedIcon}>
-          <Ionicons name="checkmark-circle" size={20} color={COLORS.accent} />
+          <Ionicons name="checkmark-circle" size={20} color={colors.accent} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.submittedTitle}>
@@ -144,7 +144,7 @@ export const AvailabilityTool = ({
                   <Text
                     style={[
                       styles.dayLetter,
-                      isSelected && { color: COLORS.accent },
+                      isSelected && { color: colors.accent },
                     ]}
                   >
                     {day.label[0]}
@@ -156,7 +156,7 @@ export const AvailabilityTool = ({
                   <View
                     style={[
                       styles.selectedIndicator,
-                      { backgroundColor: COLORS.accent },
+                      { backgroundColor: colors.accent },
                     ]}
                   />
                 )}
@@ -164,7 +164,7 @@ export const AvailabilityTool = ({
                 {/* Uzun Koşu İşareti */}
                 {isLongRun && (
                   <View style={styles.longRunBadge}>
-                    <Ionicons name="flame" size={10} color="#000" />
+                    <Ionicons name="flame" size={10} color={colors.text.inverse} />
                   </View>
                 )}
               </TouchableOpacity>
@@ -182,7 +182,7 @@ export const AvailabilityTool = ({
           <View style={styles.longRunHeader}>
             <View style={styles.longRunTitleRow}>
               <View style={styles.fireIconBox}>
-                <Ionicons name="flame" size={14} color={COLORS.accent} />
+                <Ionicons name="flame" size={14} color={colors.accent} />
               </View>
               <Text style={styles.longRunTitle}>Uzun koşu için tercihim</Text>
             </View>
@@ -200,7 +200,7 @@ export const AvailabilityTool = ({
               <Ionicons
                 name="sparkles"
                 size={16}
-                color={!longRunDay ? COLORS.accent : "#666"}
+                color={!longRunDay ? colors.accent : colors.text.secondary}
               />
               <Text
                 style={[
@@ -249,215 +249,218 @@ export const AvailabilityTool = ({
         <Text style={styles.btnText}>
           {isValid ? "Devam Et" : "En az 1 gün seç"}
         </Text>
-        {isValid && <Ionicons name="arrow-forward" size={20} color="#000" />}
+        {isValid && <Ionicons name="arrow-forward" size={20} color={colors.text.inverse} />}
       </TouchableOpacity>
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: 16,
-  },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+    },
 
-  // Header
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: "#888",
-  },
-  badge: {
-    backgroundColor: COLORS.accent + "20",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: COLORS.accent + "40",
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: COLORS.accent,
-  },
+    // Header
+    header: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "flex-start" as const,
+      marginBottom: 16,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    subtitle: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
+    badge: {
+      backgroundColor: c.accent + "20",
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: c.accent + "40",
+    },
+    badgeText: {
+      fontSize: 11,
+      fontWeight: "700" as const,
+      color: c.accent,
+    },
 
-  // Haftalık Takvim
-  weekContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-  },
-  dayWrapper: {
-    alignItems: "center",
-    gap: 6,
-  },
-  dayBlock: {
-    width: 38,
-    height: 52,
-    backgroundColor: "#252525",
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: "#2A2A2A",
-    justifyContent: "center",
-    alignItems: "center",
-    position: "relative",
-  },
-  dayBlockActive: {
-    backgroundColor: "#2A2A2A",
-    borderColor: COLORS.accent,
-  },
-  dayLetterCircle: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#1F1F1F",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dayLetter: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#666",
-  },
-  selectedIndicator: {
-    position: "absolute",
-    top: 4,
-    right: 4,
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-  },
-  longRunBadge: {
-    position: "absolute",
-    bottom: 3,
-    backgroundColor: COLORS.accent,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  dayLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "#666",
-  },
+    // Haftalık Takvim
+    weekContainer: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      marginBottom: 16,
+    },
+    dayWrapper: {
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    dayBlock: {
+      width: 38,
+      height: 52,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 10,
+      borderWidth: 2,
+      borderColor: c.border,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      position: "relative" as const,
+    },
+    dayBlockActive: {
+      backgroundColor: c.surfaceVariant,
+      borderColor: c.accent,
+    },
+    dayLetterCircle: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    dayLetter: {
+      fontSize: 12,
+      fontWeight: "700" as const,
+      color: c.text.secondary,
+    },
+    selectedIndicator: {
+      position: "absolute" as const,
+      top: 4,
+      right: 4,
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+    },
+    longRunBadge: {
+      position: "absolute" as const,
+      bottom: 3,
+      backgroundColor: c.accent,
+      width: 18,
+      height: 18,
+      borderRadius: 9,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    dayLabel: {
+      fontSize: 10,
+      fontWeight: "600" as const,
+      color: c.text.secondary,
+    },
 
-  // Uzun Koşu Section
-  longRunSection: {
-    marginBottom: 14,
-  },
-  longRunHeader: {
-    marginBottom: 10,
-  },
-  longRunTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  fireIconBox: {
-    width: 24,
-    height: 24,
-    borderRadius: 6,
-    backgroundColor: COLORS.accent + "15",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  longRunTitle: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#CCC",
-  },
-  longRunOptions: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  longRunOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    backgroundColor: "#252525",
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "#3A3A3C",
-  },
-  longRunOptionActive: {
-    backgroundColor: COLORS.accent + "15",
-    borderColor: COLORS.accent,
-  },
-  longRunOptionText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#888",
-  },
-  longRunOptionTextActive: {
-    color: COLORS.accent,
-    fontWeight: "700",
-  },
+    // Uzun Koşu Section
+    longRunSection: {
+      marginBottom: 14,
+    },
+    longRunHeader: {
+      marginBottom: 10,
+    },
+    longRunTitleRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    fireIconBox: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      backgroundColor: c.accent + "15",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    longRunTitle: {
+      fontSize: 13,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
+    longRunOptions: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: 6,
+    },
+    longRunOption: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 4,
+      paddingVertical: 6,
+      paddingHorizontal: 12,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    longRunOptionActive: {
+      backgroundColor: c.accent + "15",
+      borderColor: c.accent,
+    },
+    longRunOptionText: {
+      fontSize: 12,
+      fontWeight: "600" as const,
+      color: c.text.secondary,
+    },
+    longRunOptionTextActive: {
+      color: c.accent,
+      fontWeight: "700" as const,
+    },
 
-  // Button
-  btn: {
-    backgroundColor: COLORS.accent,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  btnDisabled: {
-    backgroundColor: "#333",
-    opacity: 0.7,
-  },
-  btnText: {
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 14,
-  },
+    // Button
+    btn: {
+      backgroundColor: c.accent,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    btnDisabled: {
+      backgroundColor: c.surfaceVariant,
+      opacity: 0.7,
+    },
+    btnText: {
+      color: c.text.inverse,
+      fontWeight: "700" as const,
+      fontSize: 14,
+    },
 
-  // Submitted
-  submittedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#252525",
-    padding: 12,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  submittedIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.accent + "20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  submittedTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  submittedSubtitle: {
-    fontSize: 12,
-    color: "#999",
-  },
-});
+    // Submitted
+    submittedCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      padding: 12,
+      borderRadius: 12,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    submittedIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.accent + "20",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    submittedTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    submittedSubtitle: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
+  } as const;
+};

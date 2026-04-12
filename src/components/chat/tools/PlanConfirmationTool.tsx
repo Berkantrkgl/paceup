@@ -1,15 +1,10 @@
-import { COLORS } from "@/constants/Colors";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme } from "@/theme/tokens";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import {
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Text, TextInput, TouchableOpacity, View } from "react-native";
 
-// --- TYPES ---
 interface PlanConfirmationToolProps {
   onSubmit: (data: { confirmed: boolean; feedback?: string }) => void;
   submitted?: boolean;
@@ -21,6 +16,8 @@ export const PlanConfirmationTool = ({
   submitted,
   message,
 }: PlanConfirmationToolProps) => {
+  const { colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [mode, setMode] = useState<"idle" | "feedback">("idle");
   const [feedback, setFeedback] = useState("");
   const [submittedChoice, setSubmittedChoice] = useState<
@@ -52,7 +49,7 @@ export const PlanConfirmationTool = ({
         <View
           style={[
             styles.submittedIcon,
-            !isConfirmed && { backgroundColor: "#FF525220" },
+            !isConfirmed && { backgroundColor: colors.danger + "20" },
           ]}
         >
           <Ionicons
@@ -64,7 +61,7 @@ export const PlanConfirmationTool = ({
                   : "close-circle"
             }
             size={20}
-            color={isConfirmed ? COLORS.accent : "#FF5252"}
+            color={isConfirmed ? colors.accent : colors.danger}
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -88,7 +85,7 @@ export const PlanConfirmationTool = ({
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Ionicons name="help-circle" size={20} color={COLORS.accent} />
+        <Ionicons name="help-circle" size={20} color={colors.accent} />
         <Text style={styles.title}>Plan Onayı</Text>
       </View>
 
@@ -97,12 +94,12 @@ export const PlanConfirmationTool = ({
       {mode === "idle" ? (
         <View style={styles.actions}>
           <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm}>
-            <Ionicons name="checkmark" size={18} color="#000" />
+            <Ionicons name="checkmark" size={18} color={colors.text.inverse} />
             <Text style={styles.confirmBtnText}>Evet, Oluştur</Text>
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.rejectBtn} onPress={handleReject}>
-            <Ionicons name="close" size={18} color="#FF5252" />
+            <Ionicons name="close" size={18} color={colors.danger} />
             <Text style={styles.rejectBtnText}>Hayır</Text>
           </TouchableOpacity>
 
@@ -110,7 +107,7 @@ export const PlanConfirmationTool = ({
             style={styles.feedbackBtn}
             onPress={() => setMode("feedback")}
           >
-            <Ionicons name="create-outline" size={18} color={COLORS.accent} />
+            <Ionicons name="create-outline" size={18} color={colors.accent} />
             <Text style={styles.feedbackBtnText}>Değişiklik Belirt</Text>
           </TouchableOpacity>
         </View>
@@ -122,7 +119,7 @@ export const PlanConfirmationTool = ({
               value={feedback}
               onChangeText={setFeedback}
               placeholder="Ne değişmeli? (ör. daha kısa olsun)"
-              placeholderTextColor="#666"
+              placeholderTextColor={colors.text.secondary}
               multiline
               autoFocus
             />
@@ -146,7 +143,7 @@ export const PlanConfirmationTool = ({
               disabled={!feedback.trim()}
             >
               <Text style={styles.feedbackSendText}>Gönder</Text>
-              <Ionicons name="arrow-forward" size={16} color="#000" />
+              <Ionicons name="arrow-forward" size={16} color={colors.text.inverse} />
             </TouchableOpacity>
           </View>
         </View>
@@ -155,157 +152,160 @@ export const PlanConfirmationTool = ({
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    width: "100%",
-    backgroundColor: "#1A1A1A",
-    borderRadius: 16,
-    padding: 16,
-  },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  message: {
-    fontSize: 13,
-    color: "#CCC",
-    lineHeight: 18,
-    marginBottom: 14,
-  },
+const makeStyles = (t: Theme) => {
+  const c = t.colors;
+  return {
+    container: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+    },
+    header: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      marginBottom: 8,
+    },
+    title: {
+      fontSize: 17,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+    },
+    message: {
+      fontSize: 13,
+      color: c.text.secondary,
+      lineHeight: 18,
+      marginBottom: 14,
+    },
 
-  // Actions
-  actions: {
-    gap: 8,
-  },
-  confirmBtn: {
-    backgroundColor: COLORS.accent,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  confirmBtnText: {
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  rejectBtn: {
-    backgroundColor: "#252525",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,82,82,0.3)",
-  },
-  rejectBtnText: {
-    color: "#FF5252",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  feedbackBtn: {
-    backgroundColor: "#252525",
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  feedbackBtnText: {
-    color: COLORS.accent,
-    fontWeight: "600",
-    fontSize: 13,
-  },
+    // Actions
+    actions: {
+      gap: 8,
+    },
+    confirmBtn: {
+      backgroundColor: c.accent,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 12,
+    },
+    confirmBtnText: {
+      color: c.text.inverse,
+      fontWeight: "700" as const,
+      fontSize: 14,
+    },
+    rejectBtn: {
+      backgroundColor: c.surfaceVariant,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.danger + "4D",
+    },
+    rejectBtnText: {
+      color: c.danger,
+      fontWeight: "700" as const,
+      fontSize: 14,
+    },
+    feedbackBtn: {
+      backgroundColor: c.surfaceVariant,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    feedbackBtnText: {
+      color: c.accent,
+      fontWeight: "600" as const,
+      fontSize: 13,
+    },
 
-  // Feedback Section
-  feedbackSection: {
-    gap: 10,
-  },
-  feedbackInputRow: {
-    backgroundColor: "#252525",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    padding: 12,
-  },
-  feedbackInput: {
-    color: "#FFF",
-    fontSize: 13,
-    minHeight: 50,
-    textAlignVertical: "top",
-  },
-  feedbackActions: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  feedbackCancelBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    backgroundColor: "#252525",
-  },
-  feedbackCancelText: {
-    color: "#AAA",
-    fontWeight: "600",
-    fontSize: 13,
-  },
-  feedbackSendBtn: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: COLORS.accent,
-  },
-  feedbackSendText: {
-    color: "#000",
-    fontWeight: "700",
-    fontSize: 13,
-  },
+    // Feedback Section
+    feedbackSection: {
+      gap: 10,
+    },
+    feedbackInputRow: {
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: c.accent,
+      padding: 12,
+    },
+    feedbackInput: {
+      color: c.text.primary,
+      fontSize: 13,
+      minHeight: 50,
+      textAlignVertical: "top" as const,
+    },
+    feedbackActions: {
+      flexDirection: "row" as const,
+      gap: 8,
+    },
+    feedbackCancelBtn: {
+      paddingVertical: 10,
+      paddingHorizontal: 16,
+      borderRadius: 10,
+      backgroundColor: c.surfaceVariant,
+    },
+    feedbackCancelText: {
+      color: c.text.secondary,
+      fontWeight: "600" as const,
+      fontSize: 13,
+    },
+    feedbackSendBtn: {
+      flex: 1,
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 6,
+      paddingVertical: 10,
+      borderRadius: 10,
+      backgroundColor: c.accent,
+    },
+    feedbackSendText: {
+      color: c.text.inverse,
+      fontWeight: "700" as const,
+      fontSize: 13,
+    },
 
-  // Submitted
-  submittedCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#252525",
-    padding: 12,
-    borderRadius: 12,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: "#3A3A3A",
-  },
-  submittedIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: COLORS.accent + "20",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  submittedTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFF",
-    marginBottom: 2,
-  },
-  submittedSubtitle: {
-    fontSize: 12,
-    color: "#999",
-  },
-});
+    // Submitted
+    submittedCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      padding: 12,
+      borderRadius: 12,
+      gap: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    submittedIcon: {
+      width: 34,
+      height: 34,
+      borderRadius: 17,
+      backgroundColor: c.accent + "20",
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    submittedTitle: {
+      fontSize: 14,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    submittedSubtitle: {
+      fontSize: 12,
+      color: c.text.secondary,
+    },
+  } as const;
+};
