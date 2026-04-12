@@ -161,7 +161,7 @@ const ProfileScreen = () => {
   const Section = ({ title, children }: any) => (
     <View style={styles.sectionContainer}>
       <Text style={styles.sectionHeader}>{title}</Text>
-      <View style={styles.sectionContent}>{children}</View>
+      <View>{children}</View>
     </View>
   );
 
@@ -1190,15 +1190,15 @@ const makeStyles = (t: Theme) => {
     },
 
     // Sections
-    sectionContainer: { marginBottom: 36 },
+    sectionContainer: { marginBottom: 48 },
     sectionHeader: {
-      fontSize: 14,
-      color: c.text.secondary,
-      fontWeight: "700" as const,
-      marginBottom: 8,
+      fontSize: 17,
+      color: c.text.primary,
+      fontWeight: "800" as const,
+      marginBottom: 14,
       paddingHorizontal: 20,
+      letterSpacing: 0.2,
     },
-    sectionContent: {},
     row: {
       flexDirection: "row" as const,
       justifyContent: "space-between" as const,
@@ -1209,7 +1209,7 @@ const makeStyles = (t: Theme) => {
       borderBottomColor: t.name === "light" ? c.borderStrong : c.border,
     },
     rowLast: { borderBottomWidth: 0 },
-    rowPressed: { backgroundColor: c.surface },
+    rowPressed: { backgroundColor: c.surfaceVariant },
     rowLabel: {
       fontSize: 15,
       color: c.text.primary,
