@@ -1,9 +1,43 @@
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
-import React from "react";
-import { Platform } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { Animated, Platform } from "react-native";
 
 import { useTheme } from "@/theme/ThemeContext";
+
+// Aktif ikon için bounce animasyonu
+const AnimatedTabIcon = ({
+  focused,
+  children,
+}: {
+  focused: boolean;
+  children: React.ReactNode;
+}) => {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (focused) {
+      Animated.sequence([
+        Animated.spring(scale, {
+          toValue: 1.2,
+          useNativeDriver: true,
+          speed: 40,
+          bounciness: 14,
+        }),
+        Animated.spring(scale, {
+          toValue: 1,
+          useNativeDriver: true,
+          speed: 20,
+          bounciness: 10,
+        }),
+      ]).start();
+    }
+  }, [focused, scale]);
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>{children}</Animated.View>
+  );
+};
 
 export default function TabLayout() {
   const { colors } = useTheme();
@@ -37,11 +71,13 @@ export default function TabLayout() {
         options={{
           title: "Ana Sayfa",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "home" : "home-outline"}
-              size={22}
-              color={color}
-            />
+            <AnimatedTabIcon focused={focused}>
+              <Ionicons
+                name={focused ? "home" : "home-outline"}
+                size={22}
+                color={color}
+              />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -50,11 +86,13 @@ export default function TabLayout() {
         options={{
           title: "Takvim",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "calendar" : "calendar-outline"}
-              size={22}
-              color={color}
-            />
+            <AnimatedTabIcon focused={focused}>
+              <Ionicons
+                name={focused ? "calendar" : "calendar-outline"}
+                size={22}
+                color={color}
+              />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -63,11 +101,13 @@ export default function TabLayout() {
         options={{
           title: "Planlama",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "sparkles" : "sparkles-outline"}
-              size={22}
-              color={color}
-            />
+            <AnimatedTabIcon focused={focused}>
+              <Ionicons
+                name={focused ? "sparkles" : "sparkles-outline"}
+                size={22}
+                color={color}
+              />
+            </AnimatedTabIcon>
           ),
         }}
       />
@@ -76,11 +116,13 @@ export default function TabLayout() {
         options={{
           title: "Profil",
           tabBarIcon: ({ color, focused }) => (
-            <MaterialCommunityIcons
-              name="run-fast"
-              size={26}
-              color={color}
-            />
+            <AnimatedTabIcon focused={focused}>
+              <MaterialCommunityIcons
+                name="run-fast"
+                size={26}
+                color={color}
+              />
+            </AnimatedTabIcon>
           ),
         }}
       />

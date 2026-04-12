@@ -4,6 +4,7 @@ import React, { useContext, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -93,6 +94,40 @@ const ProfileScreen = () => {
 
   // Avatar Modal
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+
+  // Avatar press animasyonu
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const handleAvatarPressIn = () =>
+    Animated.spring(avatarScale, {
+      toValue: 0.92,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 0,
+    }).start();
+  const handleAvatarPressOut = () =>
+    Animated.spring(avatarScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 12,
+    }).start();
+
+  // Premium CTA press animasyonu
+  const upgradeCtaScale = useRef(new Animated.Value(1)).current;
+  const handleUpgradePressIn = () =>
+    Animated.spring(upgradeCtaScale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 0,
+    }).start();
+  const handleUpgradePressOut = () =>
+    Animated.spring(upgradeCtaScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 10,
+    }).start();
   // Premium
   const router = useRouter();
   const openPremium = () =>
@@ -568,18 +603,21 @@ const ProfileScreen = () => {
 
         {/* Premium CTA */}
         {!user?.is_premium && (
-          <TouchableOpacity
-            style={[styles.upgradeCta, pct >= 90 && styles.upgradeCtaUrgent]}
-            onPress={() => openPremium()}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="flash" size={14} color={colors.text.inverse} />
-            <Text style={styles.upgradeCtaText}>
-              {pct >= 90
-                ? "Limitin Dolmak Üzere! Premium'a Geç →"
-                : "Premium'a Geç, Sınırsız Kullan →"}
-            </Text>
-          </TouchableOpacity>
+          <Animated.View style={{ transform: [{ scale: upgradeCtaScale }] }}>
+            <Pressable
+              style={[styles.upgradeCta, pct >= 90 && styles.upgradeCtaUrgent]}
+              onPress={() => openPremium()}
+              onPressIn={handleUpgradePressIn}
+              onPressOut={handleUpgradePressOut}
+            >
+              <Ionicons name="flash" size={14} color={colors.text.inverse} />
+              <Text style={styles.upgradeCtaText}>
+                {pct >= 90
+                  ? "Limitin Dolmak Üzere! Premium'a Geç →"
+                  : "Premium'a Geç, Sınırsız Kullan →"}
+              </Text>
+            </Pressable>
+          </Animated.View>
         )}
       </View>
     );
@@ -602,30 +640,34 @@ const ProfileScreen = () => {
         <View style={styles.userCard}>
           <Pressable
             onPress={() => setAvatarModalVisible(true)}
+            onPressIn={handleAvatarPressIn}
+            onPressOut={handleAvatarPressOut}
             style={styles.avatarContainer}
           >
-            {user?.profile_image ? (
-              <Image
-                source={{ uri: user.profile_image }}
-                style={styles.avatar}
-              />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitial}>
-                  {user?.first_name?.[0] || "U"}
-                </Text>
+            <Animated.View style={{ transform: [{ scale: avatarScale }] }}>
+              {user?.profile_image ? (
+                <Image
+                  source={{ uri: user.profile_image }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>
+                    {user?.first_name?.[0] || "U"}
+                  </Text>
+                </View>
+              )}
+              {uploading && (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.accent}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <View style={styles.editBadge}>
+                <Text style={styles.editBadgeText}>Fotoğraf</Text>
               </View>
-            )}
-            {uploading && (
-              <ActivityIndicator
-                size="small"
-                color={colors.accent}
-                style={StyleSheet.absoluteFill}
-              />
-            )}
-            <View style={styles.editBadge}>
-              <Text style={styles.editBadgeText}>Fotoğraf</Text>
-            </View>
+            </Animated.View>
           </Pressable>
           <View style={styles.userInfo}>
             <Text style={styles.userName}>

@@ -5,7 +5,9 @@ import React, { useCallback, useContext, useMemo, useRef, useState } from "react
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Dimensions,
+  Easing,
   ImageBackground,
   Pressable,
   RefreshControl,
@@ -101,6 +103,139 @@ const HomeScreen = () => {
   const workoutRef = useRef<View>(null);
   const progressLinkRef = useRef<View>(null);
   const statsRef = useRef<View>(null);
+
+  // Progress link animasyonları
+  const progressLinkScale = useRef(new Animated.Value(1)).current;
+  const progressLinkIconRotate = useRef(new Animated.Value(0)).current;
+  const progressLinkArrow = useRef(new Animated.Value(0)).current;
+
+  // Bugünün antrenmanı kart animasyonları
+  const workoutCardScale = useRef(new Animated.Value(1)).current;
+  const workoutCardPulse = useRef(new Animated.Value(0)).current;
+  const workoutCardArrow = useRef(new Animated.Value(0)).current;
+
+  // Stat kartları press animasyonları
+  const statMainScale = useRef(new Animated.Value(1)).current;
+  const statWorkoutsScale = useRef(new Animated.Value(1)).current;
+  const statStreakScale = useRef(new Animated.Value(1)).current;
+
+  const makeStatPressHandlers = (value: Animated.Value) => ({
+    onPressIn: () =>
+      Animated.spring(value, {
+        toValue: 0.94,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 0,
+      }).start(),
+    onPressOut: () =>
+      Animated.spring(value, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 10,
+      }).start(),
+  });
+
+  const statMainHandlers = makeStatPressHandlers(statMainScale);
+  const statWorkoutsHandlers = makeStatPressHandlers(statWorkoutsScale);
+  const statStreakHandlers = makeStatPressHandlers(statStreakScale);
+
+  // Sürekli çalışan ikon pulse efekti (progress link + workout card)
+  React.useEffect(() => {
+    const makePulse = (value: Animated.Value) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(value, {
+            toValue: 1,
+            duration: 1400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(value, {
+            toValue: 0,
+            duration: 1400,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: true,
+          }),
+        ]),
+      );
+    const p1 = makePulse(progressLinkIconRotate);
+    const p2 = makePulse(workoutCardPulse);
+    p1.start();
+    p2.start();
+    return () => {
+      p1.stop();
+      p2.stop();
+    };
+  }, [progressLinkIconRotate, workoutCardPulse]);
+
+  const handleProgressPressIn = () => {
+    Animated.parallel([
+      Animated.spring(progressLinkScale, {
+        toValue: 0.96,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 0,
+      }),
+      Animated.spring(progressLinkArrow, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+    ]).start();
+  };
+
+  const handleProgressPressOut = () => {
+    Animated.parallel([
+      Animated.spring(progressLinkScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+      Animated.spring(progressLinkArrow, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+    ]).start();
+  };
+
+  const handleWorkoutPressIn = () => {
+    Animated.parallel([
+      Animated.spring(workoutCardScale, {
+        toValue: 0.96,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 0,
+      }),
+      Animated.spring(workoutCardArrow, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+    ]).start();
+  };
+
+  const handleWorkoutPressOut = () => {
+    Animated.parallel([
+      Animated.spring(workoutCardScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+      Animated.spring(workoutCardArrow, {
+        toValue: 0,
+        useNativeDriver: true,
+        speed: 50,
+        bounciness: 8,
+      }),
+    ]).start();
+  };
 
   // --- RANDOM CONTENT LOGIC ---
   const randomQuote = useMemo(() => {
@@ -289,70 +424,104 @@ const HomeScreen = () => {
               <View ref={statsRef} style={styles.floatingStatsContainer}>
                 {/* Distance (SOL) */}
                 <Link href={"/progress"} asChild push>
-                  <Pressable style={[styles.statCard, styles.statCardMain]}>
-                    <View style={styles.statIconRow}>
-                      <Ionicons
-                        name="map"
-                        size={20}
-                        color={colors.accent}
-                        style={styles.statIcon}
-                      />
-                      <Text style={styles.statLabelMain}>Toplam Mesafe</Text>
-                    </View>
-                    <Text style={styles.statValueMain}>
-                      {totalDistance}{" "}
-                      <Text style={styles.statUnitMain}>km</Text>
-                    </Text>
+                  <Pressable
+                    onPressIn={statMainHandlers.onPressIn}
+                    onPressOut={statMainHandlers.onPressOut}
+                    style={[styles.statCard, styles.statCardMain]}
+                  >
+                    <Animated.View
+                      style={{ transform: [{ scale: statMainScale }] }}
+                    >
+                      <View style={styles.statIconRow}>
+                        <Ionicons
+                          name="map"
+                          size={20}
+                          color={colors.accent}
+                          style={styles.statIcon}
+                        />
+                        <Text style={styles.statLabelMain}>Toplam Mesafe</Text>
+                      </View>
+                      <Text style={styles.statValueMain}>
+                        {totalDistance}{" "}
+                        <Text style={styles.statUnitMain}>km</Text>
+                      </Text>
+                    </Animated.View>
                   </Pressable>
                 </Link>
 
                 {/* SAĞ SÜTUN (FIXED) */}
                 <View style={styles.statsColumnRight}>
                   <Link href={"/progress"} asChild push>
-                    <Pressable style={styles.statCardSmall}>
-                      <View
-                        style={[
-                          styles.iconBoxSmall,
-                          {
-                            backgroundColor: colors.secondary + "20",
-                          },
-                        ]}
+                    <Pressable
+                      onPressIn={statWorkoutsHandlers.onPressIn}
+                      onPressOut={statWorkoutsHandlers.onPressOut}
+                      style={styles.statCardSmall}
+                    >
+                      <Animated.View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                          transform: [{ scale: statWorkoutsScale }],
+                        }}
                       >
-                        <Ionicons
-                          name="fitness"
-                          size={18}
-                          color={colors.secondary}
-                        />
-                      </View>
-                      <View>
-                        <Text style={styles.statValueSmall}>
-                          {totalWorkouts}
-                        </Text>
-                        <Text style={styles.statLabelSmall}>Antrenman</Text>
-                      </View>
+                        <View
+                          style={[
+                            styles.iconBoxSmall,
+                            {
+                              backgroundColor: colors.secondary + "20",
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="fitness"
+                            size={18}
+                            color={colors.secondary}
+                          />
+                        </View>
+                        <View>
+                          <Text style={styles.statValueSmall}>
+                            {totalWorkouts}
+                          </Text>
+                          <Text style={styles.statLabelSmall}>Antrenman</Text>
+                        </View>
+                      </Animated.View>
                     </Pressable>
                   </Link>
 
                   <Link href={"/progress"} asChild push>
-                    <Pressable style={styles.statCardSmall}>
-                      <View
-                        style={[
-                          styles.iconBoxSmall,
-                          {
-                            backgroundColor: colors.warning + "20",
-                          },
-                        ]}
+                    <Pressable
+                      onPressIn={statStreakHandlers.onPressIn}
+                      onPressOut={statStreakHandlers.onPressOut}
+                      style={styles.statCardSmall}
+                    >
+                      <Animated.View
+                        style={{
+                          flexDirection: "row",
+                          alignItems: "center",
+                          gap: 10,
+                          transform: [{ scale: statStreakScale }],
+                        }}
                       >
-                        <Ionicons
-                          name="flame"
-                          size={18}
-                          color={colors.warning}
-                        />
-                      </View>
-                      <View>
-                        <Text style={styles.statValueSmall}>{streak} Gün</Text>
-                        <Text style={styles.statLabelSmall}>Seri</Text>
-                      </View>
+                        <View
+                          style={[
+                            styles.iconBoxSmall,
+                            {
+                              backgroundColor: colors.warning + "20",
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="flame"
+                            size={18}
+                            color={colors.warning}
+                          />
+                        </View>
+                        <View>
+                          <Text style={styles.statValueSmall}>{streak} Gün</Text>
+                          <Text style={styles.statLabelSmall}>Seri</Text>
+                        </View>
+                      </Animated.View>
                     </Pressable>
                   </Link>
                 </View>
@@ -363,6 +532,8 @@ const HomeScreen = () => {
                 <Text style={styles.sectionTitle}>Bugünün Antrenmanı</Text>
                 {todayWorkout && workoutStyle && dateInfo ? (
                   <Pressable
+                    onPressIn={handleWorkoutPressIn}
+                    onPressOut={handleWorkoutPressOut}
                     onPress={() =>
                       router.push({
                         pathname: "/(protected)/(tabs)/calendar/workout-detail",
@@ -372,6 +543,9 @@ const HomeScreen = () => {
                       })
                     }
                   >
+                   <Animated.View
+                     style={{ transform: [{ scale: workoutCardScale }] }}
+                   >
                     <LinearGradient
                       colors={
                         isDark
@@ -393,11 +567,24 @@ const HomeScreen = () => {
                             },
                           ]}
                         >
-                          <Ionicons
-                            name={workoutStyle.icon as any}
-                            size={14}
-                            color={workoutStyle.color}
-                          />
+                          <Animated.View
+                            style={{
+                              transform: [
+                                {
+                                  scale: workoutCardPulse.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [1, 1.15],
+                                  }),
+                                },
+                              ],
+                            }}
+                          >
+                            <Ionicons
+                              name={workoutStyle.icon as any}
+                              size={14}
+                              color={workoutStyle.color}
+                            />
+                          </Animated.View>
                           <Text
                             style={[
                               styles.typePillText,
@@ -543,11 +730,24 @@ const HomeScreen = () => {
                           </View>
                         )}
                         <View style={{ flex: 1 }} />
-                        <Ionicons
-                          name="chevron-forward"
-                          size={18}
-                          color={isDark ? colors.border : "rgba(255,255,255,0.7)"}
-                        />
+                        <Animated.View
+                          style={{
+                            transform: [
+                              {
+                                translateX: workoutCardArrow.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [0, 6],
+                                }),
+                              },
+                            ],
+                          }}
+                        >
+                          <Ionicons
+                            name="chevron-forward"
+                            size={18}
+                            color={isDark ? colors.border : "rgba(255,255,255,0.7)"}
+                          />
+                        </Animated.View>
                       </View>
 
                       {/* TAMAMLA BUTONU — sadece bugün ve tamamlanmamışsa */}
@@ -584,6 +784,7 @@ const HomeScreen = () => {
                           </Pressable>
                         )}
                     </LinearGradient>
+                   </Animated.View>
                   </Pressable>
                 ) : (
                   <Pressable
@@ -609,57 +810,87 @@ const HomeScreen = () => {
               {/* PROGRESS LINK */}
               <View ref={progressLinkRef}>
               <Link href={"/progress"} asChild push>
-                <Pressable>
-                  <LinearGradient
-                    colors={
-                      isDark
-                        ? [colors.accent + "20", colors.surface]
-                        : [colors.accent, colors.accent + "A0"]
-                    }
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.progressLinkCard}
+                <Pressable
+                  onPressIn={handleProgressPressIn}
+                  onPressOut={handleProgressPressOut}
+                >
+                  <Animated.View
+                    style={{ transform: [{ scale: progressLinkScale }] }}
                   >
-                    <View style={styles.progressLinkLeft}>
-                      <View
-                        style={[
-                          styles.progressLinkIconWrap,
-                          !isDark && {
-                            backgroundColor: "rgba(255,255,255,0.25)",
-                          },
-                        ]}
+                    <LinearGradient
+                      colors={
+                        isDark
+                          ? [colors.accent + "20", colors.surface]
+                          : [colors.accent, colors.accent + "A0"]
+                      }
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={styles.progressLinkCard}
+                    >
+                      <View style={styles.progressLinkLeft}>
+                        <Animated.View
+                          style={[
+                            styles.progressLinkIconWrap,
+                            !isDark && {
+                              backgroundColor: "rgba(255,255,255,0.25)",
+                            },
+                            {
+                              transform: [
+                                {
+                                  scale: progressLinkIconRotate.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [1, 1.1],
+                                  }),
+                                },
+                              ],
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name="stats-chart"
+                            size={22}
+                            color={isDark ? colors.accent : colors.white}
+                          />
+                        </Animated.View>
+                        <View>
+                          <Text
+                            style={[
+                              styles.progressLinkTitle,
+                              !isDark && { color: colors.white },
+                            ]}
+                          >
+                            İstatistikleri Görüntüle
+                          </Text>
+                          <Text
+                            style={[
+                              styles.progressLinkDesc,
+                              !isDark && { color: "rgba(255,255,255,0.85)" },
+                            ]}
+                          >
+                            Koşu istatistiklerini incele
+                          </Text>
+                        </View>
+                      </View>
+                      <Animated.View
+                        style={{
+                          transform: [
+                            {
+                              translateX: progressLinkArrow.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, 6],
+                              }),
+                            },
+                          ],
+                        }}
                       >
                         <Ionicons
-                          name="stats-chart"
-                          size={22}
+                          name="chevron-forward"
+                          size={20}
                           color={isDark ? colors.accent : colors.white}
                         />
-                      </View>
-                      <View>
-                        <Text
-                          style={[
-                            styles.progressLinkTitle,
-                            !isDark && { color: colors.white },
-                          ]}
-                        >
-                          İstatistikleri Görüntüle
-                        </Text>
-                        <Text
-                          style={[
-                            styles.progressLinkDesc,
-                            !isDark && { color: "rgba(255,255,255,0.85)" },
-                          ]}
-                        >
-                          Koşu istatistiklerini incele
-                        </Text>
-                      </View>
-                    </View>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={20}
-                      color={isDark ? colors.accent : colors.white}
-                    />
-                  </LinearGradient>
+                      </Animated.View>
+                    </LinearGradient>
+                  </Animated.View>
                 </Pressable>
               </Link>
               </View>

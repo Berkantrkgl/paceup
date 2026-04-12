@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import React from "react";
-import { Pressable, Text, View } from "react-native";
+import React, { useRef } from "react";
+import { Animated, Pressable, Text, View } from "react-native";
 
 import { useTheme, type ThemePreference } from "@/theme/ThemeContext";
 import { useThemedStyles } from "@/theme/useThemedStyles";
@@ -18,40 +18,81 @@ const OPTIONS: Option[] = [
   { value: "dark", label: "Karanlık", icon: "moon-outline" },
 ];
 
+type ThemeOptionButtonProps = {
+  option: Option;
+  selected: boolean;
+  onPress: () => void;
+  styles: ReturnType<typeof makeStyles>;
+  accent: string;
+  inactive: string;
+};
+
+function ThemeOptionButton({
+  option,
+  selected,
+  onPress,
+  styles,
+  accent,
+  inactive,
+}: ThemeOptionButtonProps) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () =>
+    Animated.spring(scale, {
+      toValue: 0.94,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 0,
+    }).start();
+
+  const handlePressOut = () =>
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 10,
+    }).start();
+
+  return (
+    <Animated.View style={[styles.optionWrapper, { transform: [{ scale }] }]}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[styles.option, selected && styles.optionSelected]}
+      >
+        <Ionicons
+          name={option.icon}
+          size={18}
+          color={selected ? accent : inactive}
+        />
+        <Text
+          style={[styles.optionLabel, selected && styles.optionLabelSelected]}
+        >
+          {option.label}
+        </Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export function ThemeSelector() {
   const { preference, setPreference, colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
   return (
     <View style={styles.container}>
-      {OPTIONS.map((opt) => {
-        const selected = preference === opt.value;
-        return (
-          <Pressable
-            key={opt.value}
-            onPress={() => setPreference(opt.value)}
-            style={({ pressed }) => [
-              styles.option,
-              selected && styles.optionSelected,
-              pressed && { opacity: 0.6 },
-            ]}
-          >
-            <Ionicons
-              name={opt.icon}
-              size={18}
-              color={selected ? colors.accent : colors.text.secondary}
-            />
-            <Text
-              style={[
-                styles.optionLabel,
-                selected && styles.optionLabelSelected,
-              ]}
-            >
-              {opt.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+      {OPTIONS.map((opt) => (
+        <ThemeOptionButton
+          key={opt.value}
+          option={opt}
+          selected={preference === opt.value}
+          onPress={() => setPreference(opt.value)}
+          styles={styles}
+          accent={colors.accent}
+          inactive={colors.text.secondary}
+        />
+      ))}
     </View>
   );
 }
@@ -63,8 +104,10 @@ const makeStyles = (t: Theme) =>
       gap: 10,
       marginHorizontal: 20,
     },
-    option: {
+    optionWrapper: {
       flex: 1,
+    },
+    option: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
