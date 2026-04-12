@@ -5,6 +5,7 @@ import React, { useContext, useRef, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
+    Image,
     Keyboard,
     Platform,
     Pressable,
@@ -71,8 +72,18 @@ const RegisterScreen = () => {
                 {/* HEADER */}
                 <View style={styles.header}>
                     <View style={styles.logoRow}>
-                        <Ionicons name="flame" size={28} color={colors.accent} />
-                        <Text style={styles.logoText}>PaceUp</Text>
+                        <Image
+                            source={
+                                isDark
+                                    ? require("@/assets/images/login-icon-white.png")
+                                    : require("@/assets/images/login-icon-dark.png")
+                            }
+                            style={styles.logoImage}
+                            resizeMode="contain"
+                        />
+                        <Text style={styles.logoText}>
+                            Pace<Text style={styles.logoTextAccent}>Up</Text>
+                        </Text>
                     </View>
                     <Text style={styles.title}>Hesap Oluştur</Text>
                     <Text style={styles.subtitle}>
@@ -262,25 +273,6 @@ const RegisterScreen = () => {
                             Google ile devam et
                         </Text>
                     </Pressable>
-
-                    <Pressable
-                        style={({ pressed }) => [
-                            styles.oauthBtn,
-                            pressed && { opacity: 0.75 },
-                        ]}
-                        onPress={() => {
-                            // TODO: Apple Sign In
-                        }}
-                    >
-                        <Ionicons
-                            name="logo-apple"
-                            size={22}
-                            color={colors.text.primary}
-                        />
-                        <Text style={styles.oauthBtnText}>
-                            Apple ile devam et
-                        </Text>
-                    </Pressable>
                 </View>
 
                 {/* FOOTER */}
@@ -319,15 +311,23 @@ const makeStyles = (t: Theme) =>
         logoRow: {
             flexDirection: "row",
             alignItems: "center",
-            gap: 8,
+            gap: 6,
             marginBottom: 28,
         },
+        logoImage: {
+            width: 64,
+            height: 64,
+            marginLeft: -8,
+        },
         logoText: {
-            fontSize: 24,
+            fontSize: 30,
             fontWeight: "800",
             color: t.colors.text.primary,
-            letterSpacing: 0.5,
+            letterSpacing: 0.3,
             fontStyle: "italic",
+        },
+        logoTextAccent: {
+            color: t.colors.accent,
         },
         title: {
             fontSize: 30,

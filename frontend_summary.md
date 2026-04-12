@@ -15,7 +15,7 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
 | Home     | Ana Sayfa | `home` / `home-outline`         |
 | Calendar | Takvim    | `calendar` / `calendar-outline` |
 | Plans    | Planlama  | `sparkles` / `sparkles-outline` |
-| Profile  | Profil    | `walk` / `walk-outline`         |
+| Profile  | Profil    | `run-fast` (MaterialCommunityIcons, her iki durumda) |
 
 **Tab Bar:**
 
@@ -33,6 +33,11 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
 
 - Her zaman Hero Stats + **Bugünün Antrenmanı Kartı** gösterilir (eski "İlk Adımı At" onboarding kartı kaldırıldı)
 - `useFocusEffect` ile her odaklanmada veri yenilenir, `getValidToken()` kullanılır
+- **Dinamik Hero Banner:**
+  - `HEADER_IMAGES` (7 resim, `src/assets/images/home/banner-image*.jpeg`) içinden mount başına `useMemo` ile rastgele seçilir — `require` statik olduğu için tüm resimler bundle'da, sadece seçilen decode edilir
+  - Büyük dosyalar (banner-image, banner-image-5) `sips -Z 1080` ile 1080px genişliğe indirildi (~750KB → ~195KB) — görsel kalite korunur, bundle boyutu yarıya iner
+  - **Karşılama:** `GREETINGS` (20 adet, `{name}` placeholder) içinden mount başına `useMemo` ile rastgele seçilir, `formattedName` ile runtime'da değiştirilir. Motivasyon sözü (`MOTIVATION_QUOTES`) için de aynı pattern
+  - **Light mod okunurluk:** Hero gradient 3-stop (`transparent → rgba(0,0,0,0.55) → colors.background`, locations `[0.15, 0.75, 1]`) — yumuşak koyu zon yazı arkasında oluşur. Dark modda eski 2-stop davranış korunur. Text shadow kullanılmaz (RN `textShadow` yumuşak blur vermediği için keskin duplicate oluşturuyordu)
 - **Bugünün Antrenmanı Kartı** (eski adı: "Sıradaki Antreman"):
   - Full-width kart, LinearGradient arka plan (antrenman tipi rengiyle)
   - Tip pill (solda) + tarih badge (sağda, aynı satırda `space-between`)
@@ -447,7 +452,7 @@ src/
 ├── assets/
 │   └── images/
 │       ├── home/
-│       │   └── banner-image.jpeg            # Dashboard hero görseli
+│       │   └── banner-image*.jpeg           # Dashboard hero görselleri (7 adet, rastgele)
 │       ├── icon.png                         # Uygulama ikonu
 │       ├── splash-icon.png                  # Splash screen
 │       ├── favicon.png                      # Web favicon

@@ -266,8 +266,12 @@ const HomeScreen = () => {
             style={styles.heroImage}
           >
             <LinearGradient
-              colors={["transparent", colors.background]}
-              locations={isDark ? [0, 1] : [0.45, 1]}
+              colors={
+                isDark
+                  ? ["transparent", colors.background]
+                  : ["transparent", "rgba(0,0,0,0.55)", colors.background]
+              }
+              locations={isDark ? [0, 1] : [0.15, 0.75, 1]}
               style={styles.heroGradient}
             >
               <View style={styles.heroTextContainer}>
