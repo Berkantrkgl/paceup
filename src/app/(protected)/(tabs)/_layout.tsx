@@ -1,4 +1,4 @@
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import React from "react";
 import { Platform } from "react-native";
@@ -76,9 +76,9 @@ export default function TabLayout() {
         options={{
           title: "Profil",
           tabBarIcon: ({ color, focused }) => (
-            <Ionicons
-              name={focused ? "walk" : "walk-outline"}
-              size={24}
+            <MaterialCommunityIcons
+              name="run-fast"
+              size={26}
               color={color}
             />
           ),

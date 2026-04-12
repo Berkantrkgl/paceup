@@ -16,7 +16,7 @@ import {
 } from "react-native";
 
 import { API_URL } from "@/constants/Config";
-import { HEADER_IMAGES, MOTIVATION_QUOTES } from "@/constants/Content";
+import { GREETINGS, HEADER_IMAGES, MOTIVATION_QUOTES } from "@/constants/Content";
 import { useTheme } from "@/theme/ThemeContext";
 import { useThemedStyles } from "@/theme/useThemedStyles";
 import type { Theme, ThemeColors } from "@/theme/tokens";
@@ -111,6 +111,11 @@ const HomeScreen = () => {
   const randomImage = useMemo(() => {
     const randomIndex = Math.floor(Math.random() * HEADER_IMAGES.length);
     return HEADER_IMAGES[randomIndex];
+  }, []);
+
+  const randomGreetingTemplate = useMemo(() => {
+    const randomIndex = Math.floor(Math.random() * GREETINGS.length);
+    return GREETINGS[randomIndex];
   }, []);
 
   // --- DATA FETCHING ---
@@ -266,7 +271,9 @@ const HomeScreen = () => {
               style={styles.heroGradient}
             >
               <View style={styles.heroTextContainer}>
-                <Text style={styles.heroGreeting}>Selam, {formattedName}</Text>
+                <Text style={styles.heroGreeting}>
+                  {randomGreetingTemplate.replace("{name}", formattedName)}
+                </Text>
                 <Text style={styles.heroMotivation}>{randomQuote}</Text>
               </View>
             </LinearGradient>
