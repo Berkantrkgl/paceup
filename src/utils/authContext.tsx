@@ -1,4 +1,9 @@
 import { API_URL } from "@/constants/Config";
+import {
+  clearPushTokenCache,
+  configureNotificationHandler,
+  registerForPushNotifications,
+} from "@/utils/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import { useRouter, useSegments } from "expo-router";
@@ -11,6 +16,8 @@ import {
   useState,
 } from "react";
 import { Alert } from "react-native";
+
+configureNotificationHandler();
 
 GoogleSignin.configure({
   iosClientId:
@@ -125,6 +132,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   // --- TOKEN MANTIĞI ---
   const logOut = useCallback(async () => {
     await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
+    await clearPushTokenCache();
     setToken(null);
     setUser(null);
     setIsLoggedIn(false);
@@ -207,6 +215,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (validToken) await fetchUserProfile(validToken);
   };
 
+  // Login sonrası fire-and-forget — UI'ı bloklamaz, hata olursa sessizce geçer
+  const syncPushToken = () => {
+    registerForPushNotifications(getValidToken).catch((e) =>
+      console.log("[auth] push token sync hatası:", e),
+    );
+  };
+
   // --- GOOGLE SIGN IN ---
   const googleSignIn = async () => {
     try {
@@ -235,6 +250,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setToken(data.access);
         setIsLoggedIn(true);
         await fetchUserProfile(data.access);
+        syncPushToken();
       } else {
         Alert.alert("Hata", data.detail || "Google ile giriş başarısız.");
       }
@@ -261,6 +277,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setToken(data.access);
         setIsLoggedIn(true);
         await fetchUserProfile(data.access);
+        syncPushToken();
       } else {
         Alert.alert("Hata", "Giriş bilgileri hatalı.");
       }
@@ -294,6 +311,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setToken(data.access);
           setIsLoggedIn(true);
           await fetchUserProfile(data.access);
+          syncPushToken();
         } else {
           router.replace("/login");
         }
@@ -316,6 +334,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setToken(savedToken);
         setIsLoggedIn(true);
         await fetchUserProfile(savedToken);
+        syncPushToken();
       }
       setIsReady(true);
     };

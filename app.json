@@ -15,7 +15,10 @@
           "NSAllowsArbitraryLoads": true
         }
       },
-      "bundleIdentifier": "com.example.PaceUp"
+      "bundleIdentifier": "com.example.PaceUp",
+      "entitlements": {
+        "aps-environment": "development"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -50,11 +53,26 @@
         {
           "iosUrlScheme": "com.googleusercontent.apps.your-google-ios-client-id"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#FF4501",
+          "defaultChannel": "default",
+          "sounds": []
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "your-eas-project-id"
+      }
+    },
+    "owner": "your-expo-owner"
   }
 }

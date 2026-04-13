@@ -292,10 +292,8 @@ const ProfileScreen = () => {
         currentVal ? new Date(currentVal as string) : new Date(1995, 0, 1),
       );
     } else if (config.type === "time") {
-      const [h, m] = ((currentVal as string) || "09:00").split(":");
-      const d = new Date();
-      d.setHours(parseInt(h), parseInt(m));
-      setDateValue(d);
+      const [h] = ((currentVal as string) || "09:00").split(":");
+      setTempValue(parseInt(h, 10));
     } else if (config.type === "pace") {
       if (currentVal === null || currentVal === undefined) {
         setPaceUnknown(true);
@@ -322,9 +320,8 @@ const ProfileScreen = () => {
       if (editConfig.type === "date") {
         payloadValue = dateValue.toISOString().split("T")[0];
       } else if (editConfig.type === "time") {
-        const h = dateValue.getHours();
-        const m = dateValue.getMinutes();
-        payloadValue = `${h < 10 ? "0" + h : h}:${m < 10 ? "0" + m : m}:00`;
+        const h = Number(tempValue);
+        payloadValue = `${h < 10 ? "0" + h : h}:00:00`;
       } else if (editConfig.type === "pace") {
         payloadValue = paceUnknown ? null : paceValue.min * 60 + paceValue.sec;
       } else if (editConfig.type === "number") {
@@ -399,12 +396,12 @@ const ProfileScreen = () => {
   // MODAL CONTENT
   // ============================================================
   const renderModalContent = () => {
-    if (editConfig.type === "date" || editConfig.type === "time") {
+    if (editConfig.type === "date") {
       return (
         <View style={styles.pickerWrapper}>
           <DateTimePicker
             value={dateValue}
-            mode={editConfig.type}
+            mode="date"
             is24Hour={true}
             display="spinner"
             onChange={(_, selectedDate) =>
@@ -414,6 +411,40 @@ const ProfileScreen = () => {
             themeVariant={isDark ? "dark" : "light"}
             style={{ height: 180 }}
           />
+        </View>
+      );
+    }
+    if (editConfig.type === "time") {
+      return (
+        <View style={[styles.pickerWrapper, { alignItems: "center" }]}>
+          <Picker
+            selectedValue={Number(tempValue)}
+            onValueChange={(v) => setTempValue(v)}
+            itemStyle={{ color: colors.text.primary, fontSize: 22 }}
+            style={{ width: 160, color: colors.text.primary }}
+          >
+            {Array.from({ length: 24 }, (_, i) => (
+              <Picker.Item
+                key={i}
+                label={`${i < 10 ? "0" + i : i}:00`}
+                value={i}
+              />
+            ))}
+          </Picker>
+          {editConfig.key === "preferred_reminder_time" && (
+            <View style={styles.dayInfoBox}>
+              <Ionicons
+                name="information-circle-outline"
+                size={14}
+                color={colors.text.secondary}
+              />
+              <Text style={styles.dayInfoText}>
+                Seçeceğiniz bildirim saati, antrenmandan bir gün öncesi için
+                geçerlidir. Bu saatte, ertesi gün planlı bir antrenmanınız
+                varsa hatırlatma gönderilir.
+              </Text>
+            </View>
+          )}
         </View>
       );
     }

@@ -1,4 +1,4 @@
-# 📱 PaceUp Frontend Technical Architecture Documentation v2.8
+# 📱 PaceUp Frontend Technical Architecture Documentation v2.9
 
 Bu belge, **React Native (Expo)** ve **TypeScript** ile geliştirilmiş PaceUp mobil uygulamasının mimarisini, durum yönetimini ve backend entegrasyon mantığını tanımlar.
 
@@ -124,6 +124,9 @@ Expo Router (dosya tabanlı yönlendirme) kullanılır. **Development build** (`
   - Kalan erteleme hakkı (premium: "Sınırsız")
   - **Aboneliği İptal Et:** Sadece premium kullanıcılar için görünür, onay Alert'i sonrası `POST /api/users/cancel_premium/` çağrılır
 - **Görünüm (Tema Seçici):** KİMLİK VE FİZİKSEL section'ının hemen altında — ghost button tarzında 3'lü minimal selector (Sistem / Aydınlık / Karanlık). Seçim anında tema canlı değişir, `AsyncStorage` key'i `theme-preference-v1`'e persist edilir.
+- **BİLDİRİM TERCİHLERİ Section'ı:**
+  - **Hatırlatma Saati:** `InfoRow` + modal. Modal içinde **saat-only wheel picker** (`@react-native-picker/picker`, 24 item: `00:00` → `23:00`). Dakika hep `00` — backend granülerliği saat bazlı. Modal'da bilgi kutusu: _"Seçeceğiniz bildirim saati, antrenmandan bir gün öncesi için geçerlidir. Bu saatte, ertesi gün planlı bir antrenmanınız varsa hatırlatma gönderilir."_
+  - **Toggle'lar:** `notification_workout_reminder`, `notification_weekly_report`, `notification_achievements`, `notification_plan_updates` — hepsi `PATCH /users/me/` ile optimistic update
 - Premium ekranına `router.push("/(protected)/premium")` ile yönlendirme
 
 ### H. Premium Ekranı (`(protected)/premium.tsx`)
@@ -229,6 +232,15 @@ remaining_reschedules: number
 preferred_running_days: number[]            // [0,2,4] → 0=Pzt, 6=Paz
 current_pace: number | null                 // saniye/km, null = bilinmiyor
 pace_display?: string
+
+// Push Notification alanları
+push_token?: string | null                 // ExponentPushToken[...] — register_push_token ile senkronize
+timezone?: string                           // IANA tz (örn. "Europe/Istanbul"), default "UTC"
+preferred_reminder_time?: string            // "HH:MM:SS", dakika hep 00, default "09:00:00"
+notification_workout_reminder?: boolean
+notification_weekly_report?: boolean
+notification_achievements?: boolean
+notification_plan_updates?: boolean
 ```
 
 **Token Yönetimi:**
@@ -238,6 +250,19 @@ pace_display?: string
 - **Network hatasında logout yok:** Sadece refresh token gerçekten geçersizse (HTTP 401) logout tetiklenir; network hatası / timeout durumunda null döner, kullanıcı oturumu korunur
 - `refreshUserData()`: `/users/me/` çekerek user state'i günceller — chatbot token güncellemesinden sonra çağrılır
 - `googleSignIn()`: Native Google Sign-In SDK ile giriş, backend'e id_token gönderir
+
+**Push Token Senkronizasyonu:**
+
+- `configureNotificationHandler()` modül load sırasında bir kez çağrılır (foreground bildirim davranışı ayarlanır)
+- `syncPushToken()` fire-and-forget helper: `login`, `register`, `googleSignIn` ve `init` sonrası tetiklenir — UI bloklamaz
+- `registerForPushNotifications(getValidToken)` util (`src/utils/notifications.ts`):
+  - Cihaz fiziksel mi? (`expo-device` — simulator'de `null` döner)
+  - Permission iste (`Notifications.requestPermissionsAsync`)
+  - Android için varsayılan channel oluştur
+  - `Notifications.getExpoPushTokenAsync({ projectId })` ile Expo token al (projectId `Constants.expoConfig.extra.eas.projectId`'den okunur)
+  - AsyncStorage cache (`expo-push-token-v1`) ile karşılaştır → değişmemişse backend'e gönderilmez
+  - Değişmişse `POST /api/users/register_push_token/` ile backend'e kaydeder
+- `logOut()`: `clearPushTokenCache()` çağırır ki yeni kullanıcı için token yeniden gönderilsin
 
 **API isteklerinde doğru kullanım:**
 
@@ -390,7 +415,89 @@ Bunun içindeki text/ikonlar light modda `colors.white` / `rgba(255,255,255,0.85
 
 ---
 
-## 7. API Integration Pattern
+## 7. Push Notifications
+
+Mobil push bildirimleri **Expo Push API** üzerinden yönetilir. Backend Django tarafı Apple APNs / Google FCM ile direkt konuşmaz — Expo sunucusu aradadır, credential yönetimi EAS tarafında abstract edilir.
+
+**Paketler:**
+
+- `expo-notifications` — permission, token alma, handler, channel yönetimi
+- `expo-device` — fiziksel cihaz / simulator ayrımı (simulator'de push çalışmaz, erken return için)
+
+**Plugin:** `app.json` → `plugins: [["expo-notifications", { color: "#FF4501", defaultChannel: "default", sounds: [] }]]`
+
+### Kurulum Katmanları
+
+Push notification 3 katmanlı izin mimarisi ister. Hepsi tek seferlik kurulumdur:
+
+| Katman | Nerede | Ne yapar |
+|--------|--------|----------|
+| **EAS Project** | `app.json` → `extra.eas.projectId` | `eas init` ile oluşturulur. `getExpoPushTokenAsync({ projectId })` için zorunlu |
+| **iOS Entitlement** | `app.json` → `ios.entitlements.aps-environment: "development"` | `expo prebuild` ile `ios/PaceUp/PaceUp.entitlements`'e yansır. Provisioning profile'a push capability ekler |
+| **APNs Key** | EAS sunucusu (bulutta) | `eas credentials` → iOS → development → **Set up new push key**. EAS Apple Developer Portal'da key oluşturur, indirir, kendi sunucusuna yükler |
+
+**EAS Login (Google SSO kullananlar için):** `eas login` terminal'de email+şifre ister, Google SSO çalışmaz. Çözüm: https://expo.dev/settings/access-tokens'dan token oluştur, `export EXPO_TOKEN=...` ile export et, `eas init` / `eas credentials` bu token'ı kullanır.
+
+**Apple Developer Portal:** `com.example.PaceUp` bundle ID'sine "Push Notifications" capability'sinin eklenmiş olması gerekir. `eas credentials` akışı veya Xcode'un otomatik signing'i bunu zaten halleder.
+
+### `src/utils/notifications.ts` — Core Util
+
+**Ana fonksiyonlar:**
+
+- `configureNotificationHandler()` — `setNotificationHandler` ile foreground davranışı: banner + sound + list, badge yok. Modül load'da bir kez çağrılır
+- `getExpoPushToken()` — Permission ister, Android channel oluşturur, `getExpoPushTokenAsync({ projectId })` ile Expo token döner. Simulator'de `null` döner
+- `registerForPushNotifications(getValidToken)` — Full akış: token al → AsyncStorage cache (`expo-push-token-v1`) karşılaştır → değişmişse `POST /api/users/register_push_token/` ile backend'e gönder
+- `clearPushTokenCache()` — Logout'ta çağrılır, cache'i temizler
+
+**Cache mantığı:** Her login/init'te `syncPushToken()` çağrılır ama backend'e istek sadece token **değişmişse** gider. Bu sayede sürekli aynı token backend'e POST edilmez (gereksiz trafik önlenir).
+
+### Foreground Behavior
+
+App açıkken bildirim gelirse iOS varsayılan olarak banner göstermez. `configureNotificationHandler()` bunu `shouldShowBanner: true` yapar — her durumda banner görünür:
+
+```ts
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+```
+
+### Android Channel
+
+iOS otomatik olarak "default" channel kullanır. Android için explicit channel oluşturulur:
+
+```ts
+await Notifications.setNotificationChannelAsync("default", {
+  name: "default",
+  importance: Notifications.AndroidImportance.MAX,
+  vibrationPattern: [0, 250, 250, 250],
+  lightColor: "#FF4501",
+});
+```
+
+### Bildirim Tipleri
+
+Backend üç tip bildirim gönderir (frontend sadece alır, gösterir):
+
+| Tip                  | Tetikleyici                              | `data` payload               |
+|----------------------|------------------------------------------|------------------------------|
+| Achievement          | Backend signal (rozet kazanınca)         | `{ type, achievement_id }`   |
+| Workout Reminder     | Backend cron task (bir gün önceden)      | `{ type, workout_id, date }` |
+| Weekly Report / Plan Update | (Henüz backend'de implement edilmedi) | —                            |
+
+`data` payload'ı ileride deep link handler için kullanılacak — `_layout.tsx`'te `Notifications.addNotificationResponseReceivedListener` ile `type` ve id'ye göre `router.push` yapılacak (workout reminder → workout-detail, achievement → profile). Şu an handler yok, bildirime tıklayınca app sadece ana ekrana açılır.
+
+### Test & Debug
+
+Django shell'den manuel tetikleme — detaylar backend docs'da. Frontend tarafında şu an dedicated test UI'ı yok; gerçek Achievement / Workout'lar signal zinciri ile otomatik push üretir.
+
+---
+
+## 8. API Integration Pattern
 
 ```ts
 const fetchData = async () => {
@@ -419,7 +526,7 @@ export const API_URL = `${BASE_URL}/api`; // Django Backend
 
 ---
 
-## 8. Proje Klasör Yapısı
+## 9. Proje Klasör Yapısı
 
 ```
 src/
@@ -482,14 +589,20 @@ src/
 ├── types/
 │   └── plans.ts                             # Plan/antrenman tipleri
 └── utils/
-    └── authContext.tsx                       # Auth state, token yönetimi
+    ├── authContext.tsx                       # Auth state, token yönetimi, push token sync
+    └── notifications.ts                      # Expo push permission/token/cache util
 ```
+
+**Root seviye config dosyaları:**
+- `app.json` — Expo config (plugins, iOS entitlements, `extra.eas.projectId`)
+- `eas.json` — EAS Build profilleri (development / preview / production). `eas credentials` için zorunludur
+- `package.json` — Frontend bağımlılıkları
 
 > **Not:** `constants/Colors.ts` kaldırılmıştır. Tüm renk erişimi artık `@/theme/ThemeContext` → `useTheme()` üzerinden yapılır.
 
 ---
 
-## 9. Önemli Notlar & Bilinen Davranışlar
+## 10. Önemli Notlar & Bilinen Davranışlar
 
 - **Timezone bug (isToday):** `new Date("YYYY-MM-DD")` UTC olarak parse edilir, Türkiye (+3) saatinde yanlış güne kayabilir. Doğru yöntem: `new Date().toLocaleDateString("en-CA")` ile string karşılaştırması veya `new Date(y, m-1, d)` constructor kullanımı.
 - **Reschedule günleri:** Backend `running_days` formatı `[0,2,4]` (0=Pzt). JS `getDay()` dönüşümü için `JS_TO_BACKEND_DAY = [6, 0, 1, 2, 3, 4, 5]` mapping'i kullanılır.
@@ -502,10 +615,14 @@ src/
 - **Tema sistemi — `COLORS` importu yoktur:** Eski `constants/Colors.ts` silinmiştir. Yeni kod yazarken renkler için **daima** `useTheme()` hook'u kullanılmalı, factory pattern (`makeStyles(t: Theme)`) ile stil tanımlanmalı. `StyleSheet.create` doğrudan çağrılmaz — `useThemedStyles(makeStyles)` sarmalayıcı kullanılır.
 - **Workout type renkleri tema-ayrık:** `WORKOUT_PALETTE.dark` ve `WORKOUT_PALETTE.light` — sarı (interval) gibi renkler light zeminde okunurluk kaybettiği için koyu alternatifler kullanılır. Yeni bir workout type eklenirse her iki palete de eklenmelidir.
 - **Gradient light mod pattern'i:** Light modda yüksek doymuş gradient kullanan kartlarda (home workout card, calendar slider, progress link, achievement) içindeki metin/ikonlar `colors.white` / `rgba(255,255,255,0.85)` ile override edilir. Dark modda mevcut renkli metin davranışı korunur (`!isDark && { color: colors.white }` pattern'i).
+- **Push notification simulator'de çalışmaz:** `expo-device` ile kontrol ediliyor — simulator'de `getExpoPushToken()` `null` döner, hata oluşmaz. Test için fiziksel cihaz zorunludur.
+- **Push native modül rebuild gerektirir:** `expo-notifications` native modül içerdiği için ilk kurulumda `npx expo run:ios --device` ile dev build tekrar alınır. JS değişiklikleri sonradan hot reload ile yansır.
+- **EAS projectId `app.json`'dan okunur:** `getExpoPushTokenAsync({ projectId })` zorunludur. `projectId` `Constants.expoConfig.extra.eas.projectId` (`eas init` ile eklenir). Yoksa token alınamaz ve util `null` döner.
+- **iOS entitlements kaynağı `app.json`:** `ios.entitlements.aps-environment` değeri `app.json`'da tutulur (source of truth). `expo prebuild` sonucu `ios/PaceUp/PaceUp.entitlements`'e yansır. Xcode UI'dan elle ekleme **yapılmaz** — çünkü `ios/` klasörü generated'dır, prebuild sırasında üzerine yazılır.
 
 ---
 
-## 10. App Metadata & Branding
+## 11. App Metadata & Branding
 
 - **Bundle ID:** `com.example.PaceUp` (iOS), Android package aynı
 - **Splash Screen:** Koyu arka plan (`#0D0D0D`), beyaz koşucu logosu ortada, `imageWidth: 280`, light/dark mod aynı renk
