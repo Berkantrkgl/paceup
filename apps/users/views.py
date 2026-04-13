@@ -114,6 +114,29 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(user)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def register_push_token(self, request):
+        """Expo push token'ını kullanıcıya bağla (cihaz değişikliğinde günceller)."""
+        push_token = request.data.get("push_token")
+
+        if not push_token or not isinstance(push_token, str):
+            return Response(
+                {"error": "push_token gerekli."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not push_token.startswith("ExponentPushToken[") and not push_token.startswith("ExpoPushToken["):
+            return Response(
+                {"error": "Geçersiz Expo push token formatı."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = request.user
+        user.push_token = push_token
+        user.save(update_fields=["push_token"])
+
+        return Response({"success": True, "push_token": push_token})
+
 
 class GoogleSignInView(APIView):
     permission_classes = [permissions.AllowAny]

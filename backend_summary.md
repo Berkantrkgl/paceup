@@ -1,4 +1,4 @@
-# 🛠️ PaceUp Backend Technical Architecture Documentation v2.9
+# 🛠️ PaceUp Backend Technical Architecture Documentation v3.0
 
 Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Design (DDD)** prensiplerine göre modüler PaceUp backend mimarisini tanımlar.
 
@@ -9,13 +9,18 @@ Bu belge, **Django REST Framework (DRF)** üzerine kurulu, **Domain Driven Desig
 ```
 PACEUP-BACKEND/
 ├── manage.py
+├── requirements.txt        # Tüm bağımlılıklar
 ├── paceupbackend/          # Main Settings & URL Routing
 └── apps/
     ├── users/              # Auth, User Model, Token & Kota Yönetimi
     ├── programs/           # Program & Workout Modelleri
     ├── activity/           # WorkoutResult & Signals (Business Logic)
     ├── gamification/       # Achievement & Ödül Mantığı
-    ├── notifications/      # Notification Modeli
+    ├── notifications/      # Notification Modeli + Push + Tasks
+    │   ├── push.py                          # Expo push util
+    │   ├── tasks.py                         # django-q2 scheduled tasks
+    │   └── management/commands/
+    │       └── setup_periodic_tasks.py      # Cron kayıt komutu
     └── analytics/          # Sadece View Katmanı (Dashboard)
 ```
 
@@ -146,6 +151,7 @@ REST_FRAMEWORK = {
 | `POST /api/users/update_token_usage/` | Chat sonrası token sayacını günceller, `can_use_chat` döner                                                  |
 | `POST /api/users/activate_premium/`   | Premium aktifle: `{ premium_type: "monthly" \| "yearly" }` alır, expire tarihi hesaplar                      |
 | `POST /api/users/cancel_premium/`     | Premium iptal: `is_premium=False`, `premium_type=null`, `premium_expires_at=null` yapar                      |
+| `POST /api/users/register_push_token/` | Expo push token'ı kullanıcıya bağlar. Body: `{ push_token: "ExponentPushToken[...]" }`. Format doğrulaması yapılır, cihaz değişikliğinde günceller |
 
 ### Programs & Workouts
 
@@ -250,9 +256,9 @@ get_can_use_chat          → True (premium) | total_tokens_used < 50000
 | ----------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `activity.signals`      | WorkoutResult save/delete | Workout → COMPLETED, program ilerlemesi güncellenir, user stats güncellenir, streak sıfırdan hesaplanır |
 | `gamification.signals`  | User update               | Eşik kontrolü, Achievement oluşturulur                                                                  |
-| `notifications.signals` | Achievement create        | Kullanıcıya bildirim oluşturulur                                                                        |
+| `notifications.signals` | Achievement create        | In-app Notification oluşturulur **+** push notification gönderilir (`send_push_notification`)           |
 
-**Signal Zinciri:** `WorkoutResult.save()` → activity signal (user stats güncelle + `user.save()`) → gamification signal (achievement kontrol) → notifications signal (bildirim oluştur)
+**Signal Zinciri:** `WorkoutResult.save()` → activity signal (user stats güncelle + `user.save()`) → gamification signal (achievement kontrol) → notifications signal (Notification oluştur + push gönder)
 
 **WorkoutResult Auto-Calculations (save override):**
 
@@ -268,7 +274,209 @@ get_can_use_chat          → True (premium) | total_tokens_used < 50000
 
 ---
 
-## 7. Teknik Notlar
+## 7. Push Notification & Task Queue
+
+Mobil push notification'lar **Expo Push API** üzerinden gönderilir. Backend Apple APNs / Google FCM'e direkt bağlanmaz — Expo sunucusu aradadır. Sayede APNs key, token yönetimi, platform farklılıkları Expo tarafında abstract edilir.
+
+### Mimari
+
+```
+┌─────────────────┐       ┌──────────────────┐       ┌────────────┐
+│  Django Backend │──────▶│  Expo Push API   │──────▶│ Apple APNs │──▶ 📱
+│ send_push_...() │       │ (exp.host/.../send) │    │ Google FCM │
+└─────────────────┘       └──────────────────┘       └────────────┘
+        ▲
+        │ tetikleyiciler:
+        │ • Achievement signal (anlık)
+        │ • Django-Q2 cron task (her saat başı)
+```
+
+### Bağımlılıklar
+
+| Paket | Görev |
+|-------|-------|
+| `django-q2` | Task queue + cron scheduler. ORM broker (PostgreSQL/SQLite) kullanır — Redis gerektirmez |
+| `exponent-server-sdk` | `PushClient().publish(PushMessage(...))` ile Expo Push API istemcisi |
+| `croniter` | Django-Q2 CRON schedule parse'ı için gerekli |
+
+### Django-Q2 Konfigürasyonu
+
+```python
+# settings.py
+INSTALLED_APPS += ['django_q']
+
+Q_CLUSTER = {
+    'name': 'paceup',
+    'workers': 2,
+    'recycle': 500,
+    'timeout': 60,
+    'retry': 120,
+    'orm': 'default',   # ORM broker — Redis yok
+    ...
+}
+```
+
+- **Worker:** `python manage.py qcluster` komutu 7/24 çalışır
+- **Production:** Aynı Django ECS task'ı içinde Supervisor ile 2 process (`gunicorn` + `qcluster`). Ekstra infra/maliyet yok
+- **Schedule tablosu:** DB'de tutulur — `setup_periodic_tasks` management command ile idempotent yönetilir
+
+### `apps/notifications/push.py` — Core Util
+
+```python
+send_push_notification(user, title, body, data=None, notification_type=None)
+```
+
+**Davranış:**
+- `user.push_token` yoksa → atla, `False` döner
+- `notification_type` verilmişse (`workout_reminder` / `achievement` / `weekly_report` / `plan_update`) → user'ın ilgili toggle alanı (`notification_*`) kapalıysa atla
+- Expo Push API'ye istek atar, `PushMessage` ile gönderir (title, body, data, `sound="default"`, `priority="high"`)
+- **Stale token temizleme:** `DeviceNotRegisteredError` dönerse `user.push_token = None` yapılır (kullanıcı app'i silmiş olabilir)
+- **Hata dayanıklılığı:** `PushServerError`, `ConnectionError`, `HTTPError` → log'lanır, `False` döner, çağıran kod çökmez
+
+**Preference eşleme:**
+
+```python
+NOTIFICATION_PREFERENCE_MAP = {
+    "workout_reminder": "notification_workout_reminder",
+    "weekly_report":    "notification_weekly_report",
+    "achievement":      "notification_achievements",
+    "plan_update":      "notification_plan_updates",
+}
+```
+
+### Scheduled Task — `send_workout_reminders`
+
+`apps/notifications/tasks.py` içinde. Her saat başı çalışır, ertesi gün antrenmanı olan kullanıcılara hatırlatma gönderir.
+
+**Cron:** `0 * * * *` (her saat xx:00'da)
+
+**Algoritma:**
+
+```python
+1. User.objects.filter(
+       notification_workout_reminder=True,
+       push_token__isnull=False,
+   ).exclude(push_token="")
+
+2. Her user için:
+   a. user'ın kendi timezone'undaki şu anki datetime → local_now
+   b. local_now.hour != user.preferred_reminder_time.hour → skip
+   c. tomorrow = (local_now + 1 gün).date()
+   d. Workout.objects.filter(
+          program__user=user,
+          program__status='active',
+          scheduled_date=tomorrow,
+          status='scheduled',
+      ).first() → workout
+   e. workout yoksa → skip
+   f. send_push_notification(
+          user,
+          title="Yarın antrenmanın var! 🏃",
+          body=f"{workout.title} • {km} km • {min} dk",
+          data={"type": "workout_reminder", "workout_id": str(workout.id)},
+          notification_type="workout_reminder",
+      )
+```
+
+**Multi-Timezone Desteği:** Her kullanıcı farklı bir timezone'da olabilir. `zoneinfo.ZoneInfo(user.timezone)` ile local datetime hesaplanır. Geçersiz TZ string'i verilirse UTC'ye fallback + log uyarısı.
+
+**Garantiler:**
+- Her kullanıcı günde **en fazla 1 kez** workout reminder alır (kendi seçtiği saatte)
+- Aynı workout için tekrar tetiklense bile bildirim tekrar gider (deduplication yok — basitlik için). Cron saat başı olduğu için doğal olarak günde 1 kez tetiklenir
+- Kullanıcı preference kapatırsa anında etkisi vardır (task her çalıştığında kontrol eder, cache yok)
+
+### Achievement Push (Anlık)
+
+`apps/notifications/signals.py` → `Achievement` post_save:
+
+```python
+@receiver(post_save, sender=Achievement)
+def create_achievement_notification(sender, instance, created, **kwargs):
+    if not created: return
+    Notification.objects.create(...)              # in-app notification (eski davranış)
+    send_push_notification(                        # yeni — push da gönder
+        user=instance.user,
+        title="Yeni Rozet Kazandın! 🏆",
+        body=f"'{instance.title}' rozetini kazandın, tebrikler!",
+        data={"type": "achievement", "achievement_id": str(instance.id)},
+        notification_type="achievement",
+    )
+```
+
+Achievement zinciri tamamen otomatik: `WorkoutResult.save()` → activity signal → user stats güncelle → gamification signal → `Achievement.objects.get_or_create(...)` → notifications signal → **push gönder**.
+
+### Management Command — `setup_periodic_tasks`
+
+Scheduled task'ları DB'ye idempotent şekilde kaydeder. Deployment sırasında her sefer çalıştırılabilir.
+
+```bash
+python manage.py setup_periodic_tasks
+```
+
+**İç yapı:**
+
+```python
+PERIODIC_TASKS = [
+    {
+        "name": "send_workout_reminders",
+        "func": "apps.notifications.tasks.send_workout_reminders",
+        "schedule_type": Schedule.CRON,
+        "cron": "0 * * * *",
+    },
+]
+
+# update_or_create(name=...) ile idempotent
+```
+
+Gelecekte yeni task eklemek için bu listeye bir dict eklemek yeterli.
+
+### Push Notification Tipleri
+
+| Tip                  | Tetikleyici                              | Toggle alanı                     | Payload data             |
+|----------------------|------------------------------------------|----------------------------------|--------------------------|
+| `achievement`        | Achievement post_save signal             | `notification_achievements`      | `{ achievement_id }`     |
+| `workout_reminder`   | `send_workout_reminders` cron task       | `notification_workout_reminder`  | `{ workout_id, date }`   |
+| `weekly_report`      | (Henüz implement edilmedi)               | `notification_weekly_report`     | —                        |
+| `plan_update`        | (Henüz implement edilmedi)               | `notification_plan_updates`      | —                        |
+
+### User.preferred_reminder_time Kullanımı
+
+- **Format:** `TimeField`, default `09:00:00`
+- **Granülerlik:** Saat bazlı (dakika her zaman `00`). Frontend time picker kullanıcıya sadece `00:00-23:00` arası 24 seçenek sunar
+- **Anlam:** "Bu saatte, ertesi gün antrenmanım varsa hatırlatma al." Task sadece `hour` karşılaştırması yapar (`local_now.hour == preferred_reminder_time.hour`)
+- **Multi-TZ:** `user.timezone` ile birlikte yorumlanır — kullanıcı hangi TZ'deyse o TZ'nin o saatinde tetiklenir
+
+### Test & Debug (Django Shell)
+
+```python
+# 1. Manuel push
+from apps.users.models import User
+from apps.notifications.push import send_push_notification
+user = User.objects.get(email="...")
+send_push_notification(user, "Test", "Merhaba", {"test": True})
+
+# 2. Achievement signal tetikle
+from apps.gamification.models import Achievement
+Achievement.objects.create(user=user, achievement_type="test", title="Test Rozeti", ...)
+
+# 3. Reminder task manuel
+from apps.notifications.tasks import send_workout_reminders
+send_workout_reminders()   # → {"checked": N, "sent": M}
+```
+
+### Expo / EAS Tarafı
+
+Backend'de **hiçbir APNs key, certificate veya FCM sunucu anahtarı tutulmaz.** Bu credential'lar EAS (Expo) tarafında saklanır:
+
+- **APNs Key:** `eas credentials` komutu ile Apple Developer Portal'dan oluşturulur, EAS sunucusuna yüklenir
+- **Expo Push API** bu key ile Apple APNs'e gider
+- Backend yalnızca Expo'ya HTTP POST atar (Bearer token gerekmez, token request body'sinde)
+
+Bu sayede backend'in secret yönetimi minimal kalır — sadece `.env`'de `EXPO_ACCESS_TOKEN` (opsiyonel, rate limit bypass için) gerekebilir. Şu an bu token kullanılmıyor, `PushClient` varsayılan ayarlarla çalışıyor.
+
+---
+
+## 8. Teknik Notlar
 
 **Lazy Reset (Erteleme Kotası):** Cron job yok. `get_remaining_reschedules()` her çağrıda ay/yıl değişmişse o an sıfırlar.
 
@@ -286,9 +494,13 @@ get_can_use_chat          → True (premium) | total_tokens_used < 50000
 
 **Workout Filtering:** `?only_active=true` (aktif program), `?start_date=` ve `?end_date=` query parametreleri desteklenir.
 
-**Database:** SQLite3 (development). Production için PostgreSQL önerilir.
+**Database:** SQLite3 (development). Production için PostgreSQL önerilir. Django-Q2 ORM broker aynı DB'yi task queue broker olarak kullanır — ayrı Redis/RabbitMQ gerekmez.
 
 **Storage:** AWS S3 (`your-s3-bucket-name`, eu-central-1) — profil fotoğrafları için. `custom_storages.MediaStorage` kullanılır.
+
+**Task Queue Worker:** `python manage.py qcluster` 7/24 çalışır. Production'da Django container'ında Supervisor ile `gunicorn` yanında ikinci process olarak çalışır — ayrı ECS task gerekmez.
+
+**Dependencies:** `requirements.txt` root'ta tutulur. Kritik paketler: `django`, `djangorestframework`, `djangorestframework-simplejwt`, `google-auth`, `boto3`, `django-storages`, `django-q2`, `exponent-server-sdk`, `croniter`, `python-dotenv`.
 
 **Environment Variables (`.env`):** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — tüm secret'lar `.env`'de tutulur, `.gitignore`'da.
 

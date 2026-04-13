@@ -51,7 +51,9 @@ INSTALLED_APPS = [
     'apps.analytics',
 
     'rest_framework',
-    'rest_framework_simplejwt'
+    'rest_framework_simplejwt',
+
+    'django_q',
 ]
 
 MIDDLEWARE = [
@@ -170,3 +172,21 @@ STORAGES = {
 # Medya URL'si artık S3 olacak
 AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
 MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
+
+
+# --- Django Q2 (Task Queue) ---
+# ORM broker: PostgreSQL/SQLite kullanır, Redis gerektirmez.
+# Django container ile aynı process'te çalışabilir (supervisord ile).
+Q_CLUSTER = {
+    'name': 'paceup',
+    'workers': 2,
+    'recycle': 500,
+    'timeout': 60,
+    'retry': 120,
+    'compress': True,
+    'save_limit': 250,
+    'queue_limit': 500,
+    'cpu_affinity': 1,
+    'label': 'Django Q',
+    'orm': 'default',
+}
