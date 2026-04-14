@@ -563,7 +563,9 @@ const HomeScreen = () => {
                           style={[
                             styles.typePill,
                             {
-                              backgroundColor: workoutStyle.color + "25",
+                              backgroundColor: isDark
+                                ? workoutStyle.color + "25"
+                                : "rgba(255,255,255,0.95)",
                             },
                           ]}
                         >
@@ -601,8 +603,12 @@ const HomeScreen = () => {
                             style={[
                               styles.cornerBadge,
                               {
-                                backgroundColor: colors.success + "18",
-                                borderColor: colors.success + "40",
+                                backgroundColor: isDark
+                                  ? colors.success + "18"
+                                  : "rgba(255,255,255,0.95)",
+                                borderColor: isDark
+                                  ? colors.success + "40"
+                                  : "rgba(255,255,255,0.95)",
                               },
                             ]}
                           >
@@ -625,8 +631,12 @@ const HomeScreen = () => {
                             style={[
                               styles.cornerBadge,
                               {
-                                backgroundColor: workoutStyle.color + "18",
-                                borderColor: workoutStyle.color + "40",
+                                backgroundColor: isDark
+                                  ? workoutStyle.color + "18"
+                                  : "rgba(255,255,255,0.95)",
+                                borderColor: isDark
+                                  ? workoutStyle.color + "40"
+                                  : "rgba(255,255,255,0.95)",
                               },
                             ]}
                           >
@@ -974,7 +984,7 @@ const makeStyles = (t: Theme) => {
     // CONTENT CONTAINER
     contentOverlappingContainer: {
       paddingHorizontal: 20,
-      marginTop: -40,
+      marginTop: 10,
       zIndex: 10,
     },
 
