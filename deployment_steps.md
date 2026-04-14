@@ -1,431 +1,522 @@
-# PaceUp Deployment Yol Haritası
+# PaceUp Deployment Runbook
 
-## Mimari
+Bu belge PaceUp Django backend'in AWS ECS Fargate üzerindeki **canlı deployment'ını** dokümante eder. "Nasıl kurulacak" kılavuzundan çok, "nasıl kuruldu, hangi kaynaklar var, neyi nasıl değiştirirsin" referansıdır.
+
+**Son canlıya alma:** 2026-04-14
+**Canlı URL:** https://your-domain.com/api/
+**AWS hesap:** `035711552622` (Frankfurt / eu-central-1)
+
+---
+
+## Mimari (canlı)
 
 ```
                     ┌──────────────┐
-                    │   Route 53   │  example.com
+                    │   Route 53   │  example.com (Z00630773F62NNOLWVTVE)
                     └──────┬───────┘
-                           │  your-domain.com → ALB
+                           │  your-domain.com (A-alias)
                     ┌──────▼──────┐
-                    │     ALB     │  (Shared — path-based routing)
-                    │  HTTPS :443 │
+                    │     ALB     │  example-alb (shared)
+                    │  HTTPS :443 │  *.example.com (ACM)
+                    │  HTTP  :80  │  → 301 redirect to HTTPS
                     └──┬──────┬───┘
                        │      │
-           /api/* ─────┤      ├───── /chat-stream (reserved)
-                       │      │
-              ┌────────▼┐  ┌──▼────────┐
-              │ ECS Task│  │ ECS Task  │
-              │ Django  │  │ FastAPI   │
-              │ :8000   │  │ :8001     │  (ileride)
-              │gunicorn │  └───────────┘
-              │+qcluster│
-              │(supervisr)│
-              └────┬────┘
-                   │
-              ┌────▼──────────────────┐
-              │    RDS PostgreSQL     │  (Shared)
-              │    (db.t4g.micro)     │
+           /api/* ─────┤      ├───── /chat-stream (rezerve, future FastAPI)
+                       ▼
+              ┌─────────────────┐
+              │   ECS Fargate   │  example-cluster
+              │ paceup-django-  │  paceup-django-service (1 task)
+              │ service         │  Task def: paceup-django-task:N
+              │                 │
+              │ supervisord:    │  CPU 256 / MEM 512
+              │ ├─ gunicorn x3  │  Port 8000
+              │ └─ qcluster     │  ECR: paceup-django:latest
+              └────────┬────────┘
+                       │
+              ┌────────▼──────────────┐
+              │    RDS PostgreSQL     │  example-shared-db
+              │    db.t4g.micro       │  DB: paceup
+              │    Single-AZ, 20 GB   │  Private, SG-only access
               └───────────────────────┘
 ```
 
-**Domain:** `your-domain.com` (Route53 hosted zone `example.com` altında)
-
-**Path Routing (ALB):**
-- `/api/*` → Django target group
-- `/chat-stream` → FastAPI target group (rezerve, şu an kullanılmıyor)
-
-### Maliyet Tahmini
-
-| Bileşen | Maliyet | Paylaşımlı? |
-|---------|---------|-------------|
-| ALB | ~$16/ay | Tüm app'ler |
-| RDS db.t4g.micro (20GB gp3) | ~$13/ay | Tüm app'ler |
-| ECS Task Django (256 CPU / 512 MEM Fargate) | ~$9/ay | PaceUp |
-| Route53 Hosted Zone | $0.50/ay | example |
-| Data transfer + CloudWatch logs | ~$2-3/ay | — |
-| **PaceUp toplam (şu an)** | **~$40/ay** | |
-| **+FastAPI eklendiğinde** | **+$9/ay** | |
+**Region:** `eu-central-1` (Frankfurt) — tüm kaynaklar tek region'da.
+**VPC:** Default (`vpc-09b9aae8f0278d750`, `172.31.0.0/16`), 3 AZ'li public subnet üzerinde.
 
 ---
 
-## Faz 0 — Kod Hazırlığı (Lokalde) ✅
+## Kaynak Envanteri (canlı ARN/ID'ler)
 
-> Henüz AWS'ye dokunmuyoruz, kodu production-ready yapıyoruz
+### Network & VPC
 
-- [x] **requirements.txt** — `gunicorn`, `whitenoise`, `psycopg[binary]`, `dj-database-url` eklendi
-- [x] **settings.py** — env-driven (`DJANGO_SECRET_KEY`, `DJANGO_DEBUG`, `DJANGO_ALLOWED_HOSTS`, `DATABASE_URL`, `DJANGO_CSRF_TRUSTED_ORIGINS`), whitenoise middleware + `CompressedManifestStaticFilesStorage`, prod hardening (`HSTS`, `SECURE_PROXY_SSL_HEADER`, secure cookies — `DEBUG=False` iken)
-- [x] **Dockerfile.django** — `python:3.12-slim`, supervisor + libpq, healthcheck
-- [x] **docker/supervisord.conf** — gunicorn (3 worker) + qcluster tek container'da
-- [x] **docker/entrypoint.sh** — `migrate` + `collectstatic` + `setup_periodic_tasks` → `exec supervisord`
-- [x] **docker-compose.yml** — Django + Postgres 16 (lokal dev)
-- [x] **.env.example** — tüm env var'ları dokümante edildi
-- [x] **.dockerignore** — git, venv, sqlite, docs hariç
-- [x] **Lokal test** — `docker compose up` → migrate + collectstatic + qcluster + gunicorn sağlıklı, `GET /api/` → 200, `GET /api/users/me/` → 401
+| Kaynak | ID / Değer |
+|---|---|
+| VPC | `vpc-09b9aae8f0278d750` (default, 172.31.0.0/16) |
+| Subnet eu-central-1a | `subnet-04c325948ad0e9724` (172.31.16.0/20) |
+| Subnet eu-central-1b | `subnet-0e47234170d5c2af5` (172.31.32.0/20) |
+| Subnet eu-central-1c | `subnet-018a077b03acd87c6` (172.31.0.0/20) |
 
-### Lokal çalıştırma
+### Security Groups (zincir)
 
-```bash
-docker compose up -d           # build + start (Django + Postgres)
-docker compose logs -f django  # canlı log
-docker compose down            # durdur
-docker compose down -v         # durdur + DB volume sil
 ```
+Internet ──80/443──▶ example-alb-sg
+                         │
+                         ▼ 8000
+                    paceup-django-ecs-sg
+                         │
+                         ▼ 5432
+                    example-rds-sg
+```
+
+| SG | ID | Inbound |
+|---|---|---|
+| `example-alb-sg` | `sg-08c371e662ba63b26` | 80, 443 from 0.0.0.0/0 (shared for all apps) |
+| `paceup-django-ecs-sg` | `sg-06818e3d643bfb53c` | 8000 from `example-alb-sg` |
+| `example-rds-sg` | `sg-088355a2bf0cc4c0c` | 5432 from `paceup-django-ecs-sg` (new apps eklendikçe buraya kural eklenecek) |
+
+### Compute & Container
+
+| Kaynak | Değer |
+|---|---|
+| ECS Cluster | `example-cluster` (Fargate-only, Container Insights off) |
+| ECS Service | `paceup-django-service` (desired=1, grace period=120s) |
+| Task Definition Family | `paceup-django-task` |
+| ECR Repo | `035711552622.dkr.ecr.eu-central-1.amazonaws.com/paceup-django` |
+| Image Tag | `latest` (+ her deploy `:<commit-sha>`) |
+
+**Task specs:** Launch type Fargate, OS `Linux/X86_64`, CPU 256, Memory 512, network mode awsvpc, public IP enabled, subnets: 3 AZ'deki default public subnet.
+
+### Load Balancer
+
+| Kaynak | Değer |
+|---|---|
+| ALB | `example-alb` |
+| ALB DNS | `example-alb-2037260324.eu-central-1.elb.amazonaws.com` |
+| ALB Zone ID | `Z215JYRZR1TBD5` |
+| Target Group (Django) | `paceup-django-tg` (IP type, port 8000, health path `/api/`, success code 200) |
+| Listener :80 | Redirect to HTTPS 301 |
+| Listener :443 | Forward to `paceup-django-tg` (default action, şimdilik tek app) |
+
+**Health check ayarları:** Interval 30s, timeout 5s, healthy threshold 2, unhealthy threshold 3.
+
+### DNS & Certificate
+
+| Kaynak | Değer |
+|---|---|
+| Route53 Hosted Zone | `example.com` (`Z00630773F62NNOLWVTVE`) |
+| Domain | `your-domain.com` → A-alias → `dualstack.example-alb-...` |
+| ACM Certificate | `arn:aws:acm:eu-central-1:035711552622:certificate/e505a6b9-2946-40f1-98b7-36e85516ca9f` |
+| ACM SANs | `example.com`, `*.example.com` (wildcard — tüm subdomainler bu tek sertifikayı paylaşır) |
+
+### Database
+
+| Kaynak | Değer |
+|---|---|
+| RDS Instance | `example-shared-db` |
+| Engine | PostgreSQL 16.x |
+| Class | `db.t4g.micro` (2 vCPU, 1 GB RAM) |
+| Storage | 20 GB gp3, autoscaling off |
+| Endpoint | `example-shared-db.c38aiko0w2nk.eu-central-1.rds.amazonaws.com:5432` |
+| Public access | No |
+| Multi-AZ | No (tek sunucu, dev/test tier) |
+| Master username | `postgres` |
+| Master password | Secrets Manager (`paceup/django` → `DATABASE_URL` içinde) |
+| Deletion protection | Enabled |
+| Backup retention | 7 gün |
+
+**Shared kullanım:** Tek RDS instance içinde birden çok database şeklinde kullanılıyor. PaceUp için `paceup` DB'si var. İleride başka app eklenince `CREATE DATABASE otherapp;` → yeni app'in ECS SG'sinden `example-rds-sg`'ye 5432 kuralı → aynı instance'ta çalışır.
+
+### Secrets
+
+| Secret | ARN |
+|---|---|
+| `paceup/django` | `arn:aws:secretsmanager:eu-central-1:035711552622:secret:paceup/django-ynzS8S` |
+
+**İçerik (key-value):**
+- `DJANGO_SECRET_KEY`
+- `DATABASE_URL` → `postgres://postgres:<pwd>@<rds-endpoint>:5432/paceup`
+- `AWS_STORAGE_BUCKET_NAME` → `your-s3-bucket-name`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+
+> Task definition `secrets:` bloğunda her key, `<arn>:<key>::` formatında ayrı env var olarak inject edilir. `:AWSCURRENT` versiyonu default kullanılır.
+
+### IAM Roles
+
+| Rol | Arn | Amaç |
+|---|---|---|
+| `paceup-django-exec-role` | `arn:aws:iam::035711552622:role/paceup-django-exec-role` | ECS agent — ECR pull, CloudWatch logs, Secrets Manager read |
+| `paceup-django-task-role` | `arn:aws:iam::035711552622:role/paceup-django-task-role` | Django runtime — S3 bucket RW |
+
+**Policies:**
+- `paceup-django-exec-role`:
+  - Managed: `AmazonECSTaskExecutionRolePolicy`
+  - Inline `paceup-secrets-read`: `secretsmanager:GetSecretValue` on `arn:aws:secretsmanager:eu-central-1:035711552622:secret:paceup/*`
+- `paceup-django-task-role`:
+  - Inline `paceup-s3-write`: `s3:PutObject/GetObject/DeleteObject/ListBucket` on `your-s3-bucket-name`
+
+**AWS Account global:** `AWSServiceRoleForECS` (service-linked role) — ilk ECS create denemesinde otomatik oluşur. İlk denemede bu rolü oluşturma yarışı nedeniyle create-cluster fail olabilir, tekrar denenince geçer.
+
+### CloudWatch Log Groups
+
+| Log Group | Kaynak |
+|---|---|
+| `/ecs/paceup-django-task` | ECS Fargate task stdout/stderr (gunicorn + qcluster + entrypoint) |
+
+Stream prefix: `ecs`, stream name format: `ecs/django/<task-id>`.
 
 ---
 
-## Faz 1 — AWS Altyapısı (Tek seferlik kurulum)
+## Maliyet (canlı)
 
-> Shared infra — tüm app'lerin kullanacağı temel. Region: **eu-central-1 (Frankfurt)**.
-
-### 1.1 VPC & Subnet'ler
-
-- [ ] Default VPC kullan (yeni hesapsa `172.31.0.0/16` zaten vardır)
-- [ ] 2 public subnet (AZ-a + AZ-b) → ALB bunlara bağlanır
-- [ ] 2 private subnet (AZ-a + AZ-b) → RDS + ECS task burada (ECS Fargate public IP ile de çalışabilir, maliyet için public subnet + public IP en ucuzu — NAT gateway $32/ay tutmaz)
-- **Pratik tercih:** İlk deploy için ECS task'ı **public subnet'te** + `assignPublicIp: ENABLED` ile çalıştır (NAT'dan kaçın). RDS'yi ayrı SG ile koru.
-
-### 1.2 RDS PostgreSQL
-
-- [ ] **Engine:** PostgreSQL 16.x
-- [ ] **Template:** Free tier yoksa → Dev/Test
-- [ ] **DB instance identifier:** `example-shared-db`
-- [ ] **Master username:** `postgres`
-- [ ] **Master password:** Secrets Manager'a at (random 24-char) — `example/rds/postgres-master`
-- [ ] **Instance class:** `db.t4g.micro` (~$13/ay on-demand, reserved daha da ucuz)
-- [ ] **Storage:** 20 GB gp3, autoscaling kapalı
-- [ ] **Multi-AZ:** Hayır (dev için)
-- [ ] **VPC:** Default
-- [ ] **Public access:** No
-- [ ] **VPC security group:** Yeni — `rds-postgres-sg` (inbound kuralını 1.6'da set edeceğiz)
-- [ ] **Initial database name:** `paceup`
-- [ ] **Backup retention:** 7 gün
-- [ ] **Performance Insights:** Kapalı (maliyet)
-- [ ] **Deletion protection:** Açık
-
-Oluştuktan sonra endpoint'i not al → `example-shared-db.xxxx.eu-central-1.rds.amazonaws.com:5432`
-
-### 1.3 ECR Repository
-
-- [ ] `paceup-django` repository oluştur (Private, scan on push: on, immutable tags: off başlangıçta)
-- [ ] (İleride) `paceup-fastapi` için aynı
-
-```bash
-aws ecr create-repository \
-  --repository-name paceup-django \
-  --region eu-central-1 \
-  --image-scanning-configuration scanOnPush=true
-```
-
-### 1.4 ECS Cluster
-
-- [ ] Cluster adı: `example-cluster`
-- [ ] Infrastructure: **AWS Fargate** (sadece)
-- [ ] Container Insights: Kapalı (maliyet, gerekirse sonra aç)
-
-```bash
-aws ecs create-cluster --cluster-name example-cluster --region eu-central-1
-```
-
-### 1.5 ALB + Target Groups + Listener Rules
-
-- [ ] **Application Load Balancer** oluştur
-  - Name: `example-alb`
-  - Scheme: Internet-facing
-  - IP type: IPv4
-  - VPC: default, her iki public subnet'i seç
-  - SG: Yeni `alb-sg` — inbound 80 + 443 from 0.0.0.0/0
-
-- [ ] **Target Group — Django**
-  - Name: `tg-paceup-django`
-  - Protocol: HTTP, Port: 8000
-  - Target type: **IP** (Fargate için zorunlu)
-  - VPC: default
-  - Health check path: `/api/`
-  - Healthy threshold: 2, interval: 30s
-  - Deregistration delay: 30 sn
-
-- [ ] **(İleride) Target Group — FastAPI**
-  - Name: `tg-paceup-fastapi`, Port: 8001, Health check: `/health`
-
-- [ ] **Listener :80** → redirect to HTTPS :443
-- [ ] **Listener :443**
-  - Default action: return fixed response `404 Not Found`
-  - Rule 1: Host header `your-domain.com` AND Path `/api/*` → forward to `tg-paceup-django`
-  - Rule 2 (rezerve): Host `your-domain.com` AND Path `/chat-stream` → forward to `tg-paceup-fastapi`
-
-### 1.6 Security Groups Zinciri
-
-| SG | Inbound | Amaç |
-|----|---------|------|
-| `alb-sg` | 80, 443 from 0.0.0.0/0 | ALB public |
-| `ecs-tasks-sg` | 8000 from `alb-sg` | ECS sadece ALB'den trafik alır |
-| `rds-postgres-sg` | 5432 from `ecs-tasks-sg` | RDS sadece ECS'den trafik alır |
-
-RDS SG'yi 1.2'de oluşturduktan sonra inbound rule'u buraya göre set et.
-
-### 1.7 ACM SSL Sertifikası
-
-- [ ] **eu-central-1'de** (ALB'nin olduğu region — CloudFront değil!) ACM'de sertifika iste
-  - Domain: `your-domain.com`
-  - Validation: DNS
-- [ ] Route53'te otomatik CNAME ekle butonuna tıkla
-- [ ] "Issued" duruma gelince ALB listener :443 → certificate olarak seç
-
-### 1.8 Route53 DNS
-
-- [ ] Hosted zone `example.com` içinde **A record** (alias) oluştur
-  - Name: `paceup`
-  - Type: A (alias)
-  - Alias target: `example-alb-xxxxx.eu-central-1.elb.amazonaws.com`
-
-### 1.9 Secrets Manager
-
-Django env var'larını plaintext yerine Secrets Manager'da tutuyoruz — ECS task definition `secrets` olarak inject eder.
-
-- [ ] Secret: `paceup/django` (key-value)
-  ```json
-  {
-    "DJANGO_SECRET_KEY": "<openssl rand -hex 50>",
-    "DATABASE_URL": "postgres://postgres:<master-pass>@example-shared-db.xxxx.eu-central-1.rds.amazonaws.com:5432/paceup",
-    "AWS_STORAGE_BUCKET_NAME": "your-s3-bucket-name",
-    "GOOGLE_CLIENT_ID": "...",
-    "GOOGLE_CLIENT_SECRET": "..."
-  }
-  ```
-
-> `AWS_ACCESS_KEY_ID`/`SECRET` artık gerekmez — ECS task role'ü S3 yazma izni alır (1.10).
-
-### 1.10 IAM Roles
-
-- [ ] **`ecsTaskExecutionRole`** — AWS managed `AmazonECSTaskExecutionRolePolicy` + Secrets Manager read için ek inline policy:
-  ```json
-  {
-    "Effect": "Allow",
-    "Action": ["secretsmanager:GetSecretValue"],
-    "Resource": "arn:aws:secretsmanager:eu-central-1:<acct>:secret:paceup/*"
-  }
-  ```
-
-- [ ] **`paceup-django-task-role`** — Django app runtime permission'ı (S3 upload için)
-  ```json
-  {
-    "Effect": "Allow",
-    "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
-    "Resource": "arn:aws:s3:::your-s3-bucket-name/*"
-  }
-  ```
+| Bileşen | Tahmini | Shared? |
+|---|---|---|
+| ALB | ~$16/ay | Tüm app'ler (shared) |
+| RDS `db.t4g.micro` 20GB gp3 | ~$16.61/ay (DB $13.87 + storage $2.74) | Tüm app'ler (shared) |
+| ECS Fargate task (256 CPU / 512 MEM, 7/24) | ~$9/ay | PaceUp'a özel |
+| Route53 Hosted Zone | $0.50/ay | Shared |
+| CloudWatch Logs + data transfer | ~$2-3/ay | Değişken |
+| **Toplam** | **~$44/ay** | |
+| +Her yeni app (sadece task) | **+$9/ay** | — |
 
 ---
 
-## Faz 2 — İlk Deploy
+## Repo Yapısı (deploy ile ilgili dosyalar)
 
-### 2.1 Docker image build & ECR push
+```
+paceup-backend/
+├── Dockerfile.django          # multi-stage build, python:3.12-slim, supervisor + libpq
+├── docker-compose.yml         # lokal: Django + Postgres 16 + healthcheck
+├── .dockerignore
+├── .env.example               # tüm env var'ların şablonu
+├── docker/
+│   ├── supervisord.conf       # gunicorn (3 worker) + qcluster tek root conf
+│   └── entrypoint.sh          # migrate + collectstatic + setup_periodic_tasks → exec supervisord
+├── .github/workflows/
+│   └── deploy.yml             # master push → build linux/amd64 → ECR → force-new-deployment
+└── paceupbackend/settings.py  # env-driven config, whitenoise, prod hardening
+```
+
+### Önemli ayrıntılar
+
+**`settings.py`:**
+- `SECRET_KEY = os.environ['DJANGO_SECRET_KEY']` — fallback yok; env yoksa Django açılışta patlar (güvenlik kararı)
+- `DATABASE_URL` varsa `dj-database-url` ile parse, yoksa SQLite fallback (lokal dev kolaylığı)
+- `whitenoise.middleware.WhiteNoiseMiddleware` + `CompressedManifestStaticFilesStorage` — admin static'lerini `collectstatic` sonrası gunicorn serve eder
+- `DEBUG=False` iken: HSTS 1 yıl, `SECURE_PROXY_SSL_HEADER=X-Forwarded-Proto`, cookie secure flags
+
+**`Dockerfile.django`:**
+- Base: `python:3.12-slim`
+- System deps: `build-essential`, `libpq-dev`, `supervisor`, `curl` (healthcheck)
+- `pip install -r requirements.txt` → gunicorn, whitenoise, psycopg[binary], dj-database-url dahil
+- HEALTHCHECK: `curl -fsS http://localhost:8000/api/` (container-local, ALB health check'ten bağımsız)
+- ENTRYPOINT: `/entrypoint.sh` → CMD: `supervisord`
+
+**`docker/supervisord.conf`:**
+- Root config, `nodaemon=true`, PID 1 olarak çalışır
+- 2 program: `gunicorn` (3 sync worker, 60s timeout) + `qcluster`
+- Her ikisi `autorestart=true`, `startsecs=5`, `stopsignal=TERM`
+- stdout/stderr → `/dev/stdout` `/dev/stderr` (CloudWatch'a akar)
+
+**`docker/entrypoint.sh`:**
+```
+1. python manage.py migrate --noinput
+2. python manage.py collectstatic --noinput
+3. python manage.py setup_periodic_tasks || echo "skipped"
+4. exec "$@"  (→ supervisord)
+```
+
+> `migrate` her task start'ında çalışıyor. Django advisory lock sayesinde birden fazla task aynı anda çalışsa bile güvenli (deadlock ve race yok).
+
+**`.github/workflows/deploy.yml`:**
+- Trigger: `push` to `master` (path filter: `apps/**`, `paceupbackend/**`, `docker/**`, `Dockerfile.django`, `requirements.txt`, workflow dosyasının kendisi) + `workflow_dispatch`
+- Steps:
+  1. Checkout
+  2. AWS credentials (`AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` GitHub Secrets'tan)
+  3. ECR login
+  4. `docker buildx build --platform linux/amd64 -t $REGISTRY/paceup-django:$SHA -t ...:latest --push .`
+  5. `aws ecs update-service --force-new-deployment`
+  6. `aws ecs wait services-stable` (deployment healthy olmadan job yeşil olmaz)
+- Concurrency group: `deploy-django` (aynı anda 2 deploy çakışmasın)
+
+---
+
+## Günlük Operasyon
+
+### Canlıya deploy
+
+`master`'a push yet — workflow her şeyi otomatik yapar. İlerlemeyi GitHub → repo → Actions tab'ından izleyebilirsin.
+
+### Manuel deploy (acil durum)
 
 ```bash
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION=eu-central-1
-REPO=paceup-django
+aws ecr get-login-password --profile paceup --region eu-central-1 | \
+  docker login --username AWS --password-stdin 035711552622.dkr.ecr.eu-central-1.amazonaws.com
 
-# ECR login
-aws ecr get-login-password --region $REGION | \
-  docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com
-
-# Build (x86_64 hedefi — Fargate ucuz tarife için)
-docker buildx build \
-  --platform linux/amd64 \
-  -f Dockerfile.django \
-  -t $AWS_ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPO:latest \
+docker buildx build --platform linux/amd64 -f Dockerfile.django \
+  -t 035711552622.dkr.ecr.eu-central-1.amazonaws.com/paceup-django:latest \
   --push .
+
+aws ecs update-service --profile paceup \
+  --cluster example-cluster \
+  --service paceup-django-service \
+  --force-new-deployment
+
+aws ecs wait services-stable --profile paceup \
+  --cluster example-cluster \
+  --services paceup-django-service
 ```
 
-> **Önemli:** Mac M-series üzerindeyiz, `--platform linux/amd64` **zorunlu**. Aksi halde ECS task `exec format error` ile patlar.
+### Log izleme
 
-### 2.2 ECS Task Definition — Django
+```bash
+# Son 50 log satırı (en yeni task)
+TASK=$(aws ecs list-tasks --profile paceup --cluster example-cluster \
+  --service-name paceup-django-service --query 'taskArns[0]' --output text | awk -F/ '{print $NF}')
 
-`ecs/task-definition.django.json` dosyası (repo'da versiyonlanır):
-
-```json
-{
-  "family": "paceup-django",
-  "networkMode": "awsvpc",
-  "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
-  "executionRoleArn": "arn:aws:iam::<ACCT>:role/ecsTaskExecutionRole",
-  "taskRoleArn": "arn:aws:iam::<ACCT>:role/paceup-django-task-role",
-  "containerDefinitions": [
-    {
-      "name": "django",
-      "image": "<ACCT>.dkr.ecr.eu-central-1.amazonaws.com/paceup-django:latest",
-      "essential": true,
-      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
-      "environment": [
-        { "name": "DJANGO_DEBUG", "value": "False" },
-        { "name": "DJANGO_ALLOWED_HOSTS", "value": "your-domain.com" },
-        { "name": "DJANGO_CSRF_TRUSTED_ORIGINS", "value": "https://your-domain.com" },
-        { "name": "AWS_DEFAULT_REGION", "value": "eu-central-1" }
-      ],
-      "secrets": [
-        { "name": "DJANGO_SECRET_KEY", "valueFrom": "arn:aws:secretsmanager:eu-central-1:<ACCT>:secret:paceup/django:DJANGO_SECRET_KEY::" },
-        { "name": "DATABASE_URL", "valueFrom": "arn:aws:secretsmanager:eu-central-1:<ACCT>:secret:paceup/django:DATABASE_URL::" },
-        { "name": "AWS_STORAGE_BUCKET_NAME", "valueFrom": "arn:aws:secretsmanager:eu-central-1:<ACCT>:secret:paceup/django:AWS_STORAGE_BUCKET_NAME::" },
-        { "name": "GOOGLE_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:eu-central-1:<ACCT>:secret:paceup/django:GOOGLE_CLIENT_ID::" },
-        { "name": "GOOGLE_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:<ACCT>:secret:paceup/django:GOOGLE_CLIENT_SECRET::" }
-      ],
-      "logConfiguration": {
-        "logDriver": "awslogs",
-        "options": {
-          "awslogs-group": "/ecs/paceup-django",
-          "awslogs-region": "eu-central-1",
-          "awslogs-stream-prefix": "ecs",
-          "awslogs-create-group": "true"
-        }
-      }
-    }
-  ]
-}
+aws logs get-log-events --profile paceup \
+  --log-group-name /ecs/paceup-django-task \
+  --log-stream-name "ecs/django/$TASK" \
+  --limit 50 --query 'events[].message' --output text | tr '\t' '\n'
 ```
 
-- [ ] `<ACCT>` değerlerini gerçek account ID ile değiştir
-- [ ] Register:
-  ```bash
-  aws ecs register-task-definition \
-    --cli-input-json file://ecs/task-definition.django.json \
-    --region eu-central-1
-  ```
+### Service & target health snapshot
 
-### 2.3 ECS Service
+```bash
+aws ecs describe-services --profile paceup \
+  --cluster example-cluster --services paceup-django-service \
+  --query 'services[0].[desiredCount,runningCount,deployments[0].[rolloutState,taskDefinition]]'
 
-- [ ] Service oluştur (ilk kez):
-  ```bash
-  aws ecs create-service \
-    --cluster example-cluster \
-    --service-name paceup-django-service \
-    --task-definition paceup-django \
-    --desired-count 1 \
-    --launch-type FARGATE \
-    --network-configuration "awsvpcConfiguration={subnets=[subnet-xxx,subnet-yyy],securityGroups=[sg-ecs-tasks],assignPublicIp=ENABLED}" \
-    --load-balancers "targetGroupArn=arn:aws:elasticloadbalancing:...:targetgroup/tg-paceup-django/xxx,containerName=django,containerPort=8000" \
-    --health-check-grace-period-seconds 60 \
-    --region eu-central-1
-  ```
+TG_ARN=$(aws elbv2 describe-target-groups --profile paceup \
+  --names paceup-django-tg --query 'TargetGroups[0].TargetGroupArn' --output text)
+aws elbv2 describe-target-health --profile paceup --target-group-arn $TG_ARN \
+  --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]'
+```
 
-### 2.4 Migrations (ilk açılışta)
+### Smoke test
 
-`entrypoint.sh` her container start'ında `migrate` çalıştırdığı için **ayrı bir migration task'ına gerek yok** — ilk task ayağa kalkarken tablolar oluşur.
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://your-domain.com/api/           # → 200
+curl -s -o /dev/null -w "%{http_code}\n" https://your-domain.com/api/users/me/  # → 401
+curl -s -o /dev/null -w "%{http_code}\n" http://your-domain.com/api/            # → 301 (HTTPS redirect)
+```
 
-> Eğer production'da data-sensitive migration (örn. `RunPython`) çalıştıracaksan, o zaman `aws ecs run-task` ile one-off task tercih edilebilir.
+### Secret değerini güncelleme
 
-### 2.5 Smoke Test
+```bash
+# Mevcut değeri göster
+aws secretsmanager get-secret-value --profile paceup --secret-id paceup/django \
+  --query SecretString --output text | jq
 
-- [ ] `https://your-domain.com/api/` → `200 OK`
-- [ ] `https://your-domain.com/api/users/me/` → `401 Unauthorized` (JWT yok)
-- [ ] CloudWatch log group `/ecs/paceup-django` → gunicorn + qcluster çıktıları
-- [ ] RDS metrics → CPU düşük, connection sayısı makul
-- [ ] İlk superuser: bir kere manual exec ile
-  ```bash
-  aws ecs execute-command \
-    --cluster example-cluster \
-    --task <task-id> \
-    --container django \
-    --interactive \
-    --command "python manage.py createsuperuser"
-  ```
-  > **Not:** Bu komutun çalışması için task definition'da `enableExecuteCommand: true` gerekli + task role'de SSM permission. İstersen admin'e girmeden önce ekleriz.
+# Belirli bir key'i güncelle (ör. DATABASE_URL)
+aws secretsmanager put-secret-value --profile paceup --secret-id paceup/django \
+  --secret-string '{"DJANGO_SECRET_KEY":"...","DATABASE_URL":"...","AWS_STORAGE_BUCKET_NAME":"...","GOOGLE_CLIENT_ID":"...","GOOGLE_CLIENT_SECRET":"..."}'
+
+# Sonra service'i yeniden başlat ki yeni secret'lar task'a push olsun:
+aws ecs update-service --profile paceup --cluster example-cluster \
+  --service paceup-django-service --force-new-deployment
+```
+
+> Secret update tek başına task'ları etkilemez — ECS sadece task **start** anında secret'ları okur. `--force-new-deployment` şart.
+
+### DB'ye psql ile bağlanma (bastion olmadan)
+
+RDS private olduğu için lokalden direkt bağlanamazsın. İki seçenek:
+1. **ECS Exec:** Task definition'ı `enableExecuteCommand=true` ile güncelle + task role'e `ssmmessages:*` permission ekle, sonra `aws ecs execute-command` ile container'a shell'den psql.
+2. **SSH tunnel bastion:** Ayrı bir ucuz EC2 t4g.nano, RDS SG'sine ekle, `ssh -L 5432:<rds-endpoint>:5432 bastion` tunneli aç. Ucuz ama ayrı kaynak.
+
+İkisi de şu an kurulu **değil**. DB'ye acil bağlanman gerekirse önce bu altyapıyı kurmamız lazım.
+
+### Rollback
+
+```bash
+# Mevcut revizyonları listele
+aws ecs list-task-definitions --profile paceup --family-prefix paceup-django-task
+
+# Önceki revizyona dön
+aws ecs update-service --profile paceup --cluster example-cluster \
+  --service paceup-django-service \
+  --task-definition paceup-django-task:<N-1>
+```
+
+Her workflow run yeni bir image push eder (`:latest` + `:<sha>`) ama task definition revision aynı kalır — çünkü revision içinde image tag `:latest`. Rollback için ya task definition içinde `:<old-sha>` ile yeni revizyon kaydetmen ya da eski revizyona dönmen gerekir. Acil durumda CLI'den:
+
+```bash
+# Yeni revizyon, eski SHA ile
+aws ecs describe-task-definition ... > td.json
+# ... image'ı :<old-sha> ile değiştir ...
+aws ecs register-task-definition --cli-input-json file://td.json
+aws ecs update-service --task-definition paceup-django-task:<new-N>
+```
 
 ---
 
-## Faz 3 — CI/CD (GitHub Actions)
+## Troubleshooting — Oturum Boyu Yaşadıklarımız
 
-> `git push master` → otomatik build + ECS rolling update
+Bu bölüm **kurulum sırasında gerçekten karşılaştığımız** sorunları ve çözümlerini içerir. Aynı hatayla karşılaşırsan önce buraya bak.
 
-Workflow dosyası: `.github/workflows/deploy.yml`
+### 1. `CreateCluster Invalid Request: Unable to assume the service linked role`
 
-```yaml
-name: Deploy Django to ECS
+**Ne zaman:** İlk kez ECS cluster oluşturmak istediğinde.
 
-on:
-  push:
-    branches: [master]
-    paths:
-      - "apps/**"
-      - "paceupbackend/**"
-      - "docker/**"
-      - "Dockerfile.django"
-      - "requirements.txt"
-      - ".github/workflows/deploy.yml"
+**Sebep:** AWS hesabında daha önce hiç ECS kullanılmadıysa `AWSServiceRoleForECS` service-linked role'ü yok. AWS normalde ilk `CreateCluster` isteğinde otomatik oluşturur ama bir race condition nedeniyle ilk istek fail olabilir — role yaratılır ama cluster create başarısız döner.
 
-env:
-  AWS_REGION: eu-central-1
-  ECR_REPO: paceup-django
-  ECS_CLUSTER: example-cluster
-  ECS_SERVICE: paceup-django-service
+**Çözüm:**
+1. Durumu doğrula:
+   ```bash
+   aws iam get-role --profile paceup --role-name AWSServiceRoleForECS
+   ```
+   Eğer bu role varsa (ilk denemen oluşturmuş), tekrar dene — CLI ile:
+   ```bash
+   aws ecs create-cluster --profile paceup --cluster-name example-cluster \
+     --settings name=containerInsights,value=disabled
+   ```
+2. Eğer rol yoksa manuel oluştur:
+   ```bash
+   aws iam create-service-linked-role --profile paceup --aws-service-name ecs.amazonaws.com
+   ```
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+### 2. Task sürekli `STOPPED` — RDS password authentication failed
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
+**Ne zaman:** ECS task ilk kalkıyor ama entrypoint `migrate` aşamasında patlıyor.
 
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: ecr
-
-      - name: Build & push image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          TAG: ${{ github.sha }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -f Dockerfile.django \
-            -t $REGISTRY/$ECR_REPO:$TAG \
-            -t $REGISTRY/$ECR_REPO:latest \
-            --push .
-
-      - name: Force ECS rolling deployment
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION
-
-      - name: Wait for service stability
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
+**CloudWatch log:**
+```
+psycopg.OperationalError: connection failed: ... FATAL: password authentication failed for user "postgres"
 ```
 
-### GitHub Secrets
+**Sebep:** Secrets Manager'daki `DATABASE_URL` içinde **RDS master password'ü yanlış**. Bizim durumda Secrets Manager'a password hiç yazılmamıştı (secret create edilirken alan boş bırakılmış).
 
-| Secret | Açıklama |
-|--------|----------|
-| `AWS_ACCESS_KEY_ID` | IAM user (programmatic, sadece ECR push + ecs:UpdateService) |
-| `AWS_SECRET_ACCESS_KEY` | IAM user secret |
+**Çözüm:**
+1. RDS'deki master password'ü hatırlıyorsan direkt Secrets Manager'a yaz.
+2. Hatırlamıyorsan RDS instance'ı güncelleyip password reset et:
+   ```bash
+   aws rds modify-db-instance --profile paceup \
+     --db-instance-identifier example-shared-db \
+     --master-user-password '<yeni-güçlü-password>' \
+     --apply-immediately
+   ```
+3. Secrets Manager'da `DATABASE_URL`'i güncelle (yukarıdaki `put-secret-value` komutu).
+4. `force-new-deployment` ile task'ı yeniden başlat.
 
-**Daha güvenli (sonraki iterasyon):** IAM user yerine **GitHub OIDC** — AWS IAM'de `GitHubActionsOIDCRole` oluştur, secret'a gerek kalmaz.
+> **Password karakter seçimi:** URL-safe harf+rakam kullan. `@`, `:`, `/`, `?`, `#` gibi özel karakterler DATABASE_URL string'ini bozar, URL-encode gerekir. Pratik: 24 karakter alfanümerik.
 
-### Gelecek iyileştirmeler
+### 3. Target group health check fail: `Target.ResponseCodeMismatch` (400)
 
-- [ ] Staging/prod ayrımı (`develop` → staging, `master` → prod)
-- [ ] Migration adımı — deploy öncesi one-off task (sadece destructive migration'lar için)
-- [ ] Slack bildirimi (deploy success/fail)
-- [ ] FastAPI service eklendiğinde ikinci job
+**Ne zaman:** Django container ayakta, gunicorn dinliyor ama ALB target `unhealthy` diyor, log'da `ResponseCodeMismatch` veya `Target.Timeout`.
+
+**Sebep:** ALB health check `/api/` istekte `Host` header olarak container'ın internal IP'sini kullanıyor (ör. `172.31.12.49`). Django `ALLOWED_HOSTS=your-domain.com` olarak ayarlıysa bu host'u tanımaz, **400 Bad Request** döner.
+
+**Çözüm:** Task definition'da `DJANGO_ALLOWED_HOSTS`'a wildcard da ekle:
+```
+DJANGO_ALLOWED_HOSTS=your-domain.com,*
+```
+
+> `*` eklemek public güvenlik riski gibi görünür ama ALB listener rule'ları zaten sadece `your-domain.com` host'unu forward ediyor — dış dünya başka bir host ile bu task'a ulaşamaz. Sadece internal health check Host header'ı için gerekiyor.
+
+**Alternatif:** Custom middleware ile IP health check path'ini whitelist'e almak, ama bu `*` ile kıyasla çok daha karmaşık.
+
+### 4. Task çöküyor — `healthCheckGracePeriodSeconds=0`
+
+**Ne zaman:** Task başlatılıyor, Django düzgün bootluyor, ama ALB `Target.Timeout` diyor ve task ~60-90 saniye sonra durduruluyor. Sonsuz crash loop.
+
+**Sebep:** ECS Service'in `healthCheckGracePeriodSeconds=0` (default) ise, ALB health check task kalkar kalkmaz başlar. Bizim entrypoint ~25-40 saniyede migrate + collectstatic + gunicorn boot yapıyor. Bu sürede ALB `/api/`'ye istek atar ama port 8000 henüz dinlemiyor veya Django henüz hazır değil → timeout. Unhealthy threshold 3 × interval 30s içinde dolar, task "unhealthy" sayılır ve ECS task'ı durdurur.
+
+**Çözüm:** Service'e 120 saniye grace period ver:
+```bash
+aws ecs update-service --profile paceup \
+  --cluster example-cluster \
+  --service paceup-django-service \
+  --health-check-grace-period-seconds 120
+```
+
+Grace period sırasında ALB health check cevapları göz ardı edilir, task `RUNNING` kabul edilir. Bu süre içinde Django boot tamamlanır, sonraki check'ler gerçek.
+
+> Bizim setup için 120 saniye güvenli bir üst limit. Startup süresi 25-40 saniye arası, 3x marj var.
+
+### 5. ECS deployment stuck — task spawning başlamıyor
+
+**Ne zaman:** `force-new-deployment` çektin ama `pendingCount=0, runningCount=0` olarak takılı kaldı, yeni task başlatmıyor.
+
+**Sebep:** Circuit breaker (deployment failure detection) devreye girdiği birkaç fail'den sonra "bu deployment kaç kere çuvalladıysa yeterince, duruyorum" deyip yeni task spawn'ı geciktiriyor. Normalde rollback yapar ama rollback edecek healthy revision yoksa stuck kalır.
+
+**Çözüm:** Service'i 0'a düşür, sonra 1'e çıkar — internal state reset olur:
+```bash
+aws ecs update-service --profile paceup \
+  --cluster example-cluster --service paceup-django-service --desired-count 0
+
+aws ecs update-service --profile paceup \
+  --cluster example-cluster --service paceup-django-service \
+  --desired-count 1 --force-new-deployment
+```
+
+### 6. Task definition secrets yanlış yerde (console tuzağı)
+
+**Ne zaman:** Console'da task definition oluştururken "Environment variables" bölümünde secret ARN'ını value olarak girdin, container şimdi `GOOGLE_CLIENT_ID=arn:aws:secretsmanager:...` (literal string) görüyor.
+
+**Sebep:** Console UI'da "Environment variables" ve "Secrets" ayrı alt-bölümler. Her ikisi de "Add environment variable" butonu gösteriyor ama farklı. Env var'ların altında "Value type: Value/ValueFrom" dropdown'u var; "ValueFrom" seçeceksin veya doğrudan "Secrets" bölümünü kullanacaksın. Eğer yanlış bölüme yazdıysan container'da secret string literal olarak gelir.
+
+**Çözüm:** CLI ile task definition'ı düzeltip yeni revizyon register et:
+```bash
+aws ecs describe-task-definition --profile paceup --task-definition paceup-django-task \
+  --query taskDefinition > /tmp/td.json
+
+# JSON'u düzenle — SECRET_KEYS'i environment'tan silip secrets'a taşı:
+python3 <<'PY'
+import json
+with open('/tmp/td.json') as f: td = json.load(f)
+for k in ['taskDefinitionArn','revision','status','requiresAttributes','compatibilities','registeredAt','registeredBy','enableFaultInjection']:
+    td.pop(k, None)
+cd = td['containerDefinitions'][0]
+SECRET_KEYS = {'GOOGLE_CLIENT_ID','GOOGLE_CLIENT_SECRET','AWS_STORAGE_BUCKET_NAME'}
+PREFIX = 'arn:aws:secretsmanager:eu-central-1:035711552622:secret:paceup/django-ynzS8S:'
+cd['environment'] = [e for e in cd['environment'] if e['name'] not in SECRET_KEYS]
+existing = {s['name'] for s in cd.get('secrets',[])}
+for name in SECRET_KEYS:
+    if name not in existing:
+        cd['secrets'].append({'name':name,'valueFrom':f'{PREFIX}{name}::'})
+with open('/tmp/td.json','w') as f: json.dump(td,f,indent=2)
+PY
+
+aws ecs register-task-definition --profile paceup --cli-input-json file:///tmp/td.json
+```
+
+### 7. Container başlıyor ama CPU mimarisi uyumsuz — `exec format error`
+
+**Ne zaman:** Mac M-series'te `docker build` yaptın, ECR'ye push ettin, ECS task kalkmıyor, log'da `exec format error`.
+
+**Sebep:** Default build `linux/arm64`, Fargate task definition'ında `Linux/X86_64` seçtiysen image uyumsuz.
+
+**Çözüm:** Her build'de `--platform linux/amd64` zorunlu:
+```bash
+docker buildx build --platform linux/amd64 -f Dockerfile.django \
+  -t <registry>/paceup-django:latest --push .
+```
+
+GitHub Actions workflow'unda bu zaten ayarlandı. Lokalde manuel build yaparken unutma.
 
 ---
 
-## Troubleshooting
+## Gelecek İyileştirmeler
 
-- **Task sürekli `STOPPED`:** CloudWatch logs'a bak. Sebepler genelde: env var eksik, RDS'ye bağlanamıyor (SG), image mimari uyumsuz (`--platform linux/amd64` unutuldu).
-- **ALB health check fail:** Target group health path `/api/` olmalı, `/` değil. Django root'ta URL yok.
-- **`collectstatic` yavaş:** Build zamanında çalıştırmak isterseniz `Dockerfile.django`'ya `RUN python manage.py collectstatic --noinput` ekleyebilirsiniz (env var'lar build'de yoksa dummy'lerle çalıştırmak gerek). Şu an runtime'da (`entrypoint.sh`'de).
-- **qcluster bellek şişirmesi:** `recycle: 500` zaten set, worker'lar 500 task sonrası yeniden doğuyor.
+### Yakın vadede (gerektiğinde)
+
+- [ ] **ECS Exec** — `enableExecuteCommand=true` + SSM permission → Django container'a shell ile bağlanıp `manage.py createsuperuser`, `shell_plus` vs. çalıştırabilmek
+- [ ] **RDS'ye bastion** — küçük bir EC2 nano ile SSH tunnel, veya ECS Exec üzerinden psql
+- [ ] **GitHub Actions OIDC** — IAM user yerine OIDC trust (access key rotasyonu derdi bitsin)
+- [ ] **Secret scanning** — GitHub repo settings → "Secret scanning" enabled (public repo için bonus)
+
+### Orta vadede (app büyüyünce)
+
+- [ ] **FastAPI (chatbot) service** — `paceup-chatbot-*` isimlendirmesi, ALB'ye `/chat-stream` listener rule, aynı cluster ve shared RDS
+- [ ] **RDS sizing** — PaceUp kullanıcı sayısı artınca `db.t4g.small` ($27/ay)
+- [ ] **ECS autoscaling** — CPU %70 üstü olunca ekstra task spawn
+- [ ] **Multi-AZ RDS** — failover + SLA, +$13/ay
+- [ ] **CloudWatch Alarms + SNS** — service unhealthy olunca email/Slack
+- [ ] **Database migration job** — destructive migration'lar için one-off ECS task (şu an her task start'ında migrate çalışıyor, büyük migration'lar için riskli)
+
+### Uzak vadede (multi-app olgunlaşınca)
+
+- [ ] **Per-app environment (staging/prod)** — cluster veya tag bazlı ayrım
+- [ ] **Infrastructure as Code** — Terraform veya AWS CDK ile mevcut kurulumu kod'a al
+- [ ] **Container Insights** — metric + trace collection (maliyet ~$5/ay ekler, observability değerli olursa)

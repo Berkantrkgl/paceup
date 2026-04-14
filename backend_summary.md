@@ -494,14 +494,19 @@ Bu sayede backend'in secret yönetimi minimal kalır — sadece `.env`'de `EXPO_
 
 **Workout Filtering:** `?only_active=true` (aktif program), `?start_date=` ve `?end_date=` query parametreleri desteklenir.
 
-**Database:** SQLite3 (development). Production için PostgreSQL önerilir. Django-Q2 ORM broker aynı DB'yi task queue broker olarak kullanır — ayrı Redis/RabbitMQ gerekmez.
+**Database:** PostgreSQL 16 (hem lokalde docker compose içinde, hem canlıda AWS RDS `example-shared-db`). Lokalde `DATABASE_URL` yoksa SQLite fallback'i var, sadece lightweight test için. Django-Q2 ORM broker aynı DB'yi task queue broker olarak kullanır — ayrı Redis/RabbitMQ gerekmez.
 
-**Storage:** AWS S3 (`your-s3-bucket-name`, eu-central-1) — profil fotoğrafları için. `custom_storages.MediaStorage` kullanılır.
+**Storage:** AWS S3 (`your-s3-bucket-name`, eu-central-1) — profil fotoğrafları için. `custom_storages.MediaStorage` kullanılır. Canlıda erişim IAM task role (`paceup-django-task-role`) üzerinden; lokalde `.env`'deki access key ile.
 
 **Task Queue Worker:** `python manage.py qcluster` 7/24 çalışır. Production'da Django container'ında Supervisor ile `gunicorn` yanında ikinci process olarak çalışır — ayrı ECS task gerekmez.
 
-**Dependencies:** `requirements.txt` root'ta tutulur. Kritik paketler: `django`, `djangorestframework`, `djangorestframework-simplejwt`, `google-auth`, `boto3`, `django-storages`, `django-q2`, `exponent-server-sdk`, `croniter`, `python-dotenv`.
+**Dependencies:** `requirements.txt` root'ta tutulur. Kritik paketler: `django`, `djangorestframework`, `djangorestframework-simplejwt`, `google-auth`, `boto3`, `django-storages`, `django-q2`, `exponent-server-sdk`, `croniter`, `python-dotenv`, `gunicorn`, `whitenoise`, `psycopg[binary]`, `dj-database-url`.
 
-**Environment Variables (`.env`):** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — tüm secret'lar `.env`'de tutulur, `.gitignore`'da.
+**Environment Variables:**
+- **Lokal dev (`.env`):** `DJANGO_SECRET_KEY`, `DATABASE_URL` (opsiyonel, yoksa SQLite), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — `.gitignore`'da, commit edilmez. Şablon: `.env.example`.
+- **Production (AWS Secrets Manager `paceup/django`):** `DJANGO_SECRET_KEY`, `DATABASE_URL`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. ECS task definition bunları her task start'ında env var olarak inject eder. AWS keyleri **yok** — S3 erişimi task role üzerinden.
+- **Plaintext env (task definition'da):** `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=your-domain.com,*`, `DJANGO_CSRF_TRUSTED_ORIGINS=https://your-domain.com`, `AWS_DEFAULT_REGION=eu-central-1`.
+
+**Deployment:** Kapsamlı runbook → [`deployment_steps.md`](deployment_steps.md). Canlı URL: `https://your-domain.com/api/`. `master` branch'e push → GitHub Actions otomatik build + ECR push + ECS rolling deployment.
 
 ---
