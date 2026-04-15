@@ -12,7 +12,6 @@ export default function ProtectedLayout() {
     }
 
     if (!authState.isLoggedIn) {
-        console.log(authState.isLoggedIn);
         return <Redirect href={"/login"} />;
     }
 

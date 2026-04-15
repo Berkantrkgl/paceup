@@ -381,14 +381,13 @@ const ProfileScreen = () => {
         delete next[key];
         return next;
       });
-    } catch (e) {
+    } catch {
       // Hata olursa geri al
       setToggleOverrides((prev) => {
         const next = { ...prev };
         delete next[key];
         return next;
       });
-      console.log(e);
     }
   };
 
@@ -925,24 +924,10 @@ const ProfileScreen = () => {
             }
           />
           <ToggleRow
-            label="Haftalık Rapor"
-            value={getToggleValue("notification_weekly_report")}
-            onValueChange={(v: boolean) =>
-              toggleSwitch("notification_weekly_report", v)
-            }
-          />
-          <ToggleRow
             label="Başarı Rozetleri"
             value={getToggleValue("notification_achievements")}
             onValueChange={(v: boolean) =>
               toggleSwitch("notification_achievements", v)
-            }
-          />
-          <ToggleRow
-            label="Plan Güncellemeleri"
-            value={getToggleValue("notification_plan_updates")}
-            onValueChange={(v: boolean) =>
-              toggleSwitch("notification_plan_updates", v)
             }
             isLast
           />

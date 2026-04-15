@@ -489,7 +489,22 @@ Backend üç tip bildirim gönderir (frontend sadece alır, gösterir):
 | Workout Reminder     | Backend cron task (bir gün önceden)      | `{ type, workout_id, date }` |
 | Weekly Report / Plan Update | (Henüz backend'de implement edilmedi) | —                            |
 
-`data` payload'ı ileride deep link handler için kullanılacak — `_layout.tsx`'te `Notifications.addNotificationResponseReceivedListener` ile `type` ve id'ye göre `router.push` yapılacak (workout reminder → workout-detail, achievement → profile). Şu an handler yok, bildirime tıklayınca app sadece ana ekrana açılır.
+### Deep Link Handler
+
+`src/utils/notifications.ts` içindeki `setupNotificationResponseListener(isLoggedIn)` `_layout.tsx`'te `isReady` olduktan sonra kurulur. İki case'i birden kapsar:
+
+- **Warm-start:** `addNotificationResponseReceivedListener` — app foreground veya background'dayken bildirime tıklama
+- **Cold-start:** `getLastNotificationResponseAsync` — app kapalıyken bildirime tıklanmışsa, mount sonrası 300ms gecikmeyle router'a yönlendirme yapar (router'ın ilk frame'de henüz hazır olmaması için)
+
+Yönlendirme kuralları (`routeFromNotificationData`):
+
+| `data.type` | Yönlendirme | Sebep |
+|---|---|---|
+| `workout_reminder` | `/(protected)/(tabs)/calendar` | `workout-detail` modal presentation olduğu için deep link'te modal dismiss edilemediği sorun çıkıyordu. Kullanıcı calendar'a inip antrenmanı oradan açar |
+| `achievement` | `/(protected)/(tabs)/(home)/progress` | Rozet detay ekranı yok, en yakın ekran istatistikler |
+| Bilinmeyen / data yok | No-op | App default ana ekranda açılır |
+
+**Auth guard:** `isLoggedIn=false` ise listener kurulmaz ve cold-start yönlendirmesi yapılmaz — kullanıcı login'e düşer.
 
 ### Test & Debug
 

@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
+import { router } from "expo-router";
 import { Platform } from "react-native";
 
 const PUSH_TOKEN_CACHE_KEY = "expo-push-token-v1";
@@ -28,7 +29,6 @@ export function configureNotificationHandler() {
  */
 export async function getExpoPushToken(): Promise<string | null> {
   if (!Device.isDevice) {
-    console.log("[notifications] Simulator — push notification desteklenmez");
     return null;
   }
 
@@ -50,7 +50,6 @@ export async function getExpoPushToken(): Promise<string | null> {
   }
 
   if (finalStatus !== "granted") {
-    console.log("[notifications] İzin verilmedi");
     return null;
   }
 
@@ -115,13 +114,11 @@ export async function registerForPushNotifications(
 
   const cachedToken = await AsyncStorage.getItem(PUSH_TOKEN_CACHE_KEY);
   if (cachedToken === expoPushToken) {
-    console.log("[notifications] Token değişmemiş, backend'e gönderilmedi");
     return expoPushToken;
   }
 
   const validToken = await getValidToken();
   if (!validToken) {
-    console.warn("[notifications] Auth token yok, backend'e gönderilmedi");
     return expoPushToken;
   }
 
@@ -134,4 +131,68 @@ export async function registerForPushNotifications(
  */
 export async function clearPushTokenCache() {
   await AsyncStorage.removeItem(PUSH_TOKEN_CACHE_KEY);
+}
+
+/**
+ * Bildirim data payload'ına göre ilgili ekrana yönlendirir.
+ * Router hazır olduktan sonra (isReady) çağrılmalıdır.
+ */
+function routeFromNotificationData(data: Record<string, unknown> | null) {
+  if (!data || typeof data !== "object") return;
+
+  const type = data.type;
+
+  if (type === "workout_reminder") {
+    // workout-detail modal presentation olduğu için deep link'te stack sorunu yaşanıyor.
+    // Bunun yerine calendar ana ekranına yönlendiriyoruz.
+    router.push("/(protected)/(tabs)/calendar");
+    return;
+  }
+
+  if (type === "achievement") {
+    router.push("/(protected)/(tabs)/(home)/progress");
+    return;
+  }
+}
+
+/**
+ * Notification response listener'ını kurar ve cold-start (app kapalıyken
+ * bildirime tıklanmış) durumunu kontrol eder.
+ *
+ * `isLoggedIn` false ise yönlendirme yapılmaz — auth guard zaten login'e atar.
+ *
+ * Dönüş: cleanup fonksiyonu (useEffect'te kullanılacak).
+ */
+export function setupNotificationResponseListener(
+  isLoggedIn: boolean,
+): () => void {
+  if (!isLoggedIn) {
+    return () => {};
+  }
+
+  // Cold-start: app kapalıyken bildirime tıklanmışsa
+  Notifications.getLastNotificationResponseAsync()
+    .then((response) => {
+      if (!response) return;
+      const data = response.notification.request.content.data as
+        | Record<string, unknown>
+        | null;
+      // Router'ın mount olmasını bekle — _layout ilk frame'de henüz hazır değil
+      setTimeout(() => routeFromNotificationData(data), 300);
+    })
+    .catch((e) => {
+      console.warn("[notifications] getLastNotificationResponseAsync:", e);
+    });
+
+  // Warm-start: app açık veya background'dayken bildirime tıklama
+  const subscription = Notifications.addNotificationResponseReceivedListener(
+    (response) => {
+      const data = response.notification.request.content.data as
+        | Record<string, unknown>
+        | null;
+      routeFromNotificationData(data);
+    },
+  );
+
+  return () => subscription.remove();
 }

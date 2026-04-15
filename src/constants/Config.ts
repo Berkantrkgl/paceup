@@ -2,10 +2,13 @@
 
 import Constants from "expo-constants";
 
-// true → fiziksel cihazda test (Expo Go), bilgisayarın local IP'sini kullanır
-// false → simülatörde test, 127.0.0.1 kullanır
-const USE_PHYSICAL_DEVICE = true;
+const extra = Constants.expoConfig?.extra ?? {};
 
+const PROD_API_BASE = typeof extra.apiBaseUrl === "string" ? extra.apiBaseUrl : null;
+const PROD_FASTAPI_BASE =
+  typeof extra.fastApiBaseUrl === "string" ? extra.fastApiBaseUrl : null;
+
+// Dev: bilgisayarın local IP'sini Metro bundler'dan oku
 const getLocalIP = () => {
   const debuggerHost =
     Constants.expoConfig?.hostUri ??
@@ -13,9 +16,9 @@ const getLocalIP = () => {
   return debuggerHost?.split(":")[0] ?? "192.168.1.7";
 };
 
-const HOST = USE_PHYSICAL_DEVICE ? getLocalIP() : "127.0.0.1";
+const DEV_HOST = getLocalIP();
 
-export const FASTAPI_URL = `http://${HOST}:8001`;
-const BASE_URL = `http://${HOST}:8000`;
+const BASE_URL = PROD_API_BASE ?? `http://${DEV_HOST}:8000`;
+export const FASTAPI_URL = PROD_FASTAPI_BASE ?? `http://${DEV_HOST}:8001`;
 
 export const API_URL = `${BASE_URL}/api`;

@@ -1,5 +1,6 @@
 import { ThemeProvider, useTheme } from "@/theme/ThemeContext";
 import { AuthContext, AuthProvider } from "@/utils/authContext";
+import { setupNotificationResponseListener } from "@/utils/notifications";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import * as SystemUI from "expo-system-ui";
@@ -9,8 +10,14 @@ import { ActivityIndicator, Image, Platform, View } from "react-native";
 
 // Navigasyon Mantığını İçeren Alt Bileşen
 function RootLayoutNav() {
-  const { isReady } = useContext(AuthContext);
+  const { isReady, isLoggedIn } = useContext(AuthContext);
   const { colors } = useTheme();
+
+  useEffect(() => {
+    if (!isReady) return;
+    const cleanup = setupNotificationResponseListener(isLoggedIn);
+    return cleanup;
+  }, [isReady, isLoggedIn]);
 
   // 1. Uygulama "Hazır" olana kadar (Token kontrolü bitene kadar) SADECE Loading göster.
   // Bu sayede kullanıcı asla anlık olarak Home veya Login ekranını yanlışlıkla görmez.

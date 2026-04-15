@@ -2,7 +2,6 @@ import { API_URL } from "@/constants/Config";
 import {
   clearPushTokenCache,
   configureNotificationHandler,
-  registerForPushNotifications,
 } from "@/utils/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
@@ -196,7 +195,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
   };
 
   // --- USER DATA ---
-  const fetchUserProfile = async (validToken: string) => {
+  // Başarılı ise true döner. Launch'ta init fail'i yakalayıp kullanıcıya gösterebilsin diye.
+  const fetchUserProfile = async (validToken: string): Promise<boolean> => {
     try {
       const response = await fetch(`${API_URL}/users/me/`, {
         headers: { Authorization: `Bearer ${validToken}` },
@@ -204,9 +204,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+        return true;
       }
-    } catch (e) {
-      console.log("Fetch user error", e);
+      if (response.status === 401) {
+        // Token geçersizleşmiş — logout flow'u getValidToken içinden akar
+        return false;
+      }
+      return false;
+    } catch {
+      return false;
     }
   };
 
@@ -215,12 +221,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     if (validToken) await fetchUserProfile(validToken);
   };
 
-  // Login sonrası fire-and-forget — UI'ı bloklamaz, hata olursa sessizce geçer
-  const syncPushToken = () => {
-    registerForPushNotifications(getValidToken).catch((e) =>
-      console.log("[auth] push token sync hatası:", e),
-    );
-  };
+  // Push token senkronu home screen mount olunca tetiklenir (src/app/(protected)/(tabs)/(home)/index.tsx).
+  // İzin prompt'unu kullanıcı ana ekranı görmeden önce göstermemek için auth akışından çıkartıldı.
 
   // --- GOOGLE SIGN IN ---
   const googleSignIn = async () => {
@@ -250,7 +252,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setToken(data.access);
         setIsLoggedIn(true);
         await fetchUserProfile(data.access);
-        syncPushToken();
       } else {
         Alert.alert("Hata", data.detail || "Google ile giriş başarısız.");
       }
@@ -277,7 +278,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setToken(data.access);
         setIsLoggedIn(true);
         await fetchUserProfile(data.access);
-        syncPushToken();
       } else {
         Alert.alert("Hata", "Giriş bilgileri hatalı.");
       }
@@ -311,7 +311,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setToken(data.access);
           setIsLoggedIn(true);
           await fetchUserProfile(data.access);
-          syncPushToken();
         } else {
           router.replace("/login");
         }
@@ -330,12 +329,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     const init = async () => {
       const savedToken = await getValidToken();
-      if (savedToken) {
-        setToken(savedToken);
-        setIsLoggedIn(true);
-        await fetchUserProfile(savedToken);
-        syncPushToken();
+      if (!savedToken) {
+        setIsReady(true);
+        return;
       }
+
+      setToken(savedToken);
+
+      // /users/me/ bir kez deneyelim; network hatasında 1500ms sonra tek retry
+      let ok = await fetchUserProfile(savedToken);
+      if (!ok) {
+        await new Promise((r) => setTimeout(r, 1500));
+        ok = await fetchUserProfile(savedToken);
+      }
+
+      if (ok) {
+        setIsLoggedIn(true);
+      } else {
+        // Token var ama profile çekilemedi (network/server sorunu).
+        // isLoggedIn=false bırakıyoruz → kullanıcı login'e düşer, oradan tekrar deneyebilir.
+        // Token'ı silmiyoruz; sadece yeniden başlatınca tekrar denenecek.
+        Alert.alert(
+          "Bağlantı Sorunu",
+          "Profil bilgilerin yüklenemedi. İnternet bağlantını kontrol edip tekrar dene.",
+        );
+      }
+
       setIsReady(true);
     };
     init();

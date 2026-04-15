@@ -23,6 +23,7 @@ import { useTheme } from "@/theme/ThemeContext";
 import { useThemedStyles } from "@/theme/useThemedStyles";
 import type { Theme, ThemeColors } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
+import { registerForPushNotifications } from "@/utils/notifications";
 import { HomeTour } from "@/components/tour/HomeTour";
 
 const { width } = Dimensions.get("window");
@@ -139,6 +140,15 @@ const HomeScreen = () => {
   const statMainHandlers = makeStatPressHandlers(statMainScale);
   const statWorkoutsHandlers = makeStatPressHandlers(statWorkoutsScale);
   const statStreakHandlers = makeStatPressHandlers(statStreakScale);
+
+  // Push token senkronu — ilk mount'tan 2.5sn sonra izin prompt'u çıkar.
+  // AuthContext'ten buraya taşındı ki kullanıcı önce ana ekranı görsün, sonra izin istensin.
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      registerForPushNotifications(getValidToken).catch(() => {});
+    }, 2500);
+    return () => clearTimeout(t);
+  }, [getValidToken]);
 
   // Sürekli çalışan ikon pulse efekti (progress link + workout card)
   React.useEffect(() => {

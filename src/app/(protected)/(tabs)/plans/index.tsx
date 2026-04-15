@@ -77,18 +77,34 @@ const PlansScreen = () => {
                 text: "Evet",
                 onPress: async () => {
                     setIsLoading(true);
-                    const validToken = await getValidToken();
-                    const res = await fetch(
-                        `${API_URL}/programs/${plan.id}/activate/`,
-                        {
-                            method: "POST",
-                            headers: {
-                                Authorization: `Bearer ${validToken}`,
-                            },
+                    try {
+                        const validToken = await getValidToken();
+                        if (!validToken) return;
+                        const res = await fetch(
+                            `${API_URL}/programs/${plan.id}/activate/`,
+                            {
+                                method: "POST",
+                                headers: {
+                                    Authorization: `Bearer ${validToken}`,
+                                },
+                            }
+                        );
+                        if (res.ok) {
+                            await fetchPlans();
+                        } else {
+                            Alert.alert(
+                                "Hata",
+                                "Plan aktifleştirilemedi. Lütfen tekrar dene.",
+                            );
                         }
-                    );
-                    if (res.ok) await fetchPlans();
-                    setIsLoading(false);
+                    } catch {
+                        Alert.alert(
+                            "Bağlantı Hatası",
+                            "İnternet bağlantını kontrol edip tekrar dene.",
+                        );
+                    } finally {
+                        setIsLoading(false);
+                    }
                 },
             },
         ]);
@@ -101,20 +117,36 @@ const PlansScreen = () => {
                 text: "Evet",
                 onPress: async () => {
                     setIsLoading(true);
-                    const validToken = await getValidToken();
-                    const res = await fetch(
-                        `${API_URL}/programs/${plan.id}/`,
-                        {
-                            method: "PATCH",
-                            headers: {
-                                Authorization: `Bearer ${validToken}`,
-                                "Content-Type": "application/json",
-                            },
-                            body: JSON.stringify({ status: "inactive" }),
+                    try {
+                        const validToken = await getValidToken();
+                        if (!validToken) return;
+                        const res = await fetch(
+                            `${API_URL}/programs/${plan.id}/`,
+                            {
+                                method: "PATCH",
+                                headers: {
+                                    Authorization: `Bearer ${validToken}`,
+                                    "Content-Type": "application/json",
+                                },
+                                body: JSON.stringify({ status: "inactive" }),
+                            }
+                        );
+                        if (res.ok) {
+                            await fetchPlans();
+                        } else {
+                            Alert.alert(
+                                "Hata",
+                                "Plan arşivlenemedi. Lütfen tekrar dene.",
+                            );
                         }
-                    );
-                    if (res.ok) await fetchPlans();
-                    setIsLoading(false);
+                    } catch {
+                        Alert.alert(
+                            "Bağlantı Hatası",
+                            "İnternet bağlantını kontrol edip tekrar dene.",
+                        );
+                    } finally {
+                        setIsLoading(false);
+                    }
                 },
             },
         ]);
@@ -127,20 +159,34 @@ const PlansScreen = () => {
                 text: "Sil",
                 style: "destructive",
                 onPress: async () => {
-                    const validToken = await getValidToken();
-                    const res = await fetch(
-                        `${API_URL}/programs/${planId}/`,
-                        {
-                            method: "DELETE",
-                            headers: {
-                                Authorization: `Bearer ${validToken}`,
-                            },
-                        }
-                    );
-                    if (res.ok)
-                        setUserPlans((prev) =>
-                            prev.filter((p) => p.id !== planId)
+                    try {
+                        const validToken = await getValidToken();
+                        if (!validToken) return;
+                        const res = await fetch(
+                            `${API_URL}/programs/${planId}/`,
+                            {
+                                method: "DELETE",
+                                headers: {
+                                    Authorization: `Bearer ${validToken}`,
+                                },
+                            }
                         );
+                        if (res.ok) {
+                            setUserPlans((prev) =>
+                                prev.filter((p) => p.id !== planId)
+                            );
+                        } else {
+                            Alert.alert(
+                                "Hata",
+                                "Plan silinemedi. Lütfen tekrar dene.",
+                            );
+                        }
+                    } catch {
+                        Alert.alert(
+                            "Bağlantı Hatası",
+                            "İnternet bağlantını kontrol edip tekrar dene.",
+                        );
+                    }
                 },
             },
         ]);
