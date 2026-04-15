@@ -21,7 +21,7 @@ from agent.utils.helper_agents import extract_planner_context
 # Özetleme için hafif modeli tanımlıyoruz
 tool_summarizer_llm = ChatBedrockConverse(
     model=NOVA_LITE_2, # Senin NOVA_LITE_2 değişkenin
-    region_name="us-east-1",
+    region_name=BEDROCK_REGION,
     temperature=0.5,
     max_tokens=4096,
 )
@@ -272,7 +272,7 @@ MÜSAİT SLOTLAR:
 
     # --- ADIM 6: AI ÇAĞRISI ---
     try:
-        llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name="us-east-1", disable_streaming=True)
+        llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name=BEDROCK_REGION, disable_streaming=True)
         response = llm.invoke(system_prompt)
         ai_data = extract_json_from_llm_response(response.content)
         raw_workouts = ai_data.get("workouts", [])

@@ -9,7 +9,7 @@ from langgraph.types import StreamWriter
 from agent.utils.tools import * 
 from agent.utils.state import State
 from agent.utils.helper_agents import summarize_messages
-from agent.utils.config import Colors, HAIKU_35, NOVA_LITE_2
+from agent.utils.config import Colors, HAIKU_45, NOVA_LITE_2, BEDROCK_REGION
 from agent.utils.prompts import AGENT_SYSTEM_PROMPT_TEMPLATE
 from agent.utils.helper_functions import fetch_user_context_data
 
@@ -24,7 +24,7 @@ backend_tool_list = [create_workout_plan]
 
 summarization_llm = ChatBedrockConverse(
     model=NOVA_LITE_2,
-    region_name="us-east-1",
+    region_name=BEDROCK_REGION,
     temperature=0.5,
     max_tokens=4096,
 )
@@ -32,8 +32,8 @@ summarization_llm = ChatBedrockConverse(
 def initialize_llm():
     try:
         return ChatBedrockConverse(
-            model=HAIKU_35, # Kendi model değişkenini gir
-            region_name="us-east-1",
+            model=HAIKU_45, # Kendi model değişkenini gir
+            region_name=BEDROCK_REGION,
             temperature=0.7,
             max_tokens=4096,
         )
