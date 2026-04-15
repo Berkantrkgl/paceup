@@ -1,0 +1,75 @@
+name: Deploy Graph API to ECS
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "agent/**"
+      - "main.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: eu-central-1
+  ECR_REPO: paceup-graph-api
+  ECS_CLUSTER: example-cluster
+  ECS_SERVICE: paceup-graph-api-service
+
+concurrency:
+  group: deploy-graph-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          SHA: ${{ github.sha }}
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f Dockerfile \
+            -t $REGISTRY/$ECR_REPO:$SHA \
+            -t $REGISTRY/$ECR_REPO:latest \
+            --push .
+
+      - name: Force ECS rolling deployment
+        run: |
+          aws ecs update-service \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
+            --force-new-deployment \
+            --region $AWS_REGION > /dev/null
+
+      - name: Wait for service to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster $ECS_CLUSTER \
+            --services $ECS_SERVICE \
+            --region $AWS_REGION

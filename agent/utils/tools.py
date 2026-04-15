@@ -148,16 +148,16 @@ class CreatePlanInput(BaseModel):
     )
 
 @tool(args_schema=CreatePlanInput)
-def create_workout_plan(
-    title: str, 
-    start_date: str, 
-    duration_weeks: int, 
+async def create_workout_plan(
+    title: str,
+    start_date: str,
+    duration_weeks: int,
     description: str,
-    selected_days: List[str],  # YENİ
-    long_run_day: Optional[str],  # YENİ
-    goal: str,  # YENİ
+    selected_days: List[str],
+    long_run_day: Optional[str],
+    goal: str,
     config: RunnableConfig,
-    state: Annotated[dict, InjectedState] 
+    state: Annotated[dict, InjectedState],
 ) -> str:
     """
     Kullanıcının profiline ve koşu bilimi kurallarına (80/20 kuralı, toparlanma dengesi) uygun antrenman programı oluşturur.
@@ -182,7 +182,7 @@ def create_workout_plan(
 
     # --- ADIM 1: USER CONTEXT ÇEKME ---
     try:
-        full_context = fetch_user_info_for_program_creation(config)
+        full_context = await fetch_user_info_for_program_creation(config)
         if "error" in full_context:
             return f"HATA: Kullanıcı verileri alınamadı: {full_context['error']}"
 
@@ -218,7 +218,9 @@ def create_workout_plan(
     messages = state.get("messages", [])
 
     try:
-        chat_context_summary = extract_planner_context(tool_summarizer_llm, messages)
+        chat_context_summary = await extract_planner_context(
+            tool_summarizer_llm, messages
+        )
         logger.info(f"✅ Planner Bağlamı Alındı ({len(chat_context_summary)} karakter)")
     except Exception as e:
         logger.error(f"⚠️ Planner bağlamı çıkarma hatası: {e}")
@@ -272,8 +274,13 @@ MÜSAİT SLOTLAR:
 
     # --- ADIM 6: AI ÇAĞRISI ---
     try:
-        llm = ChatBedrockConverse(model=SONNET_4, temperature=0, region_name=BEDROCK_REGION, disable_streaming=True)
-        response = llm.invoke(system_prompt)
+        llm = ChatBedrockConverse(
+            model=SONNET_4,
+            temperature=0,
+            region_name=BEDROCK_REGION,
+            disable_streaming=True,
+        )
+        response = await llm.ainvoke(system_prompt)
         ai_data = extract_json_from_llm_response(response.content)
         raw_workouts = ai_data.get("workouts", [])
         logger.info(f"🤖 Planner LLM Çıktısı ({len(raw_workouts)} antrenman): {json.dumps(raw_workouts, ensure_ascii=False, indent=2)}")
@@ -316,7 +323,7 @@ MÜSAİT SLOTLAR:
         "workouts": final_workout_objects
     }
 
-    res = call_api("POST", "/programs/create_ai_plan/", config, data=api_payload)
+    res = await call_api("POST", "/programs/create_ai_plan/", config, data=api_payload)
     
     if "error" in res: return f"API HATASI: {res['error']}"
 
