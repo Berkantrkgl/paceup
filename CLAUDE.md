@@ -507,6 +507,6 @@ Bu sayede backend'in secret yönetimi minimal kalır — sadece `.env`'de `EXPO_
 - **Production (AWS Secrets Manager `paceup/django`):** `DJANGO_SECRET_KEY`, `DATABASE_URL`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. ECS task definition bunları her task start'ında env var olarak inject eder. AWS keyleri **yok** — S3 erişimi task role üzerinden.
 - **Plaintext env (task definition'da):** `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=your-domain.com,*`, `DJANGO_CSRF_TRUSTED_ORIGINS=https://your-domain.com`, `AWS_DEFAULT_REGION=eu-central-1`.
 
-**Deployment:** Kapsamlı runbook → [`deployment_steps.md`](deployment_steps.md). Canlı URL: `https://your-domain.com/api/`. `master` branch'e push → GitHub Actions otomatik build + ECR push + ECS rolling deployment.
+**Deployment:** Kapsamlı runbook → [`../deployment_steps.md`](../deployment_steps.md). Canlı URL: `https://api.your-domain.com/api/`. `master` branch'e push → GitHub Actions otomatik build + ECR push + ECS rolling deployment.
 
 ---
