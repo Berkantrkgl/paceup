@@ -22,6 +22,7 @@ import {
 
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Picker } from "@react-native-picker/picker";
+import * as Localization from "expo-localization";
 
 import { ProfileTour } from "@/components/tour/ProfileTour";
 import { ThemeSelector } from "@/components/ThemeSelector";
@@ -329,13 +330,22 @@ const ProfileScreen = () => {
       } else if (editConfig.type === "multiselect") {
         payloadValue = tempArrayValue.sort();
       }
+      const body: Record<string, any> = { [editConfig.key]: payloadValue };
+      // Hatırlatma saati değişirken cihazın timezone'unu da göndererek
+      // backend'in saati doğru yorumlamasını garanti ediyoruz.
+      if (editConfig.key === "preferred_reminder_time") {
+        const tz =
+          Localization.getCalendars()?.[0]?.timeZone ??
+          Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) body.timezone = tz;
+      }
       const response = await fetch(`${API_URL}/users/me/`, {
         method: "PATCH",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ [editConfig.key]: payloadValue }),
+        body: JSON.stringify(body),
       });
       if (response.ok) {
         await refreshUserData();
@@ -907,7 +917,11 @@ const ProfileScreen = () => {
         <Section title="BİLDİRİM TERCİHLERİ">
           <InfoRow
             label="Hatırlatma Saati"
-            value={formatDisplayTime(user?.preferred_reminder_time ?? "")}
+            value={
+              user?.timezone
+                ? `${formatDisplayTime(user?.preferred_reminder_time ?? "")} (${user.timezone})`
+                : formatDisplayTime(user?.preferred_reminder_time ?? "")
+            }
             onPress={() =>
               openEditor({
                 key: "preferred_reminder_time",

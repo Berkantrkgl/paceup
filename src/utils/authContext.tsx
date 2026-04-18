@@ -5,6 +5,7 @@ import {
 } from "@/utils/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as Localization from "expo-localization";
 import { useRouter, useSegments } from "expo-router";
 import { jwtDecode } from "jwt-decode";
 import {
@@ -103,6 +104,50 @@ const ACCESS_TOKEN_KEY = "auth-access-token";
 const REFRESH_TOKEN_KEY = "auth-refresh-token";
 const TOKEN_EXPIRY_BUFFER = 120; // Token bitimine 2 dk kala yenile
 
+// Cihazın IANA timezone'unu backend'e PATCH'ler.
+// expo-localization → native iOS/Android TZ API (Hermes'te Intl'den daha güvenilir).
+// currentTz backend'den gelen değerle karşılaştırılır — local cache yok.
+async function syncTimezone(
+  getToken: () => Promise<string | null>,
+  currentTz: string | null | undefined,
+) {
+  const deviceTz = getDeviceTimezone();
+  if (!deviceTz) return;
+  if (deviceTz === currentTz) return;
+
+  const token = await getToken();
+  if (!token) return;
+
+  try {
+    await fetch(`${API_URL}/users/me/`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ timezone: deviceTz }),
+    });
+  } catch {
+    // Network hatası — bir sonraki açılışta tekrar denenir
+  }
+}
+
+function getDeviceTimezone(): string | null {
+  try {
+    const cal = Localization.getCalendars()?.[0];
+    if (cal?.timeZone) return cal.timeZone;
+  } catch {
+    // fall through to Intl
+  }
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) return tz;
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 // Paralel refresh isteklerini önlemek için singleton promise
 let refreshPromise: Promise<string | null> | null = null;
 
@@ -195,24 +240,22 @@ export function AuthProvider({ children }: PropsWithChildren) {
   };
 
   // --- USER DATA ---
-  // Başarılı ise true döner. Launch'ta init fail'i yakalayıp kullanıcıya gösterebilsin diye.
-  const fetchUserProfile = async (validToken: string): Promise<boolean> => {
+  // Başarılı ise user döner, değilse null. Launch'ta init fail'i yakalayıp kullanıcıya gösterebilsin diye.
+  const fetchUserProfile = async (
+    validToken: string,
+  ): Promise<UserData | null> => {
     try {
       const response = await fetch(`${API_URL}/users/me/`, {
         headers: { Authorization: `Bearer ${validToken}` },
       });
       if (response.ok) {
-        const userData = await response.json();
+        const userData: UserData = await response.json();
         setUser(userData);
-        return true;
+        return userData;
       }
-      if (response.status === 401) {
-        // Token geçersizleşmiş — logout flow'u getValidToken içinden akar
-        return false;
-      }
-      return false;
+      return null;
     } catch {
-      return false;
+      return null;
     }
   };
 
@@ -251,7 +294,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
         setToken(data.access);
         setIsLoggedIn(true);
-        await fetchUserProfile(data.access);
+        const profile = await fetchUserProfile(data.access);
+        syncTimezone(getValidToken, profile?.timezone);
       } else {
         Alert.alert("Hata", data.detail || "Google ile giriş başarısız.");
       }
@@ -277,7 +321,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
         setToken(data.access);
         setIsLoggedIn(true);
-        await fetchUserProfile(data.access);
+        const profile = await fetchUserProfile(data.access);
+        syncTimezone(getValidToken, profile?.timezone);
       } else {
         Alert.alert("Hata", "Giriş bilgileri hatalı.");
       }
@@ -310,7 +355,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
           await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
           setToken(data.access);
           setIsLoggedIn(true);
-          await fetchUserProfile(data.access);
+          const profile = await fetchUserProfile(data.access);
+          syncTimezone(getValidToken, profile?.timezone);
         } else {
           router.replace("/login");
         }
@@ -337,14 +383,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
       setToken(savedToken);
 
       // /users/me/ bir kez deneyelim; network hatasında 1500ms sonra tek retry
-      let ok = await fetchUserProfile(savedToken);
-      if (!ok) {
+      let profile = await fetchUserProfile(savedToken);
+      if (!profile) {
         await new Promise((r) => setTimeout(r, 1500));
-        ok = await fetchUserProfile(savedToken);
+        profile = await fetchUserProfile(savedToken);
       }
 
-      if (ok) {
+      if (profile) {
         setIsLoggedIn(true);
+        syncTimezone(getValidToken, profile.timezone);
       } else {
         // Token var ama profile çekilemedi (network/server sorunu).
         // isLoggedIn=false bırakıyoruz → kullanıcı login'e düşer, oradan tekrar deneyebilir.

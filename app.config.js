@@ -13,6 +13,12 @@ module.exports = {
     scheme: "paceup",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
+    updates: {
+      url: "https://u.expo.dev/your-eas-project-id",
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     ios: {
       supportsTablet: false,
       config: {
@@ -46,6 +52,7 @@ module.exports = {
     },
     plugins: [
       "expo-router",
+      "expo-localization",
       [
         "expo-splash-screen",
         {
