@@ -38,7 +38,7 @@ PACEUP-BACKEND/
 | Preferences   | `preferred_running_days` (JSON: `[0,2,4]` → 0=Pzt, 6=Paz)                                                                                                                                  |
 | SaaS          | `is_premium`, `premium_type` (monthly/yearly, nullable), `premium_expires_at` (DateTime, nullable), `total_tokens_used`, `reschedules_used_this_month`, `last_reschedule_reset`            |
 | Stats         | `total_distance`, `total_workouts`, `total_time`, `current_streak`, `longest_streak`                                                                                                       |
-| Notifications | `push_token`, `timezone` (default UTC), `preferred_reminder_time`, `notification_workout_reminder`, `notification_weekly_report`, `notification_achievements`, `notification_plan_updates` |
+| Notifications | `push_token`, `timezone` (default `UTC` — frontend init/login'de `Intl.DateTimeFormat().resolvedOptions().timeZone` ile overwrite edilir, AsyncStorage cache), `preferred_reminder_time`, `notification_workout_reminder`, `notification_weekly_report`, `notification_achievements`, `notification_plan_updates` |
 | Dynamic       | `active_program_id` — DB'de tutulmaz, Serializer'da anlık hesaplanır                                                                                                                       |
 | Computed      | `remaining_tokens`, `can_use_chat`, `remaining_reschedules`, `pace_display` — Serializer'da hesaplanır                                                                                     |
 
@@ -320,6 +320,26 @@ Q_CLUSTER = {
 - **Production:** Aynı Django ECS task'ı içinde Supervisor ile 2 process (`gunicorn` + `qcluster`). Ekstra infra/maliyet yok
 - **Schedule tablosu:** DB'de tutulur — `setup_periodic_tasks` management command ile idempotent yönetilir
 
+### Logging (CloudWatch görünürlüğü)
+
+`settings.py` içinde explicit `LOGGING` dict tanımlıdır. Django'nun default config'i sadece `django.*` logger'larını handler'a bağlar; `apps.*` altında `logger.info(...)` çağrıları bu handler zincirine takılmaz ve root logger WARNING seviyesinde kaldığı için CloudWatch'a hiç düşmez. Bunu düzeltmek için:
+
+```python
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler', 'formatter': 'simple'}},
+    'formatters': {'simple': {'format': '[{levelname}] {name}: {message}', 'style': '{'}},
+    'root': {'handlers': ['console'], 'level': 'INFO'},
+    'loggers': {
+        'apps':   {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'django': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+    },
+}
+```
+
+Bu sayede `apps/notifications/tasks.py` ve `apps/notifications/push.py` içindeki `[reminders] checked=X sent=Y`, `[push] user=... gönderildi` satırları `/ecs/paceup-django-task` log group'ta görünür. Reminder task veya push debug'ı için **zorunlu** — bu config olmadan task sessizce çalışır ve hata veya sıfır sonuç olsa bile görünmez.
+
 ### `apps/notifications/push.py` — Core Util
 
 ```python
@@ -379,6 +399,8 @@ NOTIFICATION_PREFERENCE_MAP = {
 ```
 
 **Multi-Timezone Desteği:** Her kullanıcı farklı bir timezone'da olabilir. `zoneinfo.ZoneInfo(user.timezone)` ile local datetime hesaplanır. Geçersiz TZ string'i verilirse UTC'ye fallback + log uyarısı.
+
+> **Frontend timezone sync:** `user.timezone` alanı DB default'u `"UTC"` ama frontend `authContext.tsx` init / login / register / googleSignIn akışlarında `Intl.DateTimeFormat().resolvedOptions().timeZone` ile IANA TZ'yi okuyup `PATCH /users/me/ {timezone}` atar (AsyncStorage `user-timezone-v1` cache — değişmemişse network'e gitmez). Bu setup olmadan reminder task UTC'de çalışır ve TR kullanıcıları için +3h sapma olur. Logout'ta cache temizlenir.
 
 **Garantiler:**
 - Her kullanıcı günde **en fazla 1 kez** workout reminder alır (kendi seçtiği saatte)
