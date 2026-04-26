@@ -231,6 +231,24 @@ const ChatbotScreen = () => {
   // ============================================================
   useEffect(() => {
     if (messages.length > 0) return;
+
+    // Thread'i backend'e bağla — hesap silinince LangGraph checkpoint'leri
+    // bu thread_id üzerinden temizlenir. Fire-and-forget; UI'ı bloklamaz.
+    (async () => {
+      const validToken = await getValidToken();
+      if (!validToken) return;
+      fetch(`${API_URL}/users/register_chat_session/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${validToken}`,
+        },
+        body: JSON.stringify({ thread_id: threadId }),
+      }).catch(() => {
+        // Best-effort — thread register başarısızsa sohbet yine de çalışsın.
+      });
+    })();
+
     connectAndStream([
       { role: "user", content: [{ type: "text", text: "Selam!" }] },
     ]);

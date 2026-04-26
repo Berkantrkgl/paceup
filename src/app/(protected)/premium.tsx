@@ -3,41 +3,60 @@ import { useTheme } from "@/theme/ThemeContext";
 import { useThemedStyles } from "@/theme/useThemedStyles";
 import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
+import {
+  getPremiumPackages,
+  purchasePackage,
+  restorePurchases,
+} from "@/utils/revenuecat";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useContext, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   ScrollView,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import type { PurchasesPackage } from "react-native-purchases";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ============================================================
-// PLAN VERİLERİ
+// PLAN METADATA
 // ============================================================
-const PLANS = [
-  {
+type PlanMeta = {
+  id: "monthly" | "yearly";
+  label: string;
+  period: string;
+  priceNote: string;
+  popular: boolean;
+  icon: "calendar-outline" | "trophy-outline";
+};
+
+const PLAN_META: Record<"monthly" | "yearly", PlanMeta> = {
+  monthly: {
     id: "monthly",
     label: "AYLIK",
-    price: "₺149",
     period: "/ay",
-    priceNote: "İstediğin zaman iptal et",
+    priceNote: "Her ay otomatik yenilenir",
     popular: false,
-    icon: "calendar-outline" as const,
+    icon: "calendar-outline",
   },
-  {
+  yearly: {
     id: "yearly",
     label: "YILLIK",
-    price: "₺799",
     period: "/yıl",
-    priceNote: "₺66/ay — %55 tasarruf",
+    priceNote: "Her yıl otomatik yenilenir",
     popular: true,
-    icon: "trophy-outline" as const,
+    icon: "trophy-outline",
   },
-];
+};
+
+const LEGAL_BASE_URL = "https://legal.your-domain.com";
+const PRIVACY_URL = `${LEGAL_BASE_URL}/privacy.html`;
+const TERMS_URL = `${LEGAL_BASE_URL}/terms.html`;
 
 const FEATURES = [
   { icon: "infinite-outline", text: "Sınırsız AI koşu koçluğu" },
@@ -52,41 +71,163 @@ export default function PremiumScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { reason } = useLocalSearchParams<{ reason?: string }>();
-  const { getValidToken, refreshUserData } = useContext(AuthContext);
+  const { user, getValidToken, refreshUserData } = useContext(AuthContext);
   const { colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
 
-  const [selectedPlan, setSelectedPlan] = useState("yearly");
+  const [selectedPlan, setSelectedPlan] = useState<"monthly" | "yearly">(
+    "yearly",
+  );
   const [loading, setLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  const [packagesError, setPackagesError] = useState<string | null>(null);
+  const [monthlyPkg, setMonthlyPkg] = useState<PurchasesPackage | null>(null);
+  const [annualPkg, setAnnualPkg] = useState<PurchasesPackage | null>(null);
 
-  const handlePurchase = async () => {
-    setLoading(true);
+  const loadOfferings = useCallback(async () => {
+    setPackagesLoading(true);
+    setPackagesError(null);
     try {
-      const validToken = await getValidToken();
-      if (!validToken) return;
+      const { monthly, annual } = await getPremiumPackages();
+      // Her iki paket de null ise: RC offerings boş, dashboard kurulumu eksik.
+      // Hata gibi gösterip kullanıcıyı bekletmeyelim.
+      if (!monthly && !annual) {
+        setPackagesError(
+          "Şu an abonelik planları yüklenemiyor. Lütfen birkaç dakika sonra tekrar dene.",
+        );
+        return;
+      }
+      setMonthlyPkg(monthly);
+      setAnnualPkg(annual);
+    } catch (e) {
+      console.warn("[Premium] offerings fetch hatası:", e);
+      setPackagesError(
+        "Bağlantı hatası. İnternetini kontrol edip tekrar dene.",
+      );
+    } finally {
+      setPackagesLoading(false);
+    }
+  }, []);
 
-      const res = await fetch(`${API_URL}/users/activate_premium/`, {
+  useEffect(() => {
+    loadOfferings();
+  }, [loadOfferings]);
+
+  const notifyBackend = async (productId?: string) => {
+    const validToken = await getValidToken();
+    if (!validToken) return;
+    try {
+      await fetch(`${API_URL}/users/verify_purchase/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${validToken}`,
         },
-        body: JSON.stringify({ premium_type: selectedPlan }),
+        body: JSON.stringify(productId ? { product_id: productId } : {}),
       });
-
-      if (res.ok) {
-        setSuccess(true);
-        await refreshUserData();
-        setTimeout(() => {
-          router.back();
-        }, 1800);
-      }
     } catch (e) {
-      console.error("Premium satın alma hatası:", e);
+      console.warn("[Premium] verify_purchase hatası:", e);
+    }
+    await refreshUserData();
+  };
+
+  const handlePurchase = async () => {
+    const pkg = selectedPlan === "yearly" ? annualPkg : monthlyPkg;
+    if (!pkg) {
+      Alert.alert("Hata", "Paket bilgisi yüklenemedi. Tekrar dene.");
+      return;
+    }
+    if (!user?.id) {
+      Alert.alert("Hata", "Oturum bilgisi yüklenemedi. Tekrar giriş yap.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { isPremium } = await purchasePackage(pkg, user.id);
+      if (isPremium) {
+        await notifyBackend(pkg.product.identifier);
+        setSuccess(true);
+        setTimeout(() => router.back(), 1800);
+      } else {
+        Alert.alert(
+          "Hata",
+          "Satın alma tamamlandı ama premium erişim açılamadı. Destek ile iletişime geç.",
+        );
+      }
+    } catch (e: any) {
+      if (e?.userCancelled) {
+        // Kullanıcı iptal etti, sessizce geç
+      } else {
+        // RC SDK exception fırlatmış olabilir ama satın alma backend'e
+        // webhook ile düşmüş olabilir (sandbox TRANSFER edge case). Backend'i
+        // teyit edelim — eğer premium aktifse başarı say.
+        await notifyBackend(pkg.product.identifier);
+        await refreshUserData();
+        // refreshUserData sonrası user.is_premium yeni değeri gösteriyor mu
+        // diye küçük bir gecikme ile kontrol ediyoruz (state propagation).
+        await new Promise((r) => setTimeout(r, 300));
+        // user state stale olabilir, doğrudan API'den çek:
+        const validToken = await getValidToken();
+        let confirmedPremium = false;
+        if (validToken) {
+          try {
+            const res = await fetch(`${API_URL}/users/me/`, {
+              headers: { Authorization: `Bearer ${validToken}` },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              confirmedPremium = !!data.is_premium;
+            }
+          } catch {}
+        }
+        if (confirmedPremium) {
+          setSuccess(true);
+          setTimeout(() => router.back(), 1800);
+        } else {
+          Alert.alert(
+            "Satın Alma Başarısız",
+            e?.message || "Bilinmeyen bir hata oluştu.",
+          );
+        }
+      }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRestore = async () => {
+    if (!user?.id) {
+      Alert.alert("Hata", "Oturum bilgisi yüklenemedi. Tekrar giriş yap.");
+      return;
+    }
+    setRestoring(true);
+    try {
+      const { customerInfo, isPremium } = await restorePurchases(user.id);
+      if (isPremium) {
+        const activeProductId =
+          customerInfo.entitlements.active["premium"]?.productIdentifier;
+        await notifyBackend(activeProductId);
+        Alert.alert("Başarılı", "Aboneliğin geri yüklendi.");
+        setTimeout(() => router.back(), 800);
+      } else {
+        Alert.alert(
+          "Aktif Abonelik Yok",
+          "Bu Apple ID ile aktif bir PaceUp Premium aboneliği bulunamadı.",
+        );
+      }
+    } catch (e: any) {
+      Alert.alert("Hata", e?.message || "Geri yükleme başarısız.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const priceFor = (p: "monthly" | "yearly"): string => {
+    const pkg = p === "yearly" ? annualPkg : monthlyPkg;
+    return pkg?.product.priceString ?? "—";
   };
 
   const headerText =
@@ -135,61 +276,91 @@ export default function PremiumScreen() {
 
         {/* Plan Kartları */}
         <Text style={styles.planSectionTitle}>Plan Seç</Text>
-        <View style={styles.plansRow}>
-          {PLANS.map((plan) => {
-            const isSelected = selectedPlan === plan.id;
-            return (
-              <TouchableOpacity
-                key={plan.id}
-                style={[
-                  styles.planCard,
-                  isSelected && styles.planCardSelected,
-                ]}
-                onPress={() => setSelectedPlan(plan.id)}
-                activeOpacity={0.8}
-              >
-                {plan.popular && (
-                  <View style={styles.popularBadge}>
-                    <Text style={styles.popularBadgeText}>EN POPÜLER</Text>
+        {packagesLoading ? (
+          <View style={styles.packagesLoading}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        ) : packagesError ? (
+          <View style={styles.packagesError}>
+            <Ionicons
+              name="cloud-offline-outline"
+              size={28}
+              color={colors.text.secondary}
+            />
+            <Text style={styles.packagesErrorText}>{packagesError}</Text>
+            <TouchableOpacity
+              onPress={loadOfferings}
+              style={styles.retryBtn}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.retryBtnText}>Tekrar Dene</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.plansRow}>
+            {(["monthly", "yearly"] as const).map((planId) => {
+              const plan = PLAN_META[planId];
+              const isSelected = selectedPlan === plan.id;
+              return (
+                <TouchableOpacity
+                  key={plan.id}
+                  style={[
+                    styles.planCard,
+                    isSelected && styles.planCardSelected,
+                  ]}
+                  onPress={() => setSelectedPlan(plan.id)}
+                  activeOpacity={0.8}
+                >
+                  {plan.popular && (
+                    <View style={styles.popularBadge}>
+                      <Text style={styles.popularBadgeText}>EN POPÜLER</Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.planIconWrap, isSelected && styles.planIconWrapSelected]}>
+                    <Ionicons
+                      name={plan.icon}
+                      size={18}
+                      color={isSelected ? colors.accent : colors.text.secondary}
+                    />
                   </View>
-                )}
 
-                <View style={[styles.planIconWrap, isSelected && styles.planIconWrapSelected]}>
-                  <Ionicons
-                    name={plan.icon}
-                    size={18}
-                    color={isSelected ? colors.accent : colors.text.secondary}
-                  />
-                </View>
-
-                <Text style={[styles.planLabel, isSelected && styles.planLabelSelected]}>
-                  {plan.label}
-                </Text>
-
-                <View style={styles.planPriceRow}>
-                  <Text style={[styles.planPrice, isSelected && styles.planPriceSelected]}>
-                    {plan.price}
+                  <Text style={[styles.planLabel, isSelected && styles.planLabelSelected]}>
+                    {plan.label}
                   </Text>
-                  <Text style={styles.planPeriod}>{plan.period}</Text>
-                </View>
 
-                <Text style={[styles.planNote, isSelected && { color: colors.accent }]}>
-                  {plan.priceNote}
-                </Text>
+                  <View style={styles.planPriceRow}>
+                    <Text style={[styles.planPrice, isSelected && styles.planPriceSelected]}>
+                      {priceFor(plan.id)}
+                    </Text>
+                    <Text style={styles.planPeriod}>{plan.period}</Text>
+                  </View>
 
-                <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                  {isSelected && <View style={styles.radioInner} />}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Text style={[styles.planNote, isSelected && { color: colors.accent }]}>
+                    {plan.priceNote}
+                  </Text>
+
+                  <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
+                    {isSelected && <View style={styles.radioInner} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {/* CTA Butonu */}
         <TouchableOpacity
-          style={[styles.ctaBtn, (loading || success) && { opacity: 0.85 }]}
+          style={[
+            styles.ctaBtn,
+            (loading || success || packagesLoading || !!packagesError) && {
+              opacity: 0.5,
+            },
+          ]}
           onPress={handlePurchase}
-          disabled={loading || success}
+          disabled={
+            loading || success || packagesLoading || !!packagesError
+          }
           activeOpacity={0.85}
         >
           {loading ? (
@@ -211,10 +382,37 @@ export default function PremiumScreen() {
           )}
         </TouchableOpacity>
 
-        {/* Alt not */}
-        <Text style={styles.footerNote}>
-          İstediğin zaman iptal edebilirsin
+        {/* Restore */}
+        <TouchableOpacity
+          onPress={handleRestore}
+          disabled={restoring || loading}
+          style={styles.restoreBtn}
+        >
+          {restoring ? (
+            <ActivityIndicator color={colors.text.secondary} size="small" />
+          ) : (
+            <Text style={styles.restoreText}>Satın Alımları Geri Yükle</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Alt not — Apple Guideline 3.1.2 disclosure */}
+        <Text style={styles.disclosureText}>
+          Abonelik, mevcut dönemin sona ermesinden en az 24 saat önce iptal
+          edilmediği takdirde otomatik olarak yenilenir. Yenileme ücreti, dönem
+          sonundan 24 saat önce Apple ID hesabından tahsil edilir.
+          {"\n\n"}
+          İptal etmek için: App Store → Ayarlar → Apple ID → Abonelikler.
         </Text>
+
+        <View style={styles.legalLinksRow}>
+          <TouchableOpacity onPress={() => Linking.openURL(TERMS_URL)}>
+            <Text style={styles.legalLinkText}>Kullanım Koşulları</Text>
+          </TouchableOpacity>
+          <Text style={styles.legalLinkSeparator}>·</Text>
+          <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_URL)}>
+            <Text style={styles.legalLinkText}>Gizlilik Politikası</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -405,6 +603,44 @@ const makeStyles = (t: Theme) => {
       backgroundColor: c.accent,
     },
 
+    packagesLoading: {
+      paddingVertical: 40,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginBottom: 24,
+    },
+    packagesError: {
+      paddingVertical: 32,
+      paddingHorizontal: 24,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      marginBottom: 24,
+      gap: 12,
+      backgroundColor: c.surface,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    packagesErrorText: {
+      color: c.text.secondary,
+      fontSize: 13,
+      textAlign: "center" as const,
+      lineHeight: 18,
+    },
+    retryBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 20,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: c.accent,
+      marginTop: 4,
+    },
+    retryBtnText: {
+      color: c.accent,
+      fontSize: 13,
+      fontWeight: "600" as const,
+    },
+
     // CTA
     ctaBtn: {
       backgroundColor: c.accent,
@@ -413,6 +649,18 @@ const makeStyles = (t: Theme) => {
       alignItems: "center" as const,
       justifyContent: "center" as const,
       marginBottom: 12,
+    },
+    restoreBtn: {
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      paddingVertical: 12,
+      marginBottom: 4,
+    },
+    restoreText: {
+      color: c.text.secondary,
+      fontSize: 13,
+      fontWeight: "600" as const,
+      textDecorationLine: "underline" as const,
     },
     ctaBtnInner: {
       flexDirection: "row" as const,
@@ -426,12 +674,32 @@ const makeStyles = (t: Theme) => {
       letterSpacing: 0.3,
     },
 
-    // Footer
-    footerNote: {
+    // Footer — Apple subscription disclosure
+    disclosureText: {
+      color: c.text.secondary,
+      fontSize: 11,
+      lineHeight: 16,
+      textAlign: "center" as const,
+      marginTop: 8,
+      marginBottom: 16,
+      opacity: 0.8,
+    },
+    legalLinksRow: {
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      gap: 8,
+      marginBottom: 8,
+    },
+    legalLinkText: {
       color: c.text.secondary,
       fontSize: 12,
-      textAlign: "center" as const,
-      marginBottom: 4,
+      textDecorationLine: "underline" as const,
+    },
+    legalLinkSeparator: {
+      color: c.text.secondary,
+      fontSize: 12,
+      opacity: 0.5,
     },
   } as const;
 };

@@ -1,5 +1,12 @@
 const IS_PRODUCTION = process.env.EAS_BUILD_PROFILE === "production";
 
+// USE_PROD_API: lokal dev build ile prod backend'e bağlanmak için.
+// Sadece API URL'lerini override eder; aps-environment, entitlements vs. dev kalır.
+// Kullanım: USE_PROD_API=1 npx expo start
+// Sebep: RC webhook ECS'te olduğu için lokal sandbox testleri prod backend'e
+// gitmeli, aksi halde lokal SQLite ve ECS RDS tutarsız olur.
+const USE_PROD_API = IS_PRODUCTION || process.env.USE_PROD_API === "1";
+
 const PROD_API_URL = "https://api.your-domain.com";
 const PROD_FASTAPI_URL = "https://chatbot.your-domain.com";
 
@@ -90,8 +97,10 @@ module.exports = {
       eas: {
         projectId: "your-eas-project-id",
       },
-      apiBaseUrl: IS_PRODUCTION ? PROD_API_URL : null,
-      fastApiBaseUrl: IS_PRODUCTION ? PROD_FASTAPI_URL : null,
+      apiBaseUrl: USE_PROD_API ? PROD_API_URL : null,
+      fastApiBaseUrl: USE_PROD_API ? PROD_FASTAPI_URL : null,
+      // RevenueCat iOS public SDK key — frontend'de bundle edilecek şekilde tasarlandı, secret değil
+      revenueCatIosKey: "your-revenuecat-ios-key",
     },
     owner: "your-expo-owner",
   },

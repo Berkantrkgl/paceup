@@ -7,6 +7,7 @@ import {
   Animated,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -31,7 +32,8 @@ import { useTheme } from "@/theme/ThemeContext";
 import { useThemedStyles } from "@/theme/useThemedStyles";
 import type { Theme, ThemeColors } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
 
 // ============================================================
 // SABİTLER
@@ -78,6 +80,15 @@ const ProfileScreen = () => {
   const [uploading, setUploading] = useState(false);
   const premiumTourRef = useRef<View>(null);
   const identityTourRef = useRef<View>(null);
+
+  // Ekran her focus olduğunda user'ı refresh et (premium ekranından döndüğünde görünür)
+  // refreshUserData dep listesinden çıkarıldı — her render'da yeni ref aldığı için infinite loop'a girer.
+  useFocusEffect(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useCallback(() => {
+      refreshUserData();
+    }, []),
+  );
 
   // Edit Modal
   const [modalVisible, setModalVisible] = useState(false);
@@ -135,20 +146,94 @@ const ProfileScreen = () => {
     router.push({ pathname: "/(protected)/premium", params: { reason: "general" } });
 
   const handleCancelSubscription = async () => {
+    // Apple policy: auto-renewable subscription iptali SADECE App Store'dan yapılır.
+    // iOS'ta itms-apps:// deep link'i App Store'u direkt abonelik yönetim ekranında açar.
+    const deepLink = "itms-apps://apps.apple.com/account/subscriptions";
+    const webFallback = "https://apps.apple.com/account/subscriptions";
+    try {
+      const canOpen = await Linking.canOpenURL(deepLink);
+      await Linking.openURL(canOpen ? deepLink : webFallback);
+    } catch {
+      Alert.alert(
+        "Açılamadı",
+        "Aboneliğini yönetmek için Ayarlar → Apple ID → Abonelikler yolunu izleyebilirsin.",
+      );
+    }
+  };
+
+  // Apple Guideline 5.1.1(v): hesap silme uygulama içinden mümkün olmalı.
+  // Çift onay: önce confirm, sonra "SİL" yazma. Geri alınamaz olduğu için kasıtlı bir adım.
+  const performAccountDeletion = async () => {
     try {
       const validToken = await getValidToken();
-      if (!validToken) return;
-      const res = await fetch(`${API_URL}/users/cancel_premium/`, {
-        method: "POST",
+      if (!validToken) {
+        Alert.alert("Hata", "Oturum bilgisi alınamadı, tekrar dene.");
+        return;
+      }
+      const res = await fetch(`${API_URL}/users/destroy_account/`, {
+        method: "DELETE",
         headers: { Authorization: `Bearer ${validToken}` },
       });
+
       if (res.ok) {
-        await refreshUserData();
-        Alert.alert("Abonelik İptal Edildi", "Premium aboneliğin başarıyla iptal edildi.");
+        // user.delete() backend'de tamamlandı — token'lar artık geçersiz.
+        // logOut() hem AsyncStorage'ı hem RC'yi hem AuthContext state'ini temizleyip
+        // login ekranına yönlendirir.
+        await logOut();
+        return;
       }
-    } catch (e) {
-      console.error("Cancel subscription error:", e);
+
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert(
+          "Önce Aboneliği İptal Et",
+          data.message ||
+            "Aktif Premium aboneliğin var. Hesabını silmeden önce App Store'dan aboneliği iptal etmen gerekiyor.",
+          [
+            { text: "Vazgeç", style: "cancel" },
+            { text: "App Store'a Git", onPress: handleCancelSubscription },
+          ],
+        );
+        return;
+      }
+
+      Alert.alert("Hata", "Hesap silinemedi. Lütfen tekrar dene.");
+    } catch {
+      Alert.alert(
+        "Bağlantı Hatası",
+        "Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.",
+      );
     }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Hesabını Sil",
+      "Bu işlem geri alınamaz. Tüm antrenmanların, ilerlemen, rozet ve sohbet geçmişin kalıcı olarak silinecek.",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Devam Et",
+          style: "destructive",
+          onPress: () => {
+            // Apple çift onay istiyor (destructive action). İkinci alert'te
+            // "Evet, Sil"e basmak son onay yerine geçer.
+            Alert.alert(
+              "Son Onay",
+              "Hesabını ve tüm verilerini kalıcı olarak silmek istediğine emin misin?",
+              [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                  text: "Evet, Sil",
+                  style: "destructive",
+                  onPress: performAccountDeletion,
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
   };
 
   // Toggle local state (optimistic update)
@@ -880,6 +965,19 @@ const ProfileScreen = () => {
               isReadonly
             />
           )}
+          {user?.is_premium && user?.premium_will_renew === false && (
+            <View style={styles.willNotRenewBox}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={colors.warning}
+                style={{ marginTop: 1 }}
+              />
+              <Text style={styles.willNotRenewText}>
+                Otomatik yenilenmeyecek — bu tarihten sonra Standart üyeliğe geçeceksin.
+              </Text>
+            </View>
+          )}
           <InfoRow
             label="Aylık Kalan Erteleme Hakkı"
             value={
@@ -895,20 +993,19 @@ const ProfileScreen = () => {
               style={styles.cancelSubRow}
               onPress={() =>
                 Alert.alert(
-                  "Aboneliği İptal Et",
-                  "Premium aboneliğini iptal etmek istediğine emin misin?",
+                  "Aboneliği Yönet",
+                  "Aboneliğini yönetmek veya iptal etmek için App Store'a yönlendirileceksin.",
                   [
                     { text: "Vazgeç", style: "cancel" },
                     {
-                      text: "İptal Et",
-                      style: "destructive",
+                      text: "App Store'a Git",
                       onPress: handleCancelSubscription,
                     },
                   ],
                 )
               }
             >
-              <Text style={styles.cancelSubText}>Aboneliği İptal Et</Text>
+              <Text style={styles.cancelSubText}>Aboneliği Yönet</Text>
             </TouchableOpacity>
           )}
         </Section>
@@ -966,6 +1063,15 @@ const ProfileScreen = () => {
             }
           >
             <Text style={styles.logoutText}>Oturumu Kapat</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.deleteAccountBtn,
+              pressed && { opacity: 0.5 },
+            ]}
+            onPress={handleDeleteAccount}
+          >
+            <Text style={styles.deleteAccountText}>Hesabımı Sil</Text>
           </Pressable>
           <Text style={styles.versionText}>PaceUp v2.3.0</Text>
         </View>
@@ -1279,6 +1385,19 @@ const makeStyles = (t: Theme) => {
       fontSize: 15,
       fontWeight: "600" as const,
     },
+    deleteAccountBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginTop: 8,
+      alignItems: "center" as const,
+    },
+    deleteAccountText: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      textDecorationLine: "underline" as const,
+      opacity: 0.7,
+    },
     versionText: { fontSize: 11, color: c.text.secondary, opacity: 0.4 },
 
     // Edit Modal
@@ -1496,6 +1615,26 @@ const makeStyles = (t: Theme) => {
       color: c.danger,
       fontSize: 14,
       fontWeight: "600" as const,
+    },
+    willNotRenewBox: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 8,
+      backgroundColor: c.warning + "15",
+      borderLeftWidth: 3,
+      borderLeftColor: c.warning,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      marginHorizontal: 16,
+      marginTop: 4,
+      marginBottom: 4,
+      borderRadius: 8,
+    },
+    willNotRenewText: {
+      flex: 1,
+      color: c.text.primary,
+      fontSize: 13,
+      lineHeight: 18,
     },
   } as const;
 };

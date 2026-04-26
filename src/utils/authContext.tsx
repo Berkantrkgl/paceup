@@ -3,6 +3,12 @@ import {
   clearPushTokenCache,
   configureNotificationHandler,
 } from "@/utils/notifications";
+import {
+  addCustomerInfoListener,
+  configureRevenueCat,
+  identifyRevenueCatUser,
+  logoutRevenueCat,
+} from "@/utils/revenuecat";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
 import * as Localization from "expo-localization";
@@ -18,6 +24,7 @@ import {
 import { Alert } from "react-native";
 
 configureNotificationHandler();
+configureRevenueCat();
 
 GoogleSignin.configure({
   iosClientId:
@@ -58,6 +65,7 @@ export type UserData = {
   is_premium: boolean;
   premium_type?: "monthly" | "yearly" | null;
   premium_expires_at?: string | null;
+  premium_will_renew?: boolean;
   total_tokens_used: number;
   preferred_running_days: number[];
   remaining_reschedules: number;
@@ -177,6 +185,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const logOut = useCallback(async () => {
     await AsyncStorage.multiRemove([ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY]);
     await clearPushTokenCache();
+    await logoutRevenueCat();
     setToken(null);
     setUser(null);
     setIsLoggedIn(false);
@@ -296,6 +305,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setIsLoggedIn(true);
         const profile = await fetchUserProfile(data.access);
         syncTimezone(getValidToken, profile?.timezone);
+        if (profile?.id) await identifyRevenueCatUser(profile.id);
       } else {
         Alert.alert("Hata", data.detail || "Google ile giriş başarısız.");
       }
@@ -323,6 +333,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         setIsLoggedIn(true);
         const profile = await fetchUserProfile(data.access);
         syncTimezone(getValidToken, profile?.timezone);
+        if (profile?.id) await identifyRevenueCatUser(profile.id);
       } else {
         Alert.alert("Hata", "Giriş bilgileri hatalı.");
       }
@@ -357,6 +368,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setIsLoggedIn(true);
           const profile = await fetchUserProfile(data.access);
           syncTimezone(getValidToken, profile?.timezone);
+          if (profile?.id) await identifyRevenueCatUser(profile.id);
         } else {
           router.replace("/login");
         }
@@ -392,6 +404,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       if (profile) {
         setIsLoggedIn(true);
         syncTimezone(getValidToken, profile.timezone);
+        if (profile.id) await identifyRevenueCatUser(profile.id);
       } else {
         // Token var ama profile çekilemedi (network/server sorunu).
         // isLoggedIn=false bırakıyoruz → kullanıcı login'e düşer, oradan tekrar deneyebilir.
@@ -406,6 +419,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
     init();
   }, []);
+
+  // --- REVENUECAT CUSTOMER INFO LISTENER ---
+  // Multi-device + webhook sync: RC SDK customer info değişince (renewal,
+  // başka cihazda satın alma, grace period vb.) backend'i resync ediyoruz.
+  // Backend RC webhook ile zaten haberdar; refreshUserData /users/me/'yi
+  // çekerek AuthContext'i ve UI'ı güncel state'e taşır.
+  useEffect(() => {
+    if (!isLoggedIn || !user?.id) return;
+    const unsubscribe = addCustomerInfoListener(() => {
+      refreshUserData();
+    });
+    return unsubscribe;
+  }, [isLoggedIn, user?.id]);
 
   // --- NAVIGATION PROTECTION ---
   useEffect(() => {
