@@ -143,6 +143,12 @@ AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
 MEDIA_URL = f'https://{AWS_S3_CUSTOM_DOMAIN}/media/'
 
 
+# --- RevenueCat ---
+REVENUECAT_SECRET_KEY = os.getenv('REVENUECAT_SECRET_KEY', '')
+REVENUECAT_PROJECT_ID = os.getenv('REVENUECAT_PROJECT_ID', '')
+REVENUECAT_WEBHOOK_AUTH = os.getenv('REVENUECAT_WEBHOOK_AUTH', '')
+
+
 # --- Logging ---
 # Default Django config sadece django.* logger'ını handler'a bağlar; apps.* INFO satırları
 # CloudWatch'a düşmez. Root'u INFO'ya çekip apps.notifications'ı explicit tanımlıyoruz.

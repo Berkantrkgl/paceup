@@ -1,3 +1,5 @@
+from datetime import timedelta
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils.translation import gettext_lazy as _
@@ -49,8 +51,29 @@ class User(AbstractUser):
         blank=True, null=True
     )
     premium_expires_at = models.DateTimeField(blank=True, null=True)
+    premium_started_at = models.DateTimeField(blank=True, null=True)
+    premium_will_renew = models.BooleanField(default=True, help_text="Auto-renew açık mı? Cancel edilince false olur")
     reschedules_used_this_month = models.IntegerField(default=0)
     last_reschedule_reset = models.DateField(auto_now_add=True, null=True, blank=True)
+
+    # RevenueCat / Store integration
+    rc_app_user_id = models.CharField(
+        max_length=255, blank=True, null=True, unique=True, db_index=True,
+        help_text="RevenueCat app_user_id — Django user.id'nin string hali"
+    )
+    store = models.CharField(
+        max_length=20,
+        choices=[('app_store', 'App Store'), ('play_store', 'Play Store')],
+        blank=True, null=True
+    )
+    original_transaction_id = models.CharField(
+        max_length=255, blank=True, null=True, db_index=True,
+        help_text="Apple/Google'ın değişmez transaction ID'si — refund/dispute referansı"
+    )
+    premium_last_verified_at = models.DateTimeField(
+        blank=True, null=True,
+        help_text="Webhook veya REST ile state'in son doğrulandığı zaman (debug için)"
+    )
 
     # Notification fiels
     push_token = models.CharField(max_length=255, blank=True, null=True)
@@ -77,16 +100,35 @@ class User(AbstractUser):
                  self.username = f"{self.username}_{uuid.uuid4().hex[:8]}"
         super().save(*args, **kwargs)
 
+    # Lazy fallback: webhook hiç ulaşmadıysa devreye girer.
+    # premium_expires_at geçmiş + son doğrulama bu eşikten eskiyse RC'ye sorar.
+    PREMIUM_LAZY_REVERIFY_AFTER = timedelta(hours=24)
+
     def check_premium_status(self):
-        """Lazy check: Premium süresi dolmuşsa is_premium=False yapar."""
-        if self.is_premium and self.premium_expires_at:
-            if timezone.now() >= self.premium_expires_at:
-                self.is_premium = False
-                self.premium_type = None
-                self.premium_expires_at = None
-                self.save(update_fields=['is_premium', 'premium_type', 'premium_expires_at'])
-                return False
-        return self.is_premium
+        """RC truth source. DB cache. Lazy check yalnızca webhook gecikmesinde fallback.
+
+        - Webhook çalıştığı sürece premium_last_verified_at sürekli güncellenir → bu fonksiyon no-op.
+        - Webhook gelmemişse ve premium_expires_at geçmişse RC REST API'ye sorar.
+        - RC erişilemezse mevcut state korunur (fail-open) — kullanıcı yanlışlıkla premium'dan
+          düşürülmez. Apple grace period'da gives_access=true olabilir, lokal expire tarihi yanıltıcı.
+        """
+        if not (self.is_premium and self.premium_expires_at):
+            return self.is_premium
+        if timezone.now() < self.premium_expires_at:
+            return True
+
+        last = self.premium_last_verified_at
+        if last and (timezone.now() - last) < self.PREMIUM_LAZY_REVERIFY_AFTER:
+            # Webhook yakın zamanda doğruladı; RC hala premium diyorsa lokal expire tarihi gerçeği
+            # yansıtmıyor demektir (renewal/grace period). Mevcut state'i koru.
+            return True
+
+        try:
+            from apps.users.revenuecat import sync_user_from_revenuecat
+            return sync_user_from_revenuecat(self)
+        except Exception:
+            # RC erişilemedi — fail-open. Webhook gelene kadar mevcut durum korunur.
+            return self.is_premium
 
     def get_remaining_reschedules(self):
         """Kullanıcının kalan erteleme hakkını döner ve gerekiyorsa yeni ay sıfırlamasını yapar."""
@@ -119,3 +161,39 @@ class User(AbstractUser):
         if not self.current_pace: return "0:00"
         m, s = divmod(self.current_pace, 60)
         return f"{m}:{s:02d}"
+
+
+class ChatSession(models.Model):
+    """LangGraph thread_id <-> user eşleşmesi. Hesap silmede ilgili checkpoint
+    satırlarını temizlemek + admin panelinden kullanıcı sohbet sayısını
+    görebilmek için tutuluyor."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='chat_sessions',
+    )
+    thread_id = models.CharField(max_length=128, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-last_used_at']
+
+    def __str__(self):
+        return f"{self.user_id} — {self.thread_id}"
+
+
+class RevenueCatWebhookEvent(models.Model):
+    """İdempotency için: aynı event_id tekrar gelirse yok sayılır."""
+    event_id = models.CharField(max_length=255, unique=True, db_index=True)
+    event_type = models.CharField(max_length=50)
+    app_user_id = models.CharField(max_length=255, db_index=True, blank=True, null=True)
+    raw_payload = models.JSONField()
+    received_at = models.DateTimeField(auto_now_add=True)
+    processed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-received_at']
+
+    def __str__(self):
+        return f"{self.event_type} — {self.event_id}"

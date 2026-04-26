@@ -1,19 +1,18 @@
 import uuid
 import requests as http_requests
 
+from django.db import transaction
+
 from rest_framework import viewsets, permissions, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from datetime import timedelta
-from django.utils import timezone
-
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 
-from apps.users.models import User
+from apps.users.models import ChatSession, User
 from apps.users.serializers import UserSerializer, TOKEN_LIMIT_FREE
 
 import os
@@ -84,35 +83,102 @@ class UserViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def activate_premium(self, request):
-        """Demo: Gerçek ödeme entegrasyonu yapılana kadar direkt premium yap"""
-        user = request.user
-        premium_type = request.data.get("premium_type", "monthly")
+    def verify_purchase(self, request):
+        """Frontend RevenueCat ile satın alma tamamladıktan sonra çağırır.
 
-        if premium_type not in ("monthly", "yearly"):
-            return Response({"error": "premium_type 'monthly' veya 'yearly' olmalı."}, status=status.HTTP_400_BAD_REQUEST)
+        RC webhook'u ile aynı anda gelebilir (race). select_for_update ile row lock
+        alıyoruz; iki paralel sync birbirinin yazısını bozmaz, sırayla işlenir.
+        """
+        from apps.users.revenuecat import sync_user_from_revenuecat
 
-        duration = timedelta(days=30) if premium_type == "monthly" else timedelta(days=365)
-
-        user.is_premium = True
-        user.premium_type = premium_type
-        user.premium_expires_at = timezone.now() + duration
-        user.save(update_fields=["is_premium", "premium_type", "premium_expires_at"])
+        product_id = request.data.get("product_id") or None
+        try:
+            with transaction.atomic():
+                user = User.objects.select_for_update().get(pk=request.user.pk)
+                sync_user_from_revenuecat(user, product_id_hint=product_id)
+        except Exception as e:
+            return Response(
+                {"error": f"Satın alma doğrulanamadı: {str(e)}"},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
 
         serializer = self.get_serializer(user)
         return Response(serializer.data)
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
-    def cancel_premium(self, request):
-        """Demo: Premium üyeliği iptal et"""
-        user = request.user
-        user.is_premium = False
-        user.premium_type = None
-        user.premium_expires_at = None
-        user.save(update_fields=["is_premium", "premium_type", "premium_expires_at"])
+    def register_chat_session(self, request):
+        """Frontend yeni bir AI chat thread'i başlatınca thread_id'yi user'a bağlar.
 
-        serializer = self.get_serializer(user)
-        return Response(serializer.data)
+        Hesap silindiğinde bu thread_id'ler LangGraph saver tablolarından temizlenir
+        (GDPR right-to-erasure). Admin'de kullanıcının sohbet sayısı görünür.
+
+        Idempotent: aynı thread_id tekrar gönderilirse last_used_at güncellenir.
+        """
+        thread_id = request.data.get("thread_id")
+        if not thread_id or not isinstance(thread_id, str):
+            return Response(
+                {"error": "thread_id zorunlu."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ChatSession.objects.update_or_create(
+            thread_id=thread_id,
+            defaults={"user": request.user},
+        )
+        return Response({"ok": True})
+
+    @action(detail=False, methods=['delete'], permission_classes=[permissions.IsAuthenticated])
+    def destroy_account(self, request):
+        """Apple Guideline 5.1.1(v): kullanıcı hesabını uygulama içinden silebilmeli.
+
+        Akış:
+        1. Aktif premium varsa engelle (kullanıcı önce App Store'dan iptal etmeli)
+        2. RC customer'ı sil (subscription history dahil)
+        3. LangGraph checkpoint tablolarından thread'leri temizle
+        4. Django user satırını sil — cascade ile programs/workouts/results/
+           achievements/notifications/chat_sessions otomatik silinir
+        """
+        from apps.users.langgraph_cleanup import delete_threads
+        from apps.users.revenuecat import delete_revenuecat_customer
+
+        user = request.user
+        user.check_premium_status()  # lazy refresh — webhook gecikmesi varsa RC'ye sor
+
+        if user.is_premium:
+            return Response(
+                {
+                    "error": "premium_active",
+                    "message": (
+                        "Aktif Premium aboneliğin var. Hesabını silmeden önce "
+                        "App Store → Ayarlar → Apple ID → Abonelikler yolundan "
+                        "PaceUp aboneliğini iptal etmen gerekiyor."
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        app_user_id = str(user.id)
+        thread_ids = list(user.chat_sessions.values_list("thread_id", flat=True))
+
+        # 1. RC customer sil. Hata olursa log'la ama hesap silmeyi durdurma —
+        #    kullanıcı zaten premium değil, RC tarafında orphan kalsa kullanıcıya
+        #    zarar yok. Manual cleanup ile çözülür.
+        try:
+            delete_revenuecat_customer(app_user_id)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "RC customer delete failed for %s — proceeding with account deletion",
+                app_user_id,
+            )
+
+        # 2. LangGraph thread cleanup (best-effort, kendi içinde hata yutar)
+        delete_threads(thread_ids)
+
+        # 3. Django user delete — cascade ile ilişkili her şey silinir
+        user.delete()
+
+        return Response({"ok": True}, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def register_push_token(self, request):
