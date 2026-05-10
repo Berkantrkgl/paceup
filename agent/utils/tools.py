@@ -26,6 +26,15 @@ tool_summarizer_llm = ChatBedrockConverse(
     max_tokens=4096,
 )
 
+# Plan üretimi için Sonnet — modül load'da bir kez kurulur, her create_workout_plan
+# çağrısında yeniden kurmuyoruz (boto3 client + auth chain init'i pahalı).
+planner_llm = ChatBedrockConverse(
+    model=SONNET_46,
+    temperature=0,
+    region_name=BEDROCK_REGION,
+    disable_streaming=True,
+)
+
 def map_day_name_to_int(day_name: str) -> int:
     mapping = {
         'mon': 0, 'monday': 0, 'pzt': 0, 'pazartesi': 0,
@@ -274,13 +283,7 @@ MÜSAİT SLOTLAR:
 
     # --- ADIM 6: AI ÇAĞRISI ---
     try:
-        llm = ChatBedrockConverse(
-            model=SONNET_4,
-            temperature=0,
-            region_name=BEDROCK_REGION,
-            disable_streaming=True,
-        )
-        response = await llm.ainvoke(system_prompt)
+        response = await planner_llm.ainvoke(system_prompt)
         ai_data = extract_json_from_llm_response(response.content)
         raw_workouts = ai_data.get("workouts", [])
         logger.info(f"🤖 Planner LLM Çıktısı ({len(raw_workouts)} antrenman): {json.dumps(raw_workouts, ensure_ascii=False, indent=2)}")
