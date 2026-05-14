@@ -21,7 +21,7 @@ import type { Theme } from "@/theme/tokens";
 import { AuthContext } from "@/utils/authContext";
 
 const LoginScreen = () => {
-    const { logIn, googleSignIn } = useContext(AuthContext);
+    const { logIn, googleSignIn, appleSignIn } = useContext(AuthContext);
     const { colors, isDark } = useTheme();
     const styles = useThemedStyles(makeStyles);
 
@@ -208,10 +208,25 @@ const LoginScreen = () => {
                             size={20}
                             color={colors.text.primary}
                         />
-                        <Text style={styles.oauthBtnText}>
-                            Google ile devam et
-                        </Text>
+                        <Text style={styles.oauthBtnText}>Google</Text>
                     </Pressable>
+
+                    {Platform.OS === "ios" && (
+                        <Pressable
+                            style={({ pressed }) => [
+                                styles.oauthBtn,
+                                pressed && { opacity: 0.75 },
+                            ]}
+                            onPress={appleSignIn}
+                        >
+                            <Ionicons
+                                name="logo-apple"
+                                size={20}
+                                color={colors.text.primary}
+                            />
+                            <Text style={styles.oauthBtnText}>Apple</Text>
+                        </Pressable>
+                    )}
                 </View>
 
                 {/* FOOTER */}
@@ -363,10 +378,12 @@ const makeStyles = (t: Theme) =>
 
         // OAuth
         oauthSection: {
+            flexDirection: "row",
             gap: 12,
             marginBottom: 32,
         },
         oauthBtn: {
+            flex: 1,
             flexDirection: "row",
             alignItems: "center",
             justifyContent: "center",

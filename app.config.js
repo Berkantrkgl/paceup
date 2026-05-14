@@ -12,6 +12,8 @@ const PROD_FASTAPI_URL = "https://chatbot.your-domain.com";
 
 module.exports = {
   expo: {
+    // App Store Connect'teki "Name" ile birebir eşleşmeli (Guideline 2.3.8) —
+    // marketplace adı da "PaceUp".
     name: "PaceUp",
     slug: "PaceUp",
     version: "1.0.1",
@@ -39,6 +41,7 @@ module.exports = {
             },
           },
       bundleIdentifier: "com.example.PaceUp",
+      usesAppleSignIn: true,
       entitlements: {
         "aps-environment": IS_PRODUCTION ? "production" : "development",
       },
@@ -60,6 +63,7 @@ module.exports = {
     plugins: [
       "expo-router",
       "expo-localization",
+      "expo-apple-authentication",
       [
         "expo-splash-screen",
         {

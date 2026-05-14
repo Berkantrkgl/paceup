@@ -11,6 +11,7 @@ import {
 } from "@/utils/revenuecat";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 import * as Localization from "expo-localization";
 import { useRouter, useSegments } from "expo-router";
 import { jwtDecode } from "jwt-decode";
@@ -102,6 +103,7 @@ type AuthState = {
     password: string,
   ) => Promise<void>;
   googleSignIn: () => Promise<void>;
+  appleSignIn: () => Promise<void>;
   logOut: () => void;
   refreshUserData: () => Promise<void>;
   getValidToken: () => Promise<string | null>;
@@ -167,6 +169,7 @@ export const AuthContext = createContext<AuthState>({
   logIn: async () => {},
   register: async () => {},
   googleSignIn: async () => {},
+  appleSignIn: async () => {},
   logOut: () => {},
   refreshUserData: async () => {},
   getValidToken: async () => null,
@@ -317,6 +320,60 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
   };
 
+  // --- APPLE SIGN IN ---
+  const appleSignIn = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      const identityToken = credential.identityToken;
+      if (!identityToken) {
+        Alert.alert("Hata", "Apple'dan token alınamadı.");
+        return;
+      }
+
+      // Apple isim/email'i SADECE ilk girişte döner. Backend identity_token'dan
+      // email çıkarır; isim token'da olmadığı için ilk akıştan gelen full_name'i
+      // ayrıca gönderiyoruz (yeni kullanıcı oluşturulurken kaydedilir).
+      const res = await fetch(`${API_URL}/auth/apple/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identity_token: identityToken,
+          full_name: credential.fullName
+            ? {
+                givenName: credential.fullName.givenName,
+                familyName: credential.fullName.familyName,
+              }
+            : null,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.access && data.refresh) {
+        await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+        await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+        setToken(data.access);
+        setIsLoggedIn(true);
+        const profile = await fetchUserProfile(data.access);
+        syncTimezone(getValidToken, profile?.timezone);
+        if (profile?.id) await identifyRevenueCatUser(profile.id);
+      } else {
+        Alert.alert("Hata", data.error || "Apple ile giriş başarısız.");
+      }
+    } catch (e: any) {
+      // Kullanıcı Apple sheet'ini kapattıysa sessizce yok say.
+      if (e.code !== "ERR_REQUEST_CANCELED") {
+        console.error("Apple Sign-In error:", e);
+        Alert.alert("Hata", "Apple ile giriş sırasında bir sorun oluştu.");
+      }
+    }
+  };
+
   // --- ACTIONS ---
   const logIn = async (email: string, password: string) => {
     try {
@@ -460,6 +517,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         logIn,
         register,
         googleSignIn,
+        appleSignIn,
         logOut,
         refreshUserData,
         getValidToken, // Dışarıya açıldı!
