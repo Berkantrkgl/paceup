@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from .views import UserViewSet, GoogleSignInView
+from .views import UserViewSet, GoogleSignInView, AppleSignInView
 from .webhooks import revenuecat_webhook
 
 router = DefaultRouter()
@@ -18,6 +18,9 @@ urlpatterns = [
 
     # Google Sign-In
     path('auth/google/', GoogleSignInView.as_view(), name='google_signin'),
+
+    # Sign in with Apple
+    path('auth/apple/', AppleSignInView.as_view(), name='apple_signin'),
 
     # RevenueCat webhook
     path('webhooks/revenuecat/', revenuecat_webhook, name='revenuecat_webhook'),

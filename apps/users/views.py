@@ -1,6 +1,9 @@
 import uuid
 import requests as http_requests
 
+import jwt
+from jwt import PyJWKClient
+
 from django.db import transaction
 
 from rest_framework import viewsets, permissions, status
@@ -18,6 +21,15 @@ from apps.users.serializers import UserSerializer, TOKEN_LIMIT_FREE
 import os
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
+# Sign in with Apple — iOS bundle ID, identity_token'ın "aud" claim'i bununla eşleşmeli.
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "com.example.PaceUp")
+APPLE_ISSUER = "https://appleid.apple.com"
+APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
+
+# PyJWKClient Apple'ın public key'lerini kendi içinde cache'ler — modül yükünde
+# bir kez kurulur, her istekte yeniden ağ çağrısı yapmaz.
+_apple_jwk_client = PyJWKClient(APPLE_JWKS_URL)
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -262,6 +274,83 @@ class GoogleSignInView(APIView):
                 "last_name": last_name,
                 "password": uuid.uuid4().hex,
             }
+        )
+
+        if created:
+            user.set_unusable_password()
+            user.save(update_fields=["password"])
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "created": created,
+        })
+
+
+class AppleSignInView(APIView):
+    """Sign in with Apple — App Store Guideline 4.8 gereği Google ile eşdeğer login.
+
+    Frontend `expo-apple-authentication` ile native Apple Sign-In yapar ve
+    `identity_token` (JWT) gönderir. Token Apple'ın public key'leriyle doğrulanır.
+
+    Apple email/isim'i SADECE ilk girişte döner — sonraki girişlerde token'da
+    email claim'i olur ama isim asla gelmez. O yüzden frontend ilk akıştan
+    aldığı `full_name`'i body'de iletir; kullanıcı yoksa onu kaydederiz.
+    Apple "Hide My Email" seçilirse email bir privaterelay.appleid.com adresi
+    olur — bu tamamen geçerli, normal email gibi saklanır.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        identity_token = request.data.get("identity_token")
+        if not identity_token:
+            return Response(
+                {"error": "identity_token gerekli."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            signing_key = _apple_jwk_client.get_signing_key_from_jwt(identity_token)
+            claims = jwt.decode(
+                identity_token,
+                signing_key.key,
+                algorithms=["RS256"],
+                audience=APPLE_CLIENT_ID,
+                issuer=APPLE_ISSUER,
+            )
+        except jwt.PyJWTError:
+            return Response(
+                {"error": "Geçersiz Apple token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # "sub" = Apple'ın değişmez kullanıcı kimliği. Email her zaman token'da
+        # bulunmaz; bulunmuyorsa sub bazlı bir placeholder email kullanırız.
+        apple_sub = claims.get("sub")
+        email = claims.get("email")
+
+        if not apple_sub:
+            return Response(
+                {"error": "Apple token'ında kullanıcı kimliği bulunamadı."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not email:
+            email = f"{apple_sub}@privaterelay.appleid.com"
+
+        full_name = request.data.get("full_name") or {}
+        first_name = (full_name.get("givenName") or "").strip()
+        last_name = (full_name.get("familyName") or "").strip()
+
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                "username": email.split("@")[0],
+                "first_name": first_name,
+                "last_name": last_name,
+                "password": uuid.uuid4().hex,
+            },
         )
 
         if created:
