@@ -123,6 +123,9 @@ async def call_api(
             try:
                 logger.info("Proactively refreshing token for %s", endpoint)
                 access_token = await refresh_access_token(refresh_token)
+                # Yenilenen token'ı config'e geri yaz — aynı SSE oturumundaki
+                # sonraki call_api çağrıları tekrar refresh etmesin.
+                configuration["user_token"] = access_token
             except Exception as e:
                 return {"error": f"Session refresh failed: {e}"}
         else:
@@ -146,6 +149,7 @@ async def call_api(
                 new_access_token = await refresh_access_token(refresh_token)
             except Exception:
                 return {"error": "Session expired"}
+            configuration["user_token"] = new_access_token
             headers["Authorization"] = f"Bearer {new_access_token}"
             response = await client.request(
                 method, url, headers=headers, json=data, params=params

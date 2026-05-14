@@ -18,18 +18,19 @@ logger = logging.getLogger(__name__)
 
 from agent.utils.helper_agents import extract_planner_context
 
-# Özetleme için hafif modeli tanımlıyoruz
+# Planner bağlamı çıkarımı için Haiku 4.5 — Nova Lite kullanıcının sözünü
+# bozuyordu ("interval istemiyorum" → 3 tip yasak gibi). Haiku daha sadık çıkarır.
 tool_summarizer_llm = ChatBedrockConverse(
-    model=NOVA_LITE_2, # Senin NOVA_LITE_2 değişkenin
+    model=HAIKU_45,
     region_name=BEDROCK_REGION,
-    temperature=0.5,
+    temperature=0,
     max_tokens=4096,
 )
 
 # Plan üretimi için Sonnet — modül load'da bir kez kurulur, her create_workout_plan
 # çağrısında yeniden kurmuyoruz (boto3 client + auth chain init'i pahalı).
 planner_llm = ChatBedrockConverse(
-    model=SONNET_46,
+    model=SONNET_45,
     temperature=0,
     region_name=BEDROCK_REGION,
     disable_streaming=True,
@@ -226,18 +227,31 @@ async def create_workout_plan(
     logger.info("📝 Planner için kullanıcı tercihleri çıkarılıyor...")
     messages = state.get("messages", [])
 
+    constraints = {"forbidden_types": [], "has_health_constraint": False}
     try:
-        chat_context_summary = await extract_planner_context(
-            tool_summarizer_llm, messages
+        chat_context_summary, constraints = await extract_planner_context(
+            tool_summarizer_llm, messages, goal=final_goal
         )
-        logger.info(f"✅ Planner Bağlamı Alındı ({len(chat_context_summary)} karakter)")
+        logger.info(
+            f"✅ Planner Bağlamı Alındı ({len(chat_context_summary)} karakter) "
+            f"| kısıtlamalar={constraints}"
+        )
     except Exception as e:
         logger.error(f"⚠️ Planner bağlamı çıkarma hatası: {e}")
         chat_context_summary = state.get("summary", "")
 
     # --- ADIM 4: SLOT HAVUZU ---
     available_slots = generate_available_slots(start_date, duration_weeks, selected_days)
-    long_run_weekday = map_day_name_to_int(long_run_day) if long_run_day else -1
+
+    # [LONG_RUN_DAY] etiketi sadece long gerçekten plana girecekse anlamlı.
+    # long YASAK ise etiketi hiç basmıyoruz — modelin "yok saymasını" beklemek
+    # yerine kısıtlamayı kodda uyguluyoruz.
+    long_is_forbidden = "long" in constraints.get("forbidden_types", [])
+    if long_is_forbidden:
+        long_run_weekday = -1
+        logger.info("🚫 long YASAK — [LONG_RUN_DAY] etiketi slot'lara basılmıyor")
+    else:
+        long_run_weekday = map_day_name_to_int(long_run_day) if long_run_day else -1
 
     slots_payload = ""
     for slot in available_slots:
@@ -249,19 +263,29 @@ async def create_workout_plan(
     system_prompt = f"""Koşu koçu olarak {duration_weeks} haftalık antrenman programı oluştur.
 
 KULLANICI: {gender}, {height}cm, {weight}kg | Pace: {pace_info} | Max mesafe: {max_dist}km | Hedef: {final_goal}
-BAĞLAM: {chat_context_summary}
 {beginner_warning}
-KURALLAR:
-1. Haftalık iskelet: 1 kaliteli (interval/tempo) + 1 uzun (long) + geri kalanı easy
-2. Arka arkaya zorlu antrenman (interval/tempo/long) yasak — aralarına mutlaka easy gir
-3. Easy mesafesi her zaman long/interval/tempo mesafesinden kısa olmalı (80/20)
-4. [LONG_RUN_DAY] slotu → her zaman "long" tipi; hemen sonraki slot → her zaman "easy"
-5. Haftalık mesafe artışı max %10 ({max_dist}km baz al)
-6. Antrenman başlıkları yaratıcı ve motive edici olsun
-7. "description" alanı: Sadece gerektiğinde doldur, yoksa boş string ("") gönder.
-   - interval antrenmanlarında ZORUNLU: tekrar sayısı, mesafe ve dinlenme süresi belirt (Örn: "6x200m tekrar, aralarında 90sn yürüyüş dinlenmesi")
-   - tempo antrenmanlarında opsiyonel: ısınma/ana set/soğuma yapısı varsa belirt
-   - easy ve long için boş bırak
+
+BAĞLAM — KULLANICI KISITLAMALARI VE TERCİHLERİ:
+{chat_context_summary}
+
+ÖNCELİK SIRASI:
+1. BAĞLAM en yüksek önceliklidir. "YASAK" işaretli tipi ASLA koyma. "AĞIRLIKLI"/"MİNİMAL" tercihlerine uy. BAĞLAM bir tipi yasaklasa bile koşu bilimine sadık, dolu bir program kur — kalan tiplerle çeşitlilik sağla.
+2. Güvenlik kuralları (aşağıda) — esnetilemez.
+3. BAĞLAM'da hiç kısıtlama/tercih yoksa varsayılan iskeleti uygula.
+
+GÜVENLİK KURALLARI (esnetilemez):
+- BAĞLAM'da veya "Hedef" satırında sakatlık / iyileşme / "yeni dönüyorum" geçiyorsa: interval ve tempo koyma, long'u minimal ve kısa tut, easy ağırlıklı git, mesafe artışını çok yavaş yap.
+- Haftalık toplam mesafe artışı max %10 (baz: {max_dist}km).
+- Acemi kullanıcı: ilk 2 hafta hiçbir antrenman 5km'yi geçmesin, interval/tempo koyma.
+- Her slot tek antrenman. Arka arkaya zorlu antrenman (interval/tempo/long) koyma — aralarına easy gir.
+
+VARSAYILAN İSKELET (sadece BAĞLAM boşsa):
+- Haftada 1 kaliteli (interval/tempo) + 1 long + geri kalanı easy. 80/20: easy mesafesi long/tempo/interval'den kısa.
+- [LONG_RUN_DAY] etiketli slot → "long" tipi.
+
+BAŞLIK VE AÇIKLAMA:
+- Başlıklar yaratıcı ve motive edici olsun.
+- "description": interval → zorunlu detay (tekrar/mesafe/dinlenme). tempo → opsiyonel yapı. easy/long → boş string.
 
 MÜSAİT SLOTLAR:
 {slots_payload}

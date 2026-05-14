@@ -68,6 +68,7 @@ async def verify_token(
 class StreamChatInput(BaseModel):
     thread_id: str
     messages: List[dict]
+    refresh_token: str | None = None
 
 
 app = FastAPI(title="PaceUp Graph API", version="1.0.0")
@@ -175,6 +176,7 @@ async def stream_chat(
             "thread_id": inp.thread_id,
             "user_token": user["token"],
             "user_id": user["user_id"],
+            "refresh_token": inp.refresh_token,
         }
     }
 
@@ -216,6 +218,49 @@ async def stream_chat(
                     inputs = None
                 else:
                     logger.info("User message received: thread=%s", inp.thread_id)
+
+                    # Kullanıcı, açık bir UI tool widget'ını doldurmadan düz
+                    # mesaj gönderdiyse state'te cevapsız tool_use kalır.
+                    # Anthropic her tool_use'un hemen ardından tool_result
+                    # bekler — aksi halde ValidationException. Cevapsız tool
+                    # çağrılarına "iptal edildi" ToolMessage'ı ekleyip history'yi
+                    # tutarlı hale getiriyoruz.
+                    state = await graph.aget_state(config)
+                    state_msgs = state.values.get("messages", [])
+                    answered_ids = {
+                        m.tool_call_id
+                        for m in state_msgs
+                        if isinstance(m, ToolMessage)
+                    }
+                    pending_tool_calls = []
+                    for m in state_msgs:
+                        for tc in getattr(m, "tool_calls", None) or []:
+                            tc_id = tc.get("id") if isinstance(tc, dict) else None
+                            if tc_id and tc_id not in answered_ids:
+                                pending_tool_calls.append(tc_id)
+
+                    if pending_tool_calls:
+                        logger.warning(
+                            "Cancelling %d unanswered tool call(s) before user "
+                            "message: thread=%s ids=%s",
+                            len(pending_tool_calls),
+                            inp.thread_id,
+                            pending_tool_calls,
+                        )
+                        cancel_msgs = [
+                            ToolMessage(
+                                content="Kullanıcı bu adımı atladı ve sohbete "
+                                "düz mesajla devam etti.",
+                                tool_call_id=tc_id,
+                            )
+                            for tc_id in pending_tool_calls
+                        ]
+                        await graph.aupdate_state(
+                            config,
+                            {"messages": cancel_msgs},
+                            as_node="ui_tools",
+                        )
+
                     user_text = extract_text_content(last_msg["content"])
                     inputs = {"messages": [HumanMessage(content=user_text)]}
 
