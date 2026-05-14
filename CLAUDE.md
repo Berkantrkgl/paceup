@@ -111,6 +111,20 @@ PACEUP-BACKEND/
 - Paket: `google-auth` (`google.oauth2.id_token`, `google.auth.transport.requests`)
 - Credentials `.env`'den okunur: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
 
+**Sign in with Apple** (`POST /api/auth/apple/`):
+
+App Store Guideline 4.8 gereği eklendi — üçüncü taraf login (Google) kullanan app'in eşdeğer bir alternatif login sunması zorunlu.
+
+- Frontend `expo-apple-authentication` ile native Apple Sign-In yapar, `identity_token` (JWT) gönderir
+- Backend token'ı Apple'ın public key'leriyle doğrular: `PyJWKClient` (JWKS cache'li) + `jwt.decode` ile `aud` (bundle ID) ve `iss` (`https://appleid.apple.com`) kontrolü
+- `sub` claim'i = Apple'ın değişmez kullanıcı kimliği. Email her zaman token'da bulunmaz; yoksa `{sub}@privaterelay.appleid.com` placeholder kullanılır
+- Apple email/isim'i **sadece ilk girişte** döner — sonraki girişlerde isim asla gelmez. O yüzden frontend ilk akıştan aldığı `full_name`'i body'de iletir (`{ "givenName": "...", "familyName": "..." }`), yeni kullanıcı oluşturulurken kaydedilir
+- "Hide My Email" seçilirse email bir `privaterelay.appleid.com` adresi olur — normal email gibi saklanır
+- Email ile kullanıcı varsa bulunur, yoksa oluşturulur (`set_unusable_password`, username otomatik)
+- Response: `{ "access": "...", "refresh": "...", "created": true/false }`
+- Paket: `PyJWT` + `cryptography` (zaten `requirements.txt`'de — ek bağımlılık yok)
+- `APPLE_CLIENT_ID` env'den okunur, default `com.example.PaceUp` (bundle ID değişmediği sürece set etmeye gerek yok)
+
 **Onboarding Akışı:**
 
 - Register veya Google Sign-In ile oluşturulan kullanıcılar `is_onboarded: false` ile başlar
@@ -146,6 +160,7 @@ REST_FRAMEWORK = {
 | `POST /api/token/`                    | Login → `{ access, refresh }` JWT döner                                                                      |
 | `POST /api/token/refresh/`            | Refresh token → yeni access token                                                                            |
 | `POST /api/auth/google/`             | Google Sign-In: code flow veya id_token flow → `{ access, refresh, created }` döner                          |
+| `POST /api/auth/apple/`              | Sign in with Apple: `identity_token` (+ ilk girişte `full_name`) → `{ access, refresh, created }` döner       |
 | `POST /api/users/`                    | Register (AllowAny) → user + JWT token döner                                                                 |
 | `GET/PATCH /api/users/me/`            | Profil + computed alanlar (`remaining_reschedules`, `active_program_id`, `remaining_tokens`, `can_use_chat`) |
 | `POST /api/users/update_token_usage/` | Chat sonrası token sayacını günceller, `can_use_chat` döner                                                  |
@@ -528,6 +543,7 @@ Bu sayede backend'in secret yönetimi minimal kalır — sadece `.env`'de `EXPO_
 - **Lokal dev (`.env`):** `DJANGO_SECRET_KEY`, `DATABASE_URL` (opsiyonel, yoksa SQLite), `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — `.gitignore`'da, commit edilmez. Şablon: `.env.example`.
 - **Production (AWS Secrets Manager `paceup/django`):** `DJANGO_SECRET_KEY`, `DATABASE_URL`, `AWS_STORAGE_BUCKET_NAME`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`. ECS task definition bunları her task start'ında env var olarak inject eder. AWS keyleri **yok** — S3 erişimi task role üzerinden.
 - **Plaintext env (task definition'da):** `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS=your-domain.com,*`, `DJANGO_CSRF_TRUSTED_ORIGINS=https://your-domain.com`, `AWS_DEFAULT_REGION=eu-central-1`.
+- **`APPLE_CLIENT_ID`:** Sign in with Apple için iOS bundle ID. Kodda default `com.example.PaceUp` — bundle ID değişmediği sürece env'e eklemeye gerek yok. Değişirse hem lokal hem prod'a set edilmeli.
 
 **Deployment:** Kapsamlı runbook → [`../deployment_steps.md`](../deployment_steps.md). Canlı URL: `https://api.your-domain.com/api/`. `master` branch'e push → GitHub Actions otomatik build + ECR push + ECS rolling deployment.
 
