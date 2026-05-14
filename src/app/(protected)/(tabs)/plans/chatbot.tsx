@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Markdown from "react-native-markdown-display";
 import EventSource from "react-native-sse";
 
@@ -301,6 +302,10 @@ const ChatbotScreen = () => {
     const validToken = await getValidToken();
     if (!validToken) return;
 
+    // Refresh token de gönderilir — uzun SSE oturumlarında access token
+    // expire olursa graph-api Django'ya proaktif refresh ile bağlanabilsin.
+    const refreshToken = await AsyncStorage.getItem("auth-refresh-token");
+
     setIsTyping(true);
     let activeAiMsgId = Date.now().toString();
 
@@ -333,6 +338,7 @@ const ChatbotScreen = () => {
         body: JSON.stringify({
           thread_id: threadId,
           messages: payloadMessages,
+          refresh_token: refreshToken,
         }),
         pollingInterval: 0,
       });
