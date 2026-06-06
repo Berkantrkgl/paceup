@@ -17,6 +17,13 @@ PERIODIC_TASKS = [
         "schedule_type": Schedule.CRON,
         "cron": "0 * * * *",  # her saat başı (xx:00)
     },
+    {
+        "name": "cleanup_chat_checkpoints",
+        "func": "django.core.management.call_command",
+        "args": "'cleanup_chat_checkpoints'",
+        "schedule_type": Schedule.CRON,
+        "cron": "0 3 * * *",  # her gece 03:00 UTC
+    },
 ]
 
 
@@ -25,14 +32,17 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         for task in PERIODIC_TASKS:
+            defaults = {
+                "func": task["func"],
+                "schedule_type": task["schedule_type"],
+                "cron": task["cron"],
+                "repeats": -1,  # sonsuz tekrar
+            }
+            if "args" in task:
+                defaults["args"] = task["args"]
             obj, created = Schedule.objects.update_or_create(
                 name=task["name"],
-                defaults={
-                    "func": task["func"],
-                    "schedule_type": task["schedule_type"],
-                    "cron": task["cron"],
-                    "repeats": -1,  # sonsuz tekrar
-                },
+                defaults=defaults,
             )
             action = "oluşturuldu" if created else "güncellendi"
             self.stdout.write(

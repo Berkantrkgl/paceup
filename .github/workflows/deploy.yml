@@ -1,4 +1,4 @@
-name: Deploy Django to ECS
+name: Deploy Django to Hetzner
 
 on:
   push:
@@ -12,64 +12,46 @@ on:
       - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
-env:
-  AWS_REGION: eu-central-1
-  ECR_REPO: paceup-django
-  ECS_CLUSTER: example-cluster
-  ECS_SERVICE: paceup-django-service
-
 concurrency:
   group: deploy-django
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Build and deploy
+    name: SSH deploy
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push image
-        env:
-          REGISTRY: ${{ steps.ecr.outputs.registry }}
-          SHA: ${{ github.sha }}
-        run: |
-          docker buildx build \
-            --platform linux/amd64 \
-            -f Dockerfile.django \
-            -t $REGISTRY/$ECR_REPO:$SHA \
-            -t $REGISTRY/$ECR_REPO:latest \
-            --push .
-
-      - name: Force ECS rolling deployment
-        run: |
-          aws ecs update-service \
-            --cluster $ECS_CLUSTER \
-            --service $ECS_SERVICE \
-            --force-new-deployment \
-            --region $AWS_REGION > /dev/null
-
-      - name: Wait for service to stabilize
-        run: |
-          aws ecs wait services-stable \
-            --cluster $ECS_CLUSTER \
-            --services $ECS_SERVICE \
-            --region $AWS_REGION
+          host: ${{ secrets.HETZNER_HOST }}
+          username: deploy
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: 22
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /home/deploy/paceup/paceup-backend
+            echo "→ git pull"
+            git fetch origin master
+            git reset --hard origin/master
+            git log -1 --oneline
+            cd /home/deploy/paceup
+            echo "→ rebuild django container"
+            docker compose up -d --build django
+            echo "→ wait for healthcheck"
+            STATUS="starting"
+            for i in $(seq 1 24); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' paceup-django-1 2>/dev/null || echo "starting")
+              echo "  [$i/24] health=$STATUS"
+              if [ "$STATUS" = "healthy" ]; then break; fi
+              sleep 5
+            done
+            echo "→ final state"
+            docker compose ps django
+            if [ "$STATUS" != "healthy" ]; then
+              echo "ERROR: django unhealthy after 120s"
+              docker compose logs django --tail 50
+              exit 1
+            fi
+            echo "✓ deploy ok"
