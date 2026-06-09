@@ -215,6 +215,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const data = await response.json();
         if (response.ok && data.access) {
           await AsyncStorage.setItem(ACCESS_TOKEN_KEY, data.access);
+          // ROTATE_REFRESH_TOKENS backend'de açık: her refresh yeni bir refresh
+          // token döner. Bunu kaydetmezsek 180 günlük pencere KAYMAZ ve sabit
+          // sınır olur. Yeni refresh'i sakla ki düzenli kullanan kullanıcı hiç
+          // logout olmasın.
+          if (data.refresh) {
+            await AsyncStorage.setItem(REFRESH_TOKEN_KEY, data.refresh);
+          }
           setToken(data.access);
           return data.access;
         } else {
