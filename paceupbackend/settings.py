@@ -3,6 +3,7 @@ Django settings for paceupbackend project.
 """
 
 from pathlib import Path
+from datetime import timedelta
 import os
 import dj_database_url
 from dotenv import load_dotenv
@@ -116,6 +117,21 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     )
+}
+
+
+# --- JWT token ömürleri ---
+# Mobil uygulama: kullanıcı bir kez login olur, logout edene kadar oturum açık
+# kalmalı. ROTATE açık olduğu için her /token/refresh/ çağrısı yeni bir refresh
+# token döner ve 180 günlük pencere sıfırlanır — kullanıcı düzenli kullandığı
+# sürece pratikte hiç logout olmaz. Frontend, refresh response'undaki yeni
+# `refresh` değerini de kaydetmek zorundadır (bkz. authContext.refreshAccessToken).
+# Default'larda REFRESH_TOKEN_LIFETIME = 1 gün olduğu için kullanıcılar her gün
+# tekrar login olmak zorunda kalıyordu.
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=180),
+    'ROTATE_REFRESH_TOKENS': True,
 }
 
 
