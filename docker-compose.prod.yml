@@ -1,0 +1,48 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env.caddy
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - paceup
+
+  django:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.django
+    restart: unless-stopped
+    env_file: .env.django
+    networks:
+      - paceup
+    expose:
+      - "8000"
+    depends_on:
+      - caddy
+
+  graph-api:
+    build:
+      context: ./chatapi
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env.graph
+    networks:
+      - paceup
+    expose:
+      - "8001"
+    depends_on:
+      - django
+
+networks:
+  paceup:
+    driver: bridge
+
+volumes:
+  caddy-data:
+  caddy-config:

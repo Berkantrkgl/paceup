@@ -1,7 +1,10 @@
 # ── Secrets / env ───────────────────────────────────────────
+# Ignore every .env* file (incl. .env.django / .env.graph / .env.caddy)…
 .env
-.env.local
-.env.*.local
+.env.*
+# …but keep the committed placeholder templates.
+!.env.example
+!.env.*.example
 *.pem
 *.key
 *.p8

@@ -1,0 +1,27 @@
+{
+    email {$CADDY_EMAIL}
+}
+
+{$API_DOMAIN} {
+    reverse_proxy django:8000
+    encode gzip
+    request_body {
+        max_size 25MB
+    }
+}
+
+{$CHATBOT_DOMAIN} {
+    reverse_proxy graph-api:8001 {
+        flush_interval -1
+        transport http {
+            response_header_timeout 0
+            read_buffer 4KB
+        }
+    }
+    encode gzip
+}
+
+{$APP_DOMAIN} {
+    reverse_proxy django:8000
+    encode gzip
+}
