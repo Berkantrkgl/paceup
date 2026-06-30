@@ -1,4 +1,4 @@
-# PaceUp graph API — LangGraph plan-generation service.
+# PaceUp graph API — LangGraph plan-generation service (chatbot).
 import asyncio
 import json
 import logging

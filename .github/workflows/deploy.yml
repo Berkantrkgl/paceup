@@ -96,7 +96,10 @@ jobs:
               exit 0
             fi
             echo "→ rebuilding: $SERVICES"
-            $COMPOSE up -d --build $SERVICES
+            # --no-deps: only (re)create the named service(s); leave the rest
+            # untouched. Without it, depends_on would also recreate dependencies
+            # (e.g. rebuilding graph-api would restart django too).
+            $COMPOSE up -d --build --no-deps $SERVICES
 
             # Health-check the app services (caddy has no healthcheck).
             for svc in $SERVICES; do
