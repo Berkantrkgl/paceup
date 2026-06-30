@@ -65,7 +65,7 @@ jobs:
           envs: DISPATCH_SERVICE,CH_DJANGO,CH_GRAPH,CH_CADDY
           script: |
             set -euo pipefail
-            REPO=/home/deploy/paceup/paceup
+            REPO=/home/deploy/paceup
             # Run from the repo dir with a fixed project name so it reuses the
             # existing caddy TLS volumes (paceup_caddy-data/-config) and reads
             # .env.django / .env.graph / .env.caddy that live in the repo dir.
