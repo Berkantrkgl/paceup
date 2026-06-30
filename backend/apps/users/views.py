@@ -23,7 +23,7 @@ GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 
 # Sign in with Apple — iOS bundle ID, identity_token'ın "aud" claim'i bununla eşleşmeli.
-APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "com.example.PaceUp")
+APPLE_CLIENT_ID = os.environ.get("APPLE_CLIENT_ID", "")
 APPLE_ISSUER = "https://appleid.apple.com"
 APPLE_JWKS_URL = "https://appleid.apple.com/auth/keys"
 

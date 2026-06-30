@@ -7,8 +7,10 @@ const IS_PRODUCTION = process.env.EAS_BUILD_PROFILE === "production";
 // gitmeli, aksi halde lokal SQLite ve ECS RDS tutarsız olur.
 const USE_PROD_API = IS_PRODUCTION || process.env.USE_PROD_API === "1";
 
-const PROD_API_URL = "https://api.your-domain.com";
-const PROD_FASTAPI_URL = "https://chatbot.your-domain.com";
+const PROD_API_URL =
+  process.env.EXPO_PUBLIC_PROD_API_URL || "https://api.your-domain.com";
+const PROD_FASTAPI_URL =
+  process.env.EXPO_PUBLIC_PROD_FASTAPI_URL || "https://chatbot.your-domain.com";
 
 module.exports = {
   expo: {
@@ -23,7 +25,9 @@ module.exports = {
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
     updates: {
-      url: "https://u.expo.dev/your-eas-project-id",
+      url:
+        process.env.EXPO_PUBLIC_UPDATES_URL ||
+        "https://u.expo.dev/your-eas-project-id",
     },
     runtimeVersion: {
       policy: "appVersion",
@@ -40,7 +44,8 @@ module.exports = {
               NSAllowsArbitraryLoads: true,
             },
           },
-      bundleIdentifier: "com.example.PaceUp",
+      bundleIdentifier:
+        process.env.EXPO_PUBLIC_IOS_BUNDLE_ID || "com.example.PaceUp",
       usesAppleSignIn: true,
       entitlements: {
         "aps-environment": IS_PRODUCTION ? "production" : "development",
@@ -80,6 +85,7 @@ module.exports = {
         "@react-native-google-signin/google-signin",
         {
           iosUrlScheme:
+            process.env.EXPO_PUBLIC_GOOGLE_IOS_URL_SCHEME ||
             "com.googleusercontent.apps.your-google-ios-client-id",
         },
       ],
@@ -99,13 +105,15 @@ module.exports = {
     extra: {
       router: {},
       eas: {
-        projectId: "your-eas-project-id",
+        projectId:
+          process.env.EXPO_PUBLIC_EAS_PROJECT_ID || "your-eas-project-id",
       },
       apiBaseUrl: USE_PROD_API ? PROD_API_URL : null,
       fastApiBaseUrl: USE_PROD_API ? PROD_FASTAPI_URL : null,
       // RevenueCat iOS public SDK key — frontend'de bundle edilecek şekilde tasarlandı, secret değil
-      revenueCatIosKey: "your-revenuecat-ios-key",
+      revenueCatIosKey:
+        process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || "your-revenuecat-ios-key",
     },
-    owner: "your-expo-owner",
+    owner: process.env.EXPO_PUBLIC_EXPO_OWNER || "your-expo-owner",
   },
 };

@@ -28,10 +28,8 @@ configureNotificationHandler();
 configureRevenueCat();
 
 GoogleSignin.configure({
-  iosClientId:
-    "your-google-ios-client-id.apps.googleusercontent.com",
-  webClientId:
-    "your-google-web-client-id.apps.googleusercontent.com",
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
 });
 
 // --- TİPLER ---

@@ -54,7 +54,8 @@ const PLAN_META: Record<"monthly" | "yearly", PlanMeta> = {
   },
 };
 
-const LEGAL_BASE_URL = "https://legal.your-domain.com";
+const LEGAL_BASE_URL =
+  process.env.EXPO_PUBLIC_LEGAL_BASE_URL || "https://legal.your-domain.com";
 const PRIVACY_URL = `${LEGAL_BASE_URL}/privacy.html`;
 const TERMS_URL = `${LEGAL_BASE_URL}/terms.html`;
 
