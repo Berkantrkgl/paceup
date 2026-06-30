@@ -1,0 +1,57 @@
+name: Deploy Graph API to Hetzner
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "agent/**"
+      - "main.py"
+      - "requirements.txt"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-graph-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: deploy
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          port: 22
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            cd /home/deploy/paceup/paceup-graph-api
+            echo "→ git pull"
+            git fetch origin master
+            git reset --hard origin/master
+            git log -1 --oneline
+            cd /home/deploy/paceup
+            echo "→ rebuild graph-api container"
+            docker compose up -d --build graph-api
+            echo "→ wait for healthcheck"
+            STATUS="starting"
+            for i in $(seq 1 24); do
+              STATUS=$(docker inspect --format='{{.State.Health.Status}}' paceup-graph-api-1 2>/dev/null || echo "starting")
+              echo "  [$i/24] health=$STATUS"
+              if [ "$STATUS" = "healthy" ]; then break; fi
+              sleep 5
+            done
+            echo "→ final state"
+            docker compose ps graph-api
+            if [ "$STATUS" != "healthy" ]; then
+              echo "ERROR: graph-api unhealthy after 120s"
+              docker compose logs graph-api --tail 50
+              exit 1
+            fi
+            echo "✓ deploy ok"
