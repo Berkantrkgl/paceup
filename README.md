@@ -119,4 +119,4 @@ Each service ships a committed `.env.example` with placeholders; the real
 
 ## License
 
-No license has been chosen yet. Until one is added, all rights are reserved.
+Released under the [MIT License](LICENSE) © 2026 Berkan Türkoğlu.
