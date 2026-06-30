@@ -1,0 +1,1640 @@
+import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import React, { useContext, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Image,
+  KeyboardAvoidingView,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Picker } from "@react-native-picker/picker";
+import * as Localization from "expo-localization";
+
+import { ProfileTour } from "@/components/tour/ProfileTour";
+import { ThemeSelector } from "@/components/ThemeSelector";
+import { API_URL } from "@/constants/Config";
+import { useTheme } from "@/theme/ThemeContext";
+import { useThemedStyles } from "@/theme/useThemedStyles";
+import type { Theme, ThemeColors } from "@/theme/tokens";
+import { AuthContext } from "@/utils/authContext";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback } from "react";
+
+// ============================================================
+// SABİTLER
+// ============================================================
+const GENDER_OPTIONS = [
+  { label: "Erkek", value: "male" },
+  { label: "Kadın", value: "female" },
+  { label: "Diğer", value: "other" },
+];
+
+const DAYS_MAP = [
+  "Pazartesi",
+  "Salı",
+  "Çarşamba",
+  "Perşembe",
+  "Cuma",
+  "Cumartesi",
+  "Pazar",
+];
+
+const DAYS_SHORT = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"];
+
+const TOKEN_LIMIT_FREE = 50000;
+
+const generateNumberRange = (start: number, end: number, suffix: string) => {
+  const options = [];
+  for (let i = start; i <= end; i++) {
+    options.push({ label: `${i} ${suffix}`, value: i });
+  }
+  return options;
+};
+
+const PACE_MINUTES = Array.from({ length: 13 }, (_, i) => i + 3);
+const PACE_SECONDS = Array.from({ length: 60 }, (_, i) => i);
+
+// ============================================================
+// ANA EKRAN
+// ============================================================
+const ProfileScreen = () => {
+  const { user, logOut, refreshUserData, getValidToken } =
+    useContext(AuthContext);
+  const { colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const [uploading, setUploading] = useState(false);
+  const premiumTourRef = useRef<View>(null);
+  const identityTourRef = useRef<View>(null);
+
+  // Ekran her focus olduğunda user'ı refresh et (premium ekranından döndüğünde görünür)
+  // refreshUserData dep listesinden çıkarıldı — her render'da yeni ref aldığı için infinite loop'a girer.
+  useFocusEffect(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useCallback(() => {
+      refreshUserData();
+    }, []),
+  );
+
+  // Edit Modal
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editConfig, setEditConfig] = useState<any>({
+    key: "",
+    title: "",
+    type: "text",
+    options: [],
+  });
+  const [tempValue, setTempValue] = useState<any>("");
+  const [tempArrayValue, setTempArrayValue] = useState<number[]>([]);
+  const [dateValue, setDateValue] = useState(new Date());
+  const [paceValue, setPaceValue] = useState({ min: 5, sec: 30 });
+  const [paceUnknown, setPaceUnknown] = useState(false);
+
+  // Avatar Modal
+  const [avatarModalVisible, setAvatarModalVisible] = useState(false);
+
+  // Avatar press animasyonu
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const handleAvatarPressIn = () =>
+    Animated.spring(avatarScale, {
+      toValue: 0.92,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 0,
+    }).start();
+  const handleAvatarPressOut = () =>
+    Animated.spring(avatarScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 12,
+    }).start();
+
+  // Premium CTA press animasyonu
+  const upgradeCtaScale = useRef(new Animated.Value(1)).current;
+  const handleUpgradePressIn = () =>
+    Animated.spring(upgradeCtaScale, {
+      toValue: 0.96,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 0,
+    }).start();
+  const handleUpgradePressOut = () =>
+    Animated.spring(upgradeCtaScale, {
+      toValue: 1,
+      useNativeDriver: true,
+      speed: 50,
+      bounciness: 10,
+    }).start();
+  // Premium
+  const router = useRouter();
+  const openPremium = () =>
+    router.push({ pathname: "/(protected)/premium", params: { reason: "general" } });
+
+  const handleCancelSubscription = async () => {
+    // Apple policy: auto-renewable subscription iptali SADECE App Store'dan yapılır.
+    // iOS'ta itms-apps:// deep link'i App Store'u direkt abonelik yönetim ekranında açar.
+    const deepLink = "itms-apps://apps.apple.com/account/subscriptions";
+    const webFallback = "https://apps.apple.com/account/subscriptions";
+    try {
+      const canOpen = await Linking.canOpenURL(deepLink);
+      await Linking.openURL(canOpen ? deepLink : webFallback);
+    } catch {
+      Alert.alert(
+        "Açılamadı",
+        "Aboneliğini yönetmek için Ayarlar → Apple ID → Abonelikler yolunu izleyebilirsin.",
+      );
+    }
+  };
+
+  // Apple Guideline 5.1.1(v): hesap silme uygulama içinden mümkün olmalı.
+  // Çift onay: önce confirm, sonra "SİL" yazma. Geri alınamaz olduğu için kasıtlı bir adım.
+  const performAccountDeletion = async () => {
+    try {
+      const validToken = await getValidToken();
+      if (!validToken) {
+        Alert.alert("Hata", "Oturum bilgisi alınamadı, tekrar dene.");
+        return;
+      }
+      const res = await fetch(`${API_URL}/users/destroy_account/`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${validToken}` },
+      });
+
+      if (res.ok) {
+        // user.delete() backend'de tamamlandı — token'lar artık geçersiz.
+        // logOut() hem AsyncStorage'ı hem RC'yi hem AuthContext state'ini temizleyip
+        // login ekranına yönlendirir.
+        await logOut();
+        return;
+      }
+
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        Alert.alert(
+          "Önce Aboneliği İptal Et",
+          data.message ||
+            "Aktif Premium aboneliğin var. Hesabını silmeden önce App Store'dan aboneliği iptal etmen gerekiyor.",
+          [
+            { text: "Vazgeç", style: "cancel" },
+            { text: "App Store'a Git", onPress: handleCancelSubscription },
+          ],
+        );
+        return;
+      }
+
+      Alert.alert("Hata", "Hesap silinemedi. Lütfen tekrar dene.");
+    } catch {
+      Alert.alert(
+        "Bağlantı Hatası",
+        "Sunucuya ulaşılamadı. İnternet bağlantını kontrol et.",
+      );
+    }
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Hesabını Sil",
+      "Bu işlem geri alınamaz. Tüm antrenmanların, ilerlemen, rozet ve sohbet geçmişin kalıcı olarak silinecek.",
+      [
+        { text: "Vazgeç", style: "cancel" },
+        {
+          text: "Devam Et",
+          style: "destructive",
+          onPress: () => {
+            // Apple çift onay istiyor (destructive action). İkinci alert'te
+            // "Evet, Sil"e basmak son onay yerine geçer.
+            Alert.alert(
+              "Son Onay",
+              "Hesabını ve tüm verilerini kalıcı olarak silmek istediğine emin misin?",
+              [
+                { text: "Vazgeç", style: "cancel" },
+                {
+                  text: "Evet, Sil",
+                  style: "destructive",
+                  onPress: performAccountDeletion,
+                },
+              ],
+            );
+          },
+        },
+      ],
+    );
+  };
+
+  // Toggle local state (optimistic update)
+  const [toggleOverrides, setToggleOverrides] = useState<
+    Record<string, boolean>
+  >({});
+
+  // ============================================================
+  // SUB COMPONENTS (inner — theme'e bağlı olduğu için)
+  // ============================================================
+  const Section = ({ title, children }: any) => (
+    <View style={styles.sectionContainer}>
+      <Text style={styles.sectionHeader}>{title}</Text>
+      <View>{children}</View>
+    </View>
+  );
+
+  const InfoRow = ({ label, value, onPress, isLast, isReadonly }: any) => (
+    <Pressable
+      style={({ pressed }) => [
+        styles.row,
+        pressed && !isReadonly && styles.rowPressed,
+        isLast && styles.rowLast,
+      ]}
+      onPress={!isReadonly ? onPress : undefined}
+    >
+      <Text style={styles.rowLabel}>{label}</Text>
+      <View style={styles.rowRight}>
+        <Text style={[styles.rowValue, isReadonly && { color: colors.accent }]}>
+          {value}
+        </Text>
+        {!isReadonly && (
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={colors.text.secondary}
+            style={{ marginLeft: 6 }}
+            opacity={0.5}
+          />
+        )}
+      </View>
+    </Pressable>
+  );
+
+  const ToggleRow = ({ label, value, onValueChange, isLast }: any) => (
+    <View style={[styles.row, isLast && styles.rowLast]}>
+      <Text style={styles.rowLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={colors.white}
+      />
+    </View>
+  );
+
+  // ============================================================
+  // GÖRÜNTÜLEME FORMATLAYICILARI
+  // ============================================================
+  const formatDisplayTime = (timeStr: string) =>
+    timeStr?.substring(0, 5) || "09:00";
+
+  const formatDisplayPace = (seconds: number | null | undefined) => {
+    if (seconds === null || seconds === undefined) return "--:--";
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? "0" : ""}${s}`;
+  };
+
+  const formatDisplayDays = (daysArray: number[]) => {
+    if (!daysArray || daysArray.length === 0) return "Seçilmedi";
+    return daysArray.map((d) => DAYS_SHORT[d]).join(", ");
+  };
+
+  const getTokenProgressPercent = () => {
+    if (!user || user.is_premium) return 100;
+    return Math.min(
+      100,
+      ((user.total_tokens_used || 0) / TOKEN_LIMIT_FREE) * 100,
+    );
+  };
+
+  const getTokenProgressColor = () => {
+    const pct = getTokenProgressPercent();
+    if (pct >= 90) return colors.danger;
+    if (pct >= 70) return colors.warning;
+    return colors.accent;
+  };
+
+  // ============================================================
+  // ACTIONS
+  // ============================================================
+  const handlePickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      Alert.alert("İzin Gerekli", "Galeri izni vermelisiniz.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: "images",
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!result.canceled) uploadProfileImage(result.assets[0].uri);
+  };
+
+  const uploadProfileImage = async (uri: string) => {
+    setUploading(true);
+    try {
+      const token = await getValidToken();
+      const formData = new FormData();
+      const filename = uri.split("/").pop();
+      const match = /\.(\w+)$/.exec(filename || "");
+      const type = match ? `image/${match[1]}` : `image/jpeg`;
+      formData.append("profile_image", {
+        uri: Platform.OS === "android" ? uri : uri.replace("file://", ""),
+        name: filename || "profile.jpg",
+        type,
+      } as any);
+      await fetch(`${API_URL}/users/me/`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+        body: formData,
+      });
+      await refreshUserData();
+    } catch (e) {
+      Alert.alert("Hata", "Fotoğraf yüklenemedi.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openEditor = (config: any) => {
+    setEditConfig(config);
+    const currentVal = user?.[config.key as keyof typeof user];
+    if (config.type === "date") {
+      setDateValue(
+        currentVal ? new Date(currentVal as string) : new Date(1995, 0, 1),
+      );
+    } else if (config.type === "time") {
+      const [h] = ((currentVal as string) || "09:00").split(":");
+      setTempValue(parseInt(h, 10));
+    } else if (config.type === "pace") {
+      if (currentVal === null || currentVal === undefined) {
+        setPaceUnknown(true);
+        setPaceValue({ min: 8, sec: 0 });
+      } else {
+        setPaceUnknown(false);
+        const totalSec = currentVal as number;
+        setPaceValue({ min: Math.floor(totalSec / 60), sec: totalSec % 60 });
+      }
+    } else if (config.type === "multiselect") {
+      setTempArrayValue((currentVal as number[]) || []);
+    } else if (config.type === "picker") {
+      setTempValue(currentVal || config.options[0]?.value);
+    } else {
+      setTempValue(String(currentVal || ""));
+    }
+    setModalVisible(true);
+  };
+
+  const saveChange = async () => {
+    try {
+      const token = await getValidToken();
+      let payloadValue: any = tempValue;
+      if (editConfig.type === "date") {
+        payloadValue = dateValue.toISOString().split("T")[0];
+      } else if (editConfig.type === "time") {
+        const h = Number(tempValue);
+        payloadValue = `${h < 10 ? "0" + h : h}:00:00`;
+      } else if (editConfig.type === "pace") {
+        payloadValue = paceUnknown ? null : paceValue.min * 60 + paceValue.sec;
+      } else if (editConfig.type === "number") {
+        payloadValue = Number(tempValue);
+      } else if (editConfig.type === "multiselect") {
+        payloadValue = tempArrayValue.sort();
+      }
+      const body: Record<string, any> = { [editConfig.key]: payloadValue };
+      // Hatırlatma saati değişirken cihazın timezone'unu da göndererek
+      // backend'in saati doğru yorumlamasını garanti ediyoruz.
+      if (editConfig.key === "preferred_reminder_time") {
+        const tz =
+          Localization.getCalendars()?.[0]?.timeZone ??
+          Intl.DateTimeFormat().resolvedOptions().timeZone;
+        if (tz) body.timezone = tz;
+      }
+      const response = await fetch(`${API_URL}/users/me/`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        await refreshUserData();
+        setModalVisible(false);
+      } else {
+        Alert.alert("Hata", "Kaydedilemedi");
+      }
+    } catch (e) {
+      Alert.alert("Hata", "Bağlantı hatası.");
+    }
+  };
+
+  const toggleDaySelection = (dayIndex: number) => {
+    if (tempArrayValue.includes(dayIndex)) {
+      setTempArrayValue(tempArrayValue.filter((d) => d !== dayIndex));
+    } else {
+      setTempArrayValue([...tempArrayValue, dayIndex]);
+    }
+  };
+
+  const getToggleValue = (key: string): boolean => {
+    if (key in toggleOverrides) return toggleOverrides[key];
+    return !!(user as any)?.[key];
+  };
+
+  const toggleSwitch = async (key: string, value: boolean) => {
+    // Optimistic: hemen local state'i güncelle
+    setToggleOverrides((prev) => ({ ...prev, [key]: value }));
+    try {
+      const token = await getValidToken();
+      await fetch(`${API_URL}/users/me/`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ [key]: value }),
+      });
+      // Arka planda user'ı güncelle, override'ı temizle
+      await refreshUserData();
+      setToggleOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    } catch {
+      // Hata olursa geri al
+      setToggleOverrides((prev) => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+    }
+  };
+
+  // ============================================================
+  // MODAL CONTENT
+  // ============================================================
+  const renderModalContent = () => {
+    if (editConfig.type === "date") {
+      return (
+        <View style={styles.pickerWrapper}>
+          <DateTimePicker
+            value={dateValue}
+            mode="date"
+            is24Hour={true}
+            display="spinner"
+            onChange={(_, selectedDate) =>
+              setDateValue(selectedDate || dateValue)
+            }
+            textColor={colors.text.primary}
+            themeVariant={isDark ? "dark" : "light"}
+            style={{ height: 180 }}
+          />
+        </View>
+      );
+    }
+    if (editConfig.type === "time") {
+      return (
+        <View style={[styles.pickerWrapper, { alignItems: "center" }]}>
+          <Picker
+            selectedValue={Number(tempValue)}
+            onValueChange={(v) => setTempValue(v)}
+            itemStyle={{ color: colors.text.primary, fontSize: 22 }}
+            style={{ width: 160, color: colors.text.primary }}
+          >
+            {Array.from({ length: 24 }, (_, i) => (
+              <Picker.Item
+                key={i}
+                label={`${i < 10 ? "0" + i : i}:00`}
+                value={i}
+              />
+            ))}
+          </Picker>
+          {editConfig.key === "preferred_reminder_time" && (
+            <View style={styles.dayInfoBox}>
+              <Ionicons
+                name="information-circle-outline"
+                size={14}
+                color={colors.text.secondary}
+              />
+              <Text style={styles.dayInfoText}>
+                Seçeceğiniz bildirim saati, antrenmandan bir gün öncesi için
+                geçerlidir. Bu saatte, ertesi gün planlı bir antrenmanınız
+                varsa hatırlatma gönderilir.
+              </Text>
+            </View>
+          )}
+        </View>
+      );
+    }
+    if (editConfig.type === "pace") {
+      return (
+        <View>
+          {/* Bilmiyorum toggle */}
+          <Pressable
+            style={styles.paceUnknownToggle}
+            onPress={() => setPaceUnknown((prev) => !prev)}
+          >
+            <View
+              style={[
+                styles.paceUnknownCheck,
+                paceUnknown && styles.paceUnknownCheckActive,
+              ]}
+            >
+              {paceUnknown && (
+                <Ionicons name="checkmark" size={14} color={colors.text.inverse} />
+              )}
+            </View>
+            <Text style={styles.paceUnknownText}>Pace'imi bilmiyorum</Text>
+          </Pressable>
+
+          {/* Picker — bilmiyorum seçilince soluklaş */}
+          <View
+            style={[
+              styles.dualPickerContainer,
+              paceUnknown && { opacity: 0.3 },
+            ]}
+            pointerEvents={paceUnknown ? "none" : "auto"}
+          >
+            <View style={styles.pickerColumn}>
+              <Text style={styles.columnLabel}>Dakika</Text>
+              <Picker
+                selectedValue={paceValue.min}
+                onValueChange={(v) => setPaceValue({ ...paceValue, min: v })}
+                style={{ width: 100, color: colors.text.primary }}
+                itemStyle={{ color: colors.text.primary }}
+              >
+                {PACE_MINUTES.map((m) => (
+                  <Picker.Item key={m} label={m.toString()} value={m} />
+                ))}
+              </Picker>
+            </View>
+            <Text style={styles.pickerSeparator}>:</Text>
+            <View style={styles.pickerColumn}>
+              <Text style={styles.columnLabel}>Saniye</Text>
+              <Picker
+                selectedValue={paceValue.sec}
+                onValueChange={(v) => setPaceValue({ ...paceValue, sec: v })}
+                style={{ width: 100, color: colors.text.primary }}
+                itemStyle={{ color: colors.text.primary }}
+              >
+                {PACE_SECONDS.map((s) => (
+                  <Picker.Item
+                    key={s}
+                    label={s < 10 ? `0${s}` : s.toString()}
+                    value={s}
+                  />
+                ))}
+              </Picker>
+            </View>
+          </View>
+        </View>
+      );
+    }
+    if (editConfig.type === "multiselect") {
+      return (
+        <View style={styles.multiselectContainer}>
+          <View style={styles.dayChipsRow}>
+            {DAYS_MAP.map((_, index) => {
+              const isSelected = tempArrayValue.includes(index);
+              return (
+                <Pressable
+                  key={index}
+                  style={[styles.dayChip, isSelected && styles.dayChipSelected]}
+                  onPress={() => toggleDaySelection(index)}
+                >
+                  <Text
+                    style={[
+                      styles.dayChipText,
+                      isSelected && styles.dayChipTextSelected,
+                    ]}
+                  >
+                    {DAYS_SHORT[index]}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <View style={styles.dayInfoBox}>
+            <Ionicons
+              name="information-circle-outline"
+              size={14}
+              color={colors.text.secondary}
+            />
+            <Text style={styles.dayInfoText}>
+              Bu değişiklik mevcut aktif programınızı etkilemez. Yeni
+              oluşturulacak programlarda baz alınır.
+            </Text>
+          </View>
+        </View>
+      );
+    }
+    if (editConfig.type === "picker") {
+      return (
+        <View style={styles.pickerWrapper}>
+          <Picker
+            selectedValue={tempValue}
+            onValueChange={(itemValue) => setTempValue(itemValue)}
+            itemStyle={{ color: colors.text.primary, fontSize: 20 }}
+            dropdownIconColor={colors.text.primary}
+            style={{ color: colors.text.primary }}
+          >
+            {editConfig.options.map((opt: any) => (
+              <Picker.Item
+                key={opt.value}
+                label={opt.label.toString()}
+                value={opt.value}
+              />
+            ))}
+          </Picker>
+        </View>
+      );
+    }
+    return (
+      <View>
+        <TextInput
+          style={styles.input}
+          value={tempValue}
+          onChangeText={setTempValue}
+          keyboardType={editConfig.type === "number" ? "numeric" : "default"}
+          placeholder="Değer giriniz"
+          placeholderTextColor={colors.text.secondary}
+          autoFocus
+        />
+      </View>
+    );
+  };
+
+  // ============================================================
+  // TOKEN PROGRESS BAR
+  // ============================================================
+  const TokenCard = () => {
+    const pct = getTokenProgressPercent();
+    const remainingPct = Math.max(0, 100 - Math.round(pct));
+    const color = getTokenProgressColor();
+
+    return (
+      <View style={styles.tokenCard}>
+        {/* Başlık */}
+        <View
+          style={[
+            styles.tokenCardHeader,
+            user?.is_premium && { marginBottom: 0 },
+          ]}
+        >
+          <View style={styles.tokenCardTitleRow}>
+            <Ionicons name="flash" size={16} color={color} />
+            <Text style={styles.tokenCardTitle}>Kalan AI Kullanım Hakkı</Text>
+          </View>
+          {user?.is_premium ? (
+            <View style={styles.premiumBadge}>
+              <Text style={styles.premiumBadgeText}>Sınırsız</Text>
+            </View>
+          ) : (
+            <Text style={[styles.tokenPctText, { color }]}>
+              %{remainingPct}
+            </Text>
+          )}
+        </View>
+
+        {/* Progress Bar */}
+        {!user?.is_premium && (
+          <>
+            <View style={styles.progressBarBg}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: `${pct}%` as any, backgroundColor: color },
+                ]}
+              />
+            </View>
+          </>
+        )}
+
+        {/* Premium CTA */}
+        {!user?.is_premium && (
+          <Animated.View style={{ transform: [{ scale: upgradeCtaScale }] }}>
+            <Pressable
+              style={[styles.upgradeCta, pct >= 90 && styles.upgradeCtaUrgent]}
+              onPress={() => openPremium()}
+              onPressIn={handleUpgradePressIn}
+              onPressOut={handleUpgradePressOut}
+            >
+              <Ionicons name="flash" size={14} color={colors.text.inverse} />
+              <Text style={styles.upgradeCtaText}>
+                {pct >= 90
+                  ? "Limitin Dolmak Üzere! Premium'a Geç →"
+                  : "Premium'a Geç, Sınırsız Kullan →"}
+              </Text>
+            </Pressable>
+          </Animated.View>
+        )}
+      </View>
+    );
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+  return (
+    <View style={styles.container}>
+      <StatusBar
+        barStyle={isDark ? "light-content" : "dark-content"}
+        backgroundColor={colors.background}
+      />
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* USER CARD */}
+        <View style={styles.userCard}>
+          <Pressable
+            onPress={() => setAvatarModalVisible(true)}
+            onPressIn={handleAvatarPressIn}
+            onPressOut={handleAvatarPressOut}
+            style={styles.avatarContainer}
+          >
+            <Animated.View style={{ transform: [{ scale: avatarScale }] }}>
+              {user?.profile_image ? (
+                <Image
+                  source={{ uri: user.profile_image }}
+                  style={styles.avatar}
+                />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={styles.avatarInitial}>
+                    {user?.first_name?.[0] || "U"}
+                  </Text>
+                </View>
+              )}
+              {uploading && (
+                <ActivityIndicator
+                  size="small"
+                  color={colors.accent}
+                  style={StyleSheet.absoluteFill}
+                />
+              )}
+              <View style={styles.editBadge}>
+                <Text style={styles.editBadgeText}>Fotoğraf</Text>
+              </View>
+            </Animated.View>
+          </Pressable>
+          <View style={styles.userInfo}>
+            <Text style={styles.userName}>
+              {user?.first_name} {user?.last_name}
+            </Text>
+            {user?.email && (
+              <Text style={styles.userEmail}>{user.email}</Text>
+            )}
+            <View style={styles.statsRow}>
+              <Text style={styles.statText}>
+                🔥 {user?.current_streak} Gün Seri
+              </Text>
+              <Text style={styles.statDot}>•</Text>
+              <TouchableOpacity
+                onPress={() =>
+                  !user?.is_premium && openPremium()
+                }
+              >
+                <Text
+                  style={[
+                    styles.statText,
+                    user?.is_premium && { color: colors.accent },
+                  ]}
+                >
+                  {user?.is_premium
+                    ? "Premium kullanıcı"
+                    : "Standart kullanıcı"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* TOKEN KARTI */}
+        <View ref={premiumTourRef}>
+          <TokenCard />
+        </View>
+
+        {/* SECTION 1: KİMLİK & FİZİKSEL */}
+        <View ref={identityTourRef}>
+        <Section title="KİMLİK VE FİZİKSEL">
+          <InfoRow
+            label="Ad"
+            value={user?.first_name}
+            onPress={() =>
+              openEditor({ key: "first_name", title: "Ad", type: "text" })
+            }
+          />
+          <InfoRow
+            label="Soyad"
+            value={user?.last_name}
+            onPress={() =>
+              openEditor({ key: "last_name", title: "Soyad", type: "text" })
+            }
+          />
+          <InfoRow
+            label="Cinsiyet"
+            value={GENDER_OPTIONS.find((o) => o.value === user?.gender)?.label}
+            onPress={() =>
+              openEditor({
+                key: "gender",
+                title: "Cinsiyet",
+                type: "picker",
+                options: GENDER_OPTIONS,
+              })
+            }
+          />
+          <InfoRow
+            label="Doğum Tarihi"
+            value={user?.date_of_birth}
+            onPress={() =>
+              openEditor({
+                key: "date_of_birth",
+                title: "Doğum Tarihi",
+                type: "date",
+              })
+            }
+          />
+          <InfoRow
+            label="Boy"
+            value={user?.height ? `${user.height} cm` : ""}
+            onPress={() =>
+              openEditor({
+                key: "height",
+                title: "Boy",
+                type: "picker",
+                options: generateNumberRange(140, 230, "cm"),
+              })
+            }
+          />
+          <InfoRow
+            label="Kilo"
+            value={user?.weight ? `${user.weight} kg` : ""}
+            onPress={() =>
+              openEditor({
+                key: "weight",
+                title: "Kilo",
+                type: "picker",
+                options: generateNumberRange(40, 160, "kg"),
+              })
+            }
+            isLast
+          />
+        </Section>
+        </View>
+
+        {/* SECTION 1.5: GÖRÜNÜM */}
+        <Section title="GÖRÜNÜM">
+          <ThemeSelector />
+        </Section>
+
+        {/* SECTION 2: KOŞU PROFİLİ */}
+        <Section title="KOŞU PROFİLİ">
+          <InfoRow
+            label="Ortalama Pace"
+            value={`${formatDisplayPace(user?.current_pace)} /km`}
+            onPress={() =>
+              openEditor({
+                key: "current_pace",
+                title: "Pace Seçimi",
+                type: "pace",
+              })
+            }
+          />
+          <InfoRow
+            label="Maksimum Koşu Mesafesi"
+            value={`${user?.max_runned_distance} km`}
+            onPress={() =>
+              openEditor({
+                key: "max_runned_distance",
+                title: "Maksimum Koşu Mesafesi",
+                type: "picker",
+                options: generateNumberRange(1, 100, "km"),
+              })
+            }
+          />
+          <InfoRow
+            label="Koşu Günleri"
+            value={formatDisplayDays(user?.preferred_running_days || [])}
+            onPress={() =>
+              openEditor({
+                key: "preferred_running_days",
+                title: "Koşu Günleri Seçimi",
+                type: "multiselect",
+              })
+            }
+            isLast
+          />
+        </Section>
+
+        {/* SECTION 3: HESAP BİLGİLERİ */}
+        <Section title="HESAP BİLGİLERİ">
+          <InfoRow
+            label="Üyelik Tipi"
+            value={
+              user?.is_premium
+                ? `Premium (${user.premium_type === "yearly" ? "Yıllık" : "Aylık"})`
+                : "Standart"
+            }
+            isReadonly
+          />
+          {user?.is_premium && user?.premium_expires_at && (
+            <InfoRow
+              label="Abonelik Bitiş"
+              value={new Date(user.premium_expires_at).toLocaleDateString("tr-TR", {
+                day: "numeric",
+                month: "long",
+                year: "numeric",
+              })}
+              isReadonly
+            />
+          )}
+          {user?.is_premium && user?.premium_will_renew === false && (
+            <View style={styles.willNotRenewBox}>
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color={colors.warning}
+                style={{ marginTop: 1 }}
+              />
+              <Text style={styles.willNotRenewText}>
+                Otomatik yenilenmeyecek — bu tarihten sonra Standart üyeliğe geçeceksin.
+              </Text>
+            </View>
+          )}
+          <InfoRow
+            label="Aylık Kalan Erteleme Hakkı"
+            value={
+              user?.is_premium
+                ? "Sınırsız"
+                : `${user?.remaining_reschedules} / 2`
+            }
+            isReadonly
+            isLast={!user?.is_premium}
+          />
+          {user?.is_premium && (
+            <TouchableOpacity
+              style={styles.cancelSubRow}
+              onPress={() =>
+                Alert.alert(
+                  "Aboneliği Yönet",
+                  "Aboneliğini yönetmek veya iptal etmek için App Store'a yönlendirileceksin.",
+                  [
+                    { text: "Vazgeç", style: "cancel" },
+                    {
+                      text: "App Store'a Git",
+                      onPress: handleCancelSubscription,
+                    },
+                  ],
+                )
+              }
+            >
+              <Text style={styles.cancelSubText}>Aboneliği Yönet</Text>
+            </TouchableOpacity>
+          )}
+        </Section>
+
+        {/* SECTION 4: BİLDİRİM TERCİHLERİ */}
+        <Section title="BİLDİRİM TERCİHLERİ">
+          <InfoRow
+            label="Hatırlatma Saati"
+            value={
+              user?.timezone
+                ? `${formatDisplayTime(user?.preferred_reminder_time ?? "")} (${user.timezone})`
+                : formatDisplayTime(user?.preferred_reminder_time ?? "")
+            }
+            onPress={() =>
+              openEditor({
+                key: "preferred_reminder_time",
+                title: "Hatırlatma Saati",
+                type: "time",
+              })
+            }
+          />
+          <ToggleRow
+            label="Antrenman Bildirimleri"
+            value={getToggleValue("notification_workout_reminder")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_workout_reminder", v)
+            }
+          />
+          <ToggleRow
+            label="Başarı Rozetleri"
+            value={getToggleValue("notification_achievements")}
+            onValueChange={(v: boolean) =>
+              toggleSwitch("notification_achievements", v)
+            }
+            isLast
+          />
+        </Section>
+
+        {/* FOOTER */}
+        <View style={styles.footer}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.logoutBtn,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.97 }] },
+            ]}
+            onPress={() =>
+              Alert.alert(
+                "Çıkış Yap",
+                "Oturumu kapatmak istediğine emin misin?",
+                [
+                  { text: "Vazgeç", style: "cancel" },
+                  { text: "Çıkış Yap", style: "destructive", onPress: logOut },
+                ],
+              )
+            }
+          >
+            <Text style={styles.logoutText}>Oturumu Kapat</Text>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.deleteAccountBtn,
+              pressed && { opacity: 0.5 },
+            ]}
+            onPress={handleDeleteAccount}
+          >
+            <Text style={styles.deleteAccountText}>Hesabımı Sil</Text>
+          </Pressable>
+          <Text style={styles.versionText}>PaceUp v2.3.0</Text>
+        </View>
+      </ScrollView>
+
+      {/* Edit Modal */}
+      <Modal visible={modalVisible} transparent animationType="fade">
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setModalVisible(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+            style={{
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Pressable
+              style={styles.modalCenteredContainer}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <Pressable
+                    onPress={() => setModalVisible(false)}
+                    style={styles.headerBtn}
+                  >
+                    <Text style={styles.headerBtnTextCancel}>Vazgeç</Text>
+                  </Pressable>
+                  <Text style={styles.modalTitle}>{editConfig.title}</Text>
+                  <Pressable onPress={saveChange} style={styles.headerBtn}>
+                    <Text style={styles.headerBtnTextSave}>Kaydet</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.modalBody}>{renderModalContent()}</View>
+              </View>
+            </Pressable>
+          </KeyboardAvoidingView>
+        </Pressable>
+      </Modal>
+
+      <ProfileTour
+        highlightRefs={{
+          premium: premiumTourRef,
+          identity: identityTourRef,
+        }}
+      />
+
+      {/* Avatar Modal */}
+      <Modal
+        visible={avatarModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <Pressable
+          style={styles.avatarModalOverlay}
+          onPress={() => setAvatarModalVisible(false)}
+        >
+          <Pressable
+            style={styles.avatarModalContent}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Fotoğraf */}
+            {user?.profile_image ? (
+              <Image
+                source={{ uri: user.profile_image }}
+                style={styles.avatarModalImage}
+              />
+            ) : (
+              <View style={styles.avatarModalPlaceholder}>
+                <Ionicons name="person" size={80} color={colors.text.secondary} />
+              </View>
+            )}
+
+            {/* Değiştir */}
+            <TouchableOpacity
+              style={styles.avatarModalBtn}
+              onPress={handlePickImage}
+            >
+              <Ionicons name="camera-outline" size={16} color={colors.text.primary} />
+              <Text style={styles.avatarModalBtnText}>
+                {user?.profile_image ? "Fotoğrafı Değiştir" : "Fotoğraf Ekle"}
+              </Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+};
+
+export default ProfileScreen;
+
+// ============================================================
+// STYLES
+// ============================================================
+const makeStyles = (t: Theme) => {
+  const c: ThemeColors = t.colors;
+  return {
+    container: { flex: 1, backgroundColor: c.background },
+    header: {
+      paddingHorizontal: 20,
+    },
+    headerTitle: {
+      fontSize: 28,
+      fontWeight: "800" as const,
+      color: c.text.primary,
+      letterSpacing: 0.3,
+    },
+    scrollContent: { paddingTop: 70, paddingBottom: 60 },
+
+    // User Card
+    userCard: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      padding: 24,
+      marginBottom: 4,
+    },
+    avatarContainer: { marginRight: 20, position: "relative" as const },
+    avatar: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    avatarPlaceholder: {
+      width: 72,
+      height: 72,
+      borderRadius: 36,
+      backgroundColor: c.surface,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 2,
+      borderColor: c.border,
+    },
+    avatarInitial: {
+      fontSize: 28,
+      color: c.text.secondary,
+      fontWeight: "bold" as const,
+    },
+    editBadge: {
+      position: "absolute" as const,
+      bottom: -5,
+      alignSelf: "center" as const,
+      backgroundColor: c.surfaceVariant,
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: c.background,
+    },
+    editBadgeText: {
+      fontSize: 9,
+      color: c.text.secondary,
+      fontWeight: "600" as const,
+    },
+    userInfo: { flex: 1, justifyContent: "center" as const },
+    userName: {
+      fontSize: 20,
+      fontWeight: "700" as const,
+      color: c.text.primary,
+      marginBottom: 2,
+    },
+    userEmail: {
+      fontSize: 12,
+      color: c.text.secondary,
+      marginBottom: 4,
+    },
+    statsRow: { flexDirection: "row" as const, alignItems: "center" as const },
+    statText: {
+      fontSize: 12,
+      color: c.secondary,
+      fontWeight: "600" as const,
+    },
+    statDot: { color: c.text.secondary, marginHorizontal: 6, fontSize: 10 },
+
+    // Token Card
+    tokenCard: {
+      marginHorizontal: 20,
+      marginBottom: 24,
+      backgroundColor: c.surface,
+      borderRadius: 16,
+      padding: 16,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    tokenCardHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      marginBottom: 12,
+    },
+    tokenCardTitleRow: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 6,
+    },
+    tokenCardTitle: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+    tokenPctText: { fontSize: 13, fontWeight: "700" as const },
+    premiumBadge: {
+      backgroundColor: c.accentMuted,
+      borderWidth: 1,
+      borderColor: c.accent,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 3,
+    },
+    premiumBadgeText: {
+      color: c.accent,
+      fontSize: 11,
+      fontWeight: "700" as const,
+    },
+    progressBarBg: {
+      height: 6,
+      backgroundColor: c.surfaceVariant,
+      marginBottom: 16,
+      borderRadius: 3,
+      overflow: "hidden" as const,
+    },
+    progressBarFill: { height: "100%" as const, borderRadius: 3 },
+    tokenCardFooter: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      marginBottom: 12,
+    },
+    tokenUsedText: { color: c.text.secondary, fontSize: 12 },
+    tokenRemainingText: { fontSize: 12, fontWeight: "600" as const },
+    upgradeCta: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      backgroundColor: c.accent,
+      borderRadius: 10,
+      paddingVertical: 10,
+      gap: 6,
+    },
+    upgradeCtaUrgent: {
+      backgroundColor: c.danger,
+    },
+    upgradeCtaText: {
+      color: c.text.inverse,
+      fontSize: 13,
+      fontWeight: "700" as const,
+    },
+
+    // Sections
+    sectionContainer: { marginBottom: 48 },
+    sectionHeader: {
+      fontSize: 17,
+      color: c.text.primary,
+      fontWeight: "800" as const,
+      marginBottom: 14,
+      paddingHorizontal: 20,
+      letterSpacing: 0.2,
+    },
+    row: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingVertical: 16,
+      paddingHorizontal: 20,
+      borderBottomWidth: t.name === "light" ? 1 : StyleSheet.hairlineWidth,
+      borderBottomColor: t.name === "light" ? c.borderStrong : c.border,
+    },
+    rowLast: { borderBottomWidth: 0 },
+    rowPressed: { backgroundColor: c.surfaceVariant },
+    rowLabel: {
+      fontSize: 15,
+      color: c.text.primary,
+      fontWeight: "500" as const,
+    },
+    rowRight: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      flex: 1,
+      justifyContent: "flex-end" as const,
+    },
+    rowValue: {
+      fontSize: 15,
+      color: c.text.secondary,
+      marginRight: 4,
+      textAlign: "right" as const,
+    },
+
+    // Footer
+    footer: {
+      paddingHorizontal: 20,
+      alignItems: "center" as const,
+      paddingBottom: 20,
+    },
+    logoutBtn: {
+      width: "100%" as const,
+      backgroundColor: c.surface,
+      paddingVertical: 16,
+      borderRadius: 16,
+      alignItems: "center" as const,
+      marginBottom: 15,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    logoutText: {
+      color: c.danger,
+      fontSize: 15,
+      fontWeight: "600" as const,
+    },
+    deleteAccountBtn: {
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+      marginTop: 8,
+      alignItems: "center" as const,
+    },
+    deleteAccountText: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "500" as const,
+      textDecorationLine: "underline" as const,
+      opacity: 0.7,
+    },
+    versionText: { fontSize: 11, color: c.text.secondary, opacity: 0.4 },
+
+    // Edit Modal
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    modalCenteredContainer: { width: "90%" as const, maxWidth: 400 },
+    modalContent: {
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      overflow: "hidden" as const,
+    },
+    modalHeader: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      padding: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: t.name === "light" ? c.borderStrong : c.border,
+      backgroundColor: c.surfaceVariant,
+    },
+    modalTitle: {
+      fontSize: 16,
+      fontWeight: "600" as const,
+      color: c.text.primary,
+    },
+    headerBtn: { padding: 5 },
+    headerBtnTextCancel: { color: c.text.secondary, fontSize: 15 },
+    headerBtnTextSave: {
+      color: c.accent,
+      fontSize: 15,
+      fontWeight: "bold" as const,
+    },
+    modalBody: {
+      paddingVertical: 10,
+      paddingHorizontal: 10,
+      backgroundColor: c.surface,
+      minHeight: 150,
+      justifyContent: "center" as const,
+    },
+    pickerWrapper: { justifyContent: "center" as const },
+    dualPickerContainer: {
+      flexDirection: "row" as const,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    pickerColumn: { alignItems: "center" as const },
+    columnLabel: {
+      color: c.text.secondary,
+      fontSize: 12,
+      marginBottom: -10,
+      zIndex: 1,
+    },
+    pickerSeparator: {
+      fontSize: 30,
+      color: c.text.primary,
+      paddingBottom: 20,
+      paddingHorizontal: 10,
+    },
+    multiselectContainer: { padding: 10 },
+    dayButton: {
+      flexDirection: "row" as const,
+      justifyContent: "space-between" as const,
+      alignItems: "center" as const,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 12,
+      marginBottom: 8,
+      backgroundColor: c.surfaceVariant,
+    },
+    dayButtonSelected: {
+      backgroundColor: c.accentMuted,
+      borderColor: c.accent,
+      borderWidth: 1,
+    },
+    dayButtonText: { color: c.text.primary, fontSize: 16 },
+    dayButtonTextSelected: {
+      color: c.accent,
+      fontWeight: "bold" as const,
+    },
+    dayChipsRow: {
+      flexDirection: "row" as const,
+      flexWrap: "wrap" as const,
+      gap: 8,
+      justifyContent: "center" as const,
+      marginBottom: 16,
+    },
+    dayChip: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderWidth: 1,
+      borderColor: c.border,
+    },
+    dayChipSelected: {
+      backgroundColor: c.accentMuted,
+      borderColor: c.accent,
+    },
+    dayChipText: {
+      color: c.text.secondary,
+      fontSize: 12,
+      fontWeight: "600" as const,
+    },
+    dayChipTextSelected: {
+      color: c.accent,
+      fontWeight: "700" as const,
+    },
+    dayInfoBox: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 6,
+      backgroundColor: c.surfaceVariant,
+      borderRadius: 8,
+      padding: 10,
+    },
+    dayInfoText: {
+      flex: 1,
+      color: c.text.secondary,
+      fontSize: 11,
+      lineHeight: 16,
+    },
+    input: {
+      backgroundColor: c.surfaceVariant,
+      color: c.text.primary,
+      fontSize: 18,
+      padding: 16,
+      borderRadius: 12,
+      margin: 10,
+      borderWidth: 1,
+      borderColor: c.border,
+      textAlign: "center" as const,
+    },
+    paceUnknownToggle: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      gap: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      marginBottom: 4,
+    },
+    paceUnknownCheck: {
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      borderWidth: 1.5,
+      borderColor: c.border,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    paceUnknownCheckActive: {
+      backgroundColor: c.accent,
+      borderColor: c.accent,
+    },
+    paceUnknownText: {
+      color: c.text.primary,
+      fontSize: 15,
+    },
+    avatarModalOverlay: {
+      flex: 1,
+      backgroundColor: c.overlay,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+    },
+    avatarModalContent: {
+      width: "97%" as const,
+      backgroundColor: c.surface,
+      borderRadius: 20,
+      alignItems: "center" as const,
+      padding: 16,
+      gap: 14,
+    },
+    avatarModalImage: {
+      width: "100%" as const,
+      aspectRatio: 1,
+      borderRadius: 12,
+    },
+    avatarModalPlaceholder: {
+      width: "100%" as const,
+      aspectRatio: 1,
+      backgroundColor: c.surfaceVariant,
+      justifyContent: "center" as const,
+      alignItems: "center" as const,
+      borderRadius: 12,
+    },
+    avatarModalBtn: {
+      flexDirection: "row" as const,
+      alignItems: "center" as const,
+      justifyContent: "center" as const,
+      gap: 6,
+      backgroundColor: c.surfaceVariant,
+      paddingVertical: 10,
+      paddingHorizontal: 20,
+      borderRadius: 12,
+      width: "100%" as const,
+    },
+    avatarModalBtnText: {
+      color: c.text.primary,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+    cancelSubRow: {
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderTopWidth: 1,
+      borderTopColor: c.border,
+    },
+    cancelSubText: {
+      color: c.danger,
+      fontSize: 14,
+      fontWeight: "600" as const,
+    },
+    willNotRenewBox: {
+      flexDirection: "row" as const,
+      alignItems: "flex-start" as const,
+      gap: 8,
+      backgroundColor: c.warning + "15",
+      borderLeftWidth: 3,
+      borderLeftColor: c.warning,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      marginHorizontal: 16,
+      marginTop: 4,
+      marginBottom: 4,
+      borderRadius: 8,
+    },
+    willNotRenewText: {
+      flex: 1,
+      color: c.text.primary,
+      fontSize: 13,
+      lineHeight: 18,
+    },
+  } as const;
+};
