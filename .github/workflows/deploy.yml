@@ -66,11 +66,13 @@ jobs:
           script: |
             set -euo pipefail
             REPO=/home/deploy/paceup/paceup
-            STACK=/home/deploy/paceup
-            COMPOSE="docker compose -f $REPO/docker-compose.prod.yml --project-directory $STACK"
+            # Run from the repo dir with a fixed project name so it reuses the
+            # existing caddy TLS volumes (paceup_caddy-data/-config) and reads
+            # .env.django / .env.graph / .env.caddy that live in the repo dir.
+            cd "$REPO"
+            COMPOSE="docker compose -p paceup -f docker-compose.prod.yml"
 
             echo "→ git pull (main)"
-            cd "$REPO"
             git fetch origin main
             git reset --hard origin/main
             git log -1 --oneline
